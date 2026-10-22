@@ -129,3 +129,19 @@ dmypy.json
 .pyre/
 misc
 .direnv
+
+# openbrain-client — host-local profile (contains secrets) and client logs
+openbrain-client.local.yaml
+.logs/
+init.log
+.claude/legacy/
+
+# OpenBrain-materialized skills/agents (gold-owned; regenerate with openbrain-client init-skills).
+# Whole directories are ignored so new gold slugs are covered automatically.
+# A repo-owned skill or agent needs an explicit !exception here.
+.claude/materialization.json
+.claude/skills/
+.claude/agents/
+
+# Agent scratchpad (working files, survives sessions)
+scratchpad/
