@@ -70,7 +70,7 @@ class ThermiaBinarySensor(BinarySensorEntity):
     @property
     def available(self):
         """Return True if entity is available."""
-        return self.coordinator.last_update_success
+        return self.coordinator.last_update_success and self.coordinator.has_value(self.kind)
 
     @property
     def should_poll(self):

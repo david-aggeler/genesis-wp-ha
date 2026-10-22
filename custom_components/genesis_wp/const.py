@@ -25,6 +25,7 @@ UNIT_TEMPERATURE = UnitOfTemperature.CELSIUS
 UNIT_VOLTAGE = "V"
 UNIT_AMPERE = "A"
 UNIT_WATT = "W"
+UNIT_KILOWATT = "kW"
 UNIT_ENERGY = "kWh"
 
 
@@ -945,6 +946,19 @@ SENSOR_TYPES = {
         ATTR_LABEL: "Electric Meter L3 L1 Voltage",
         ATTR_UNIT: UNIT_VOLTAGE,
         ATTR_DEFAULT_ENABLED: False,
+    },
+    # Inputs 157/158; kW per the display's daily COP (homelab exploration-8 round 10).
+    thermiaconst.ATTR_INPUT_CURRENT_POWER_OUTPUT: {
+        ATTR_ICON: ICON_INPUT,
+        ATTR_LABEL: "Current Power Output",
+        ATTR_UNIT: UNIT_KILOWATT,
+        ATTR_DEFAULT_ENABLED: True,
+    },
+    thermiaconst.ATTR_INPUT_CURRENT_CONSUMED_POWER: {
+        ATTR_ICON: ICON_INPUT,
+        ATTR_LABEL: "Current Consumed Power",
+        ATTR_UNIT: UNIT_KILOWATT,
+        ATTR_DEFAULT_ENABLED: True,
     },
     thermiaconst.ATTR_INPUT_ELECTRIC_METER_L1_POWER: {
         ATTR_ICON: ICON_INPUT,

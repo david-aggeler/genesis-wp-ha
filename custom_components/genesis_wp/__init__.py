@@ -5,7 +5,10 @@ from datetime import timedelta
 
 from genesis_wp import ThermiaException
 from genesis_wp import ThermiaGenesis
+from genesis_wp import const as genesis_const
+from genesis_wp.const import GENESIS_17_MODELS
 from genesis_wp.const import MODEL_NAMES
+from genesis_wp.const import REGISTERS
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST
 from homeassistant.const import CONF_PORT
@@ -17,7 +20,6 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from .const import ATTR_MANUFACTURER
 from .const import CONF_MODEL
 from .const import CONF_UNIT
 from .const import DOMAIN
@@ -29,6 +31,19 @@ SCAN_INTERVAL = timedelta(seconds=30)
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _LOGGER = logging.getLogger(__name__)
+
+VERSION_REGISTERS = {
+    "control_software": (  # inputs 311-313
+        genesis_const.ATTR_INPUT_CONTROL_SOFTWARE_VERSION_MAJOR,
+        genesis_const.ATTR_INPUT_CONTROL_SOFTWARE_VERSION_MINOR,
+        genesis_const.ATTR_INPUT_CONTROL_SOFTWARE_VERSION_MICRO,
+    ),
+    "software": (  # inputs 57-59
+        genesis_const.ATTR_INPUT_SOFTWARE_VERSION_MAJOR,
+        genesis_const.ATTR_INPUT_SOFTWARE_VERSION_MINOR,
+        genesis_const.ATTR_INPUT_SOFTWARE_VERSION_MICRO,
+    ),
+}
 
 
 def create_client(data) -> ThermiaGenesis:
@@ -56,6 +71,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         await coordinator.thermia.close()
         raise ConfigEntryNotReady
 
+    coordinator.update_device_info()
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
@@ -86,11 +102,15 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self.kind = entry.data[CONF_MODEL]
         self.entry_id = entry.entry_id
         self.attributes = {}
-        self.device_info = DeviceInfo(
-            identifiers={(DOMAIN, entry.entry_id)},
-            name=MODEL_NAMES[self.kind],
-            manufacturer=ATTR_MANUFACTURER,
-            model=MODEL_NAMES[self.kind],
+        # Controller software and Genesis platform version identify the firmware profile.
+        if self.kind in GENESIS_17_MODELS:
+            self.sw_version_registers = VERSION_REGISTERS["control_software"]
+            self.hw_version_registers = VERSION_REGISTERS["software"]
+        else:
+            self.sw_version_registers = VERSION_REGISTERS["software"]
+            self.hw_version_registers = ()
+        self.registerAttribute(
+            [r for r in (*self.sw_version_registers, *self.hw_version_registers) if REGISTERS[r][self.kind]]
         )
 
         super().__init__(
@@ -100,6 +120,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             name=DOMAIN,
             update_interval=SCAN_INTERVAL,
         )
+        self.update_device_info()
 
     async def _async_update_data(self):
         """Update data via library."""
@@ -113,6 +134,31 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             "Fetched %d registers in %.2f s", len(data), time.monotonic() - start_time
         )
         return data
+
+    def has_value(self, register) -> bool:
+        """True when the last update read this register and it is fitted (not None)."""
+        return (
+            self.data is not None
+            and self.data.get(register) is not None
+            and register not in self.thermia.unread
+        )
+
+    def _version(self, registers):
+        if not registers or not all(self.has_value(r) for r in registers):
+            return None
+        return ".".join(str(int(self.data[r])) for r in registers)
+
+    def update_device_info(self):
+        """Describe the device; versions come from the last update."""
+        name = MODEL_NAMES[self.kind]
+        self.device_info = DeviceInfo(
+            identifiers={(DOMAIN, self.entry_id)},
+            name=name,
+            manufacturer=name.split(" ", 1)[0],
+            model=name,
+            sw_version=self._version(self.sw_version_registers),
+            hw_version=self._version(self.hw_version_registers),
+        )
 
     def registerAttribute(self, attribute):
         if type(attribute) is list:

@@ -1,8 +1,10 @@
 import logging
 
-from homeassistant.components.sensor import SensorStateClass
-from homeassistant.helpers.entity import Entity
 from genesis_wp.const import REGISTERS
+from homeassistant.components.sensor import SensorDeviceClass
+from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorStateClass
+from homeassistant.const import PERCENTAGE
 
 from .const import ATTR_CLASS
 from .const import ATTR_DEFAULT_ENABLED
@@ -15,210 +17,134 @@ from .const import HEATPUMP_ALARMS
 from .const import HEATPUMP_ATTRIBUTES
 from .const import HEATPUMP_SENSOR
 from .const import SENSOR_TYPES
+from .const import UNIT_AMPERE
+from .const import UNIT_ENERGY
+from .const import UNIT_HOURS
+from .const import UNIT_KILOWATT
+from .const import UNIT_TEMPERATURE
+from .const import UNIT_VOLTAGE
+from .const import UNIT_WATT
 
 _LOGGER = logging.getLogger(__name__)
 
+# Device and state class follow the unit unless a SENSOR_TYPES entry names them.
+UNIT_CLASSES = {
+    UNIT_TEMPERATURE: (SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT),
+    UNIT_KILOWATT: (SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+    UNIT_WATT: (SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
+    UNIT_VOLTAGE: (SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT),
+    UNIT_AMPERE: (SensorDeviceClass.CURRENT, SensorStateClass.MEASUREMENT),
+    UNIT_ENERGY: (SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
+    UNIT_HOURS: (SensorDeviceClass.DURATION, SensorStateClass.TOTAL_INCREASING),
+    PERCENTAGE: (None, SensorStateClass.MEASUREMENT),
+}
+
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    """Add Thermia entities from a config_entry."""
+    """Add the heat pump's sensors from a config_entry."""
     coordinator = hass.data[DOMAIN][config_entry.entry_id]
 
-    sensors = []
-
-    device_info = coordinator.device_info
-
-    sensors.append(ThermiaHeatpumpSensor(coordinator, HEATPUMP_SENSOR, device_info))
+    sensors = [ThermiaHeatpumpSensor(coordinator, HEATPUMP_SENSOR)]
     for sensor in SENSOR_TYPES:
         if REGISTERS[sensor][coordinator.kind]:
-            sensors.append(ThermiaGenericSensor(coordinator, sensor, device_info))
+            sensors.append(ThermiaGenericSensor(coordinator, sensor))
     async_add_entities(sensors, False)
 
 
-class ThermiaHeatpumpSensor(Entity):
-    """Define a Thermia heatpump sensor."""
+class RegisterSensor(SensorEntity):
+    """A sensor fed by registers of the coordinator's last update."""
 
-    def __init__(self, coordinator, kind, device_info):
+    _attr_should_poll = False
+
+    def __init__(self, coordinator, kind):
         """Initialize."""
-        self._name = "Heatpump"
-        # self._name = f"{coordinator.data[ATTR_MODEL]} {SENSOR_TYPES[kind][ATTR_LABEL]}"
-        self._unique_id = f"{coordinator.entry_id}_heatpump"
-        self._device_info = device_info
         self.coordinator = coordinator
         self.kind = kind
-        self._attrs = {}
+        self._attr_unique_id = f"{coordinator.entry_id}_{kind}"
+        self._attr_device_info = coordinator.device_info
+
+    def _subscribed(self):
+        return [self.kind]
 
     @property
-    def name(self):
-        """Return the name."""
-        return self._name
+    def available(self):
+        """Unavailable when the update failed, or this register is not fitted or was not read."""
+        return self.coordinator.last_update_success and self.coordinator.has_value(self.kind)
+
+    async def async_added_to_hass(self):
+        """Subscribe the registers and follow coordinator updates."""
+        await super().async_added_to_hass()
+        self.coordinator.registerAttribute(self._subscribed())
+        self.async_on_remove(
+            self.coordinator.async_add_listener(self.async_write_ha_state)
+        )
+
+    async def async_update(self):
+        """Update the heat pump entity."""
+        await self.coordinator.async_request_refresh()
+
+
+class ThermiaHeatpumpSensor(RegisterSensor):
+    """The heat pump's operating state, with the main readings as attributes."""
+
+    _attr_name = "Heatpump"
+    _attr_entity_registry_enabled_default = True
+
+    def __init__(self, coordinator, kind):
+        """Initialize."""
+        super().__init__(coordinator, kind)
+        self._attr_unique_id = f"{coordinator.entry_id}_heatpump"
+
+    def _subscribed(self):
+        return [self.kind, *(attr[0] for attr in HEATPUMP_ATTRIBUTES), *HEATPUMP_ALARMS]
 
     @property
-    def state(self):
+    def native_value(self):
         """Return the state."""
-        val = self.coordinator.data.get(self.kind)
-        return val
+        return self.coordinator.data.get(self.kind)
 
     @property
     def extra_state_attributes(self):
-        """Return the state attributes."""
+        """Return the main readings."""
+        attrs = {}
         for attr in HEATPUMP_ATTRIBUTES:
             label = (attr[0].split("_", 1)[-1]).title()
             val = self.coordinator.data.get(attr[0])
-            if attr[1]:
+            if attr[1] and val is not None:
                 val = f"{val} {attr[1]}"
-            self._attrs[label] = val
+            attrs[label] = val
         if self.has_alarm():
-            self._attrs["Active alarms"] = ""
-        return self._attrs
+            attrs["Active alarms"] = ""
+        return attrs
 
     @property
     def icon(self):
         """Return the icon."""
         if self.has_alarm():
-            return "mdi-alert"
-        return "mdi-pulse"
-
-    @property
-    def unique_id(self):
-        """Return a unique_id for this entity."""
-        return self._unique_id
-
-    @property
-    def unit_of_measurement(self):
-        """Return the unit the value is expressed in."""
-        return SENSOR_TYPES[self.kind].get(ATTR_UNIT, None)
-
-    @property
-    def available(self):
-        """Return True if entity is available."""
-        return self.coordinator.last_update_success
-
-    @property
-    def should_poll(self):
-        """Return the polling requirement of the entity."""
-        return False
-
-    @property
-    def device_info(self):
-        """Return the device info."""
-        return self._device_info
-
-    @property
-    def entity_registry_enabled_default(self):
-        """Return if the entity should be enabled when first added to the entity registry."""
-        return True
+            return "mdi:alert"
+        return "mdi:pulse"
 
     def has_alarm(self):
-        for alarm in HEATPUMP_ALARMS:
-            if self.coordinator.data.get(alarm):
-                return True
-        return False
-
-    def async_write_ha_state(self):
-        super().async_write_ha_state()
-
-    async def async_added_to_hass(self):
-        register_attr = [self.kind]
-        for attr in HEATPUMP_ATTRIBUTES:
-            register_attr.append(attr[0])
-        self.coordinator.registerAttribute(register_attr)
-        """Connect to dispatcher listening for entity data notifications."""
-        self.async_on_remove(
-            self.coordinator.async_add_listener(self.async_write_ha_state)
-        )
-
-    async def async_update(self):
-        """Update Thermia entity."""
-        await self.coordinator.async_request_refresh()
+        return any(self.coordinator.data.get(alarm) for alarm in HEATPUMP_ALARMS)
 
 
-class ThermiaGenericSensor(Entity):
-    """Define a Thermia generic sensor."""
+class ThermiaGenericSensor(RegisterSensor):
+    """One register as a sensor."""
 
-    def __init__(self, coordinator, kind, device_info):
+    def __init__(self, coordinator, kind):
         """Initialize."""
-        self._name = f"{SENSOR_TYPES[kind][ATTR_LABEL]}"
-        # self._name = f"{coordinator.data[ATTR_MODEL]} {SENSOR_TYPES[kind][ATTR_LABEL]}"
-        self._unique_id = f"{coordinator.entry_id}_{kind}"
-        self._device_info = device_info
-        self.coordinator = coordinator
-        self.kind = kind
-        self._attrs = {}
+        super().__init__(coordinator, kind)
+        meta = SENSOR_TYPES[kind]
+        unit = meta.get(ATTR_UNIT)
+        device_class, state_class = UNIT_CLASSES.get(unit, (None, None))
+        self._attr_name = meta[ATTR_LABEL]
+        self._attr_icon = meta[ATTR_ICON].replace("mdi-", "mdi:")
+        self._attr_native_unit_of_measurement = unit
+        self._attr_device_class = meta.get(ATTR_CLASS, device_class)
+        self._attr_state_class = meta.get(ATTR_STATE_CLASS, state_class)
+        self._attr_entity_registry_enabled_default = meta[ATTR_DEFAULT_ENABLED]
 
     @property
-    def name(self):
-        """Return the name."""
-        return self._name
-
-    @property
-    def state(self):
+    def native_value(self):
         """Return the state."""
-        val = self.coordinator.data.get(self.kind)
-        return val
-
-    @property
-    def extra_state_attributes(self):
-        """Return the state attributes."""
-        return self._attrs
-
-    @property
-    def icon(self):
-        """Return the icon."""
-        return SENSOR_TYPES[self.kind][ATTR_ICON]
-
-    @property
-    def unique_id(self):
-        """Return a unique_id for this entity."""
-        return self._unique_id
-
-    @property
-    def unit_of_measurement(self):
-        """Return the unit the value is expressed in."""
-        return SENSOR_TYPES[self.kind].get(ATTR_UNIT, None)
-
-    @property
-    def device_class(self):
-        """Return de device class of the sensor."""
-        return SENSOR_TYPES[self.kind].get(ATTR_CLASS, None)
-
-    @property
-    def state_class(self):
-        """Return de device class of the sensor."""
-        return SENSOR_TYPES[self.kind].get(
-            ATTR_STATE_CLASS, SensorStateClass.MEASUREMENT
-        )
-
-    @property
-    def available(self):
-        """Return True if entity is available."""
-        return self.coordinator.last_update_success
-
-    @property
-    def should_poll(self):
-        """Return the polling requirement of the entity."""
-        return False
-
-    @property
-    def device_info(self):
-        """Return the device info."""
-        return self._device_info
-
-    def async_write_ha_state(self):
-        super().async_write_ha_state()
-
-    @property
-    def entity_registry_enabled_default(self):
-        """Return if the entity should be enabled when first added to the entity registry."""
-        return SENSOR_TYPES[self.kind][ATTR_DEFAULT_ENABLED]
-
-    async def async_added_to_hass(self):
-        await super().async_added_to_hass()
-        """Connect to dispatcher listening for entity data notifications."""
-        self.coordinator.registerAttribute(self.kind)
-        self.async_on_remove(
-            self.coordinator.async_add_listener(self.async_write_ha_state)
-        )
-
-    async def async_update(self):
-        """Update Thermia entity."""
-        await self.coordinator.async_request_refresh()
+        return self.coordinator.data.get(self.kind)
