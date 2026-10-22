@@ -206,7 +206,9 @@ This file names commands only by intent. Arguments, flags and exit codes come fr
 
 ## Tests
 
-- pytest with pytest-homeassistant-custom-component. Tests stay hermetic: loopback networking only, no real device, no secrets.
+- pytest with pytest-homeassistant-custom-component. Tests stay hermetic: loopback networking only, no real device, no secrets. `tests/conftest.py` enforces this process-wide and re-applies itself around every test, because pytest-socket resets the socket functions per test. Don't weaken it.
+- Environment: HA 2026.10.0 needs Python ≥ 3.14.2, newer than the host's 3.13. The repo `.venv` (gitignored) runs on a uv-managed CPython 3.14. Set it up with `uv venv --python 3.14 .venv`, then `uv pip install --python .venv/bin/python -r requirements_test.txt`. `requirements_test.txt` pins homeassistant, pytest-homeassistant-custom-component, and the genesis-wp commit with its emulator extra. Run the gate with `.venv/bin/python -m pytest`.
+- Emulator tests request the `start_emulator` fixture, which pulls in `socket_enabled`. Profiles and constants live in `tests/harness.py`.
 - Integration tests start genesis-wp-emulator on loopback with each firmware profile the library ships (currently 6.0.6 and 6.1.5) and drive config flow, setup and a coordinator refresh against it.
 - Writable entities are tested only with the write opt-in enabled and only against the emulator.
 - Fixtures and firmware profiles belong to the library repo. Don't copy or edit them here.
