@@ -2,13 +2,12 @@ import logging
 
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.helpers.entity import Entity
-from pythermiagenesis.const import REGISTERS
+from genesis_wp.const import REGISTERS
 
 from .const import ATTR_CLASS
 from .const import ATTR_DEFAULT_ENABLED
 from .const import ATTR_ICON
 from .const import ATTR_LABEL
-from .const import ATTR_MANUFACTURER
 from .const import ATTR_STATE_CLASS
 from .const import ATTR_UNIT
 from .const import DOMAIN
@@ -16,10 +15,6 @@ from .const import HEATPUMP_ALARMS
 from .const import HEATPUMP_ATTRIBUTES
 from .const import HEATPUMP_SENSOR
 from .const import SENSOR_TYPES
-
-ATTR_COUNTER = "counter"
-ATTR_FIRMWARE = "firmware"
-ATTR_MODEL = "Diplomat Inverter Duo"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,13 +25,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     sensors = []
 
-    device_info = {
-        "identifiers": {(DOMAIN, ATTR_MODEL)},
-        "name": ATTR_MODEL,
-        "manufacturer": ATTR_MANUFACTURER,
-        "model": ATTR_MODEL,
-        "sw_version": coordinator.data.get(ATTR_FIRMWARE),
-    }
+    device_info = coordinator.device_info
 
     sensors.append(ThermiaHeatpumpSensor(coordinator, HEATPUMP_SENSOR, device_info))
     for sensor in SENSOR_TYPES:
@@ -52,7 +41,7 @@ class ThermiaHeatpumpSensor(Entity):
         """Initialize."""
         self._name = "Heatpump"
         # self._name = f"{coordinator.data[ATTR_MODEL]} {SENSOR_TYPES[kind][ATTR_LABEL]}"
-        self._unique_id = f"{DOMAIN}_heatpump"
+        self._unique_id = f"{coordinator.entry_id}_heatpump"
         self._device_info = device_info
         self.coordinator = coordinator
         self.kind = kind
@@ -150,7 +139,7 @@ class ThermiaGenericSensor(Entity):
         """Initialize."""
         self._name = f"{SENSOR_TYPES[kind][ATTR_LABEL]}"
         # self._name = f"{coordinator.data[ATTR_MODEL]} {SENSOR_TYPES[kind][ATTR_LABEL]}"
-        self._unique_id = f"{DOMAIN}_{kind}"
+        self._unique_id = f"{coordinator.entry_id}_{kind}"
         self._device_info = device_info
         self.coordinator = coordinator
         self.kind = kind

@@ -1,4 +1,4 @@
-import pythermiagenesis.const as thermiaconst
+import genesis_wp.const as thermiaconst
 from homeassistant.components.climate.const import ATTR_CURRENT_TEMPERATURE
 from homeassistant.components.climate.const import ATTR_MAX_TEMP
 from homeassistant.components.climate.const import ATTR_MIN_TEMP
@@ -40,8 +40,11 @@ UNIT_ENERGY = "kWh"
 
 DOMAIN = "genesis_wp"
 
-MODEL_MEGA = "mega"
-MODEL_INVERTER = "inverter"
+CONF_UNIT = "unit"
+CONF_MODEL = "model"
+DEFAULT_PORT = 502
+DEFAULT_UNIT = 1
+DEFAULT_MODEL = thermiaconst.MODEL_STIEBEL_WPE_I_071
 
 ICON_DINPUT = "mdi-toggle-switch"
 ICON_INPUT = "mdi-gauge"

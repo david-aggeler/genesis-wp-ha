@@ -99,6 +99,12 @@ def pytest_runtest_teardown(item, nextitem) -> None:
     _install_guard()
 
 
+@pytest.fixture(autouse=True)
+def auto_enable_custom_integrations(enable_custom_integrations):
+    """Let Home Assistant load custom_components/genesis_wp in every test."""
+    yield
+
+
 @pytest.fixture
 async def start_emulator(socket_enabled) -> AsyncIterator[Callable[..., Emulator]]:
     """Factory: ``await start_emulator(profile_name, **options)`` -> running Emulator on a free loopback port."""

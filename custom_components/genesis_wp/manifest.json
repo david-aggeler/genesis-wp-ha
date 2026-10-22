@@ -10,7 +10,7 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/david-aggeler/genesis-wp-ha/issues",
   "requirements": [
-    "pythermiagenesis==0.1.8"
+    "genesis-wp@git+https://github.com/david-aggeler/genesis-wp@266448d0a3dad7bf8c663a0db8741a1bd9393f76"
   ],
   "version": "0.1.0"
 }

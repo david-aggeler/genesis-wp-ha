@@ -5,15 +5,15 @@
       "user": {
         "description": "Set up a heat pump on the Thermia Genesis controller platform.",
         "data": {
-          "host": "Hostname or IP address",
-          "port": "Modbus port",
-          "type": "Heatpump model"
+          "host": "Host name or IP address",
+          "port": "Modbus TCP port",
+          "unit": "Modbus unit ID",
+          "model": "Heat pump model"
         }
       }
     },
     "error": {
-      "wrong_host": "Invalid hostname or IP address.",
-      "connection_error": "Connection error."
+      "cannot_connect": "The heat pump did not answer a read request."
     },
     "abort": {
       "already_configured": "This heat pump is already configured."

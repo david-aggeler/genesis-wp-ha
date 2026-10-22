@@ -3,7 +3,7 @@ import logging
 from homeassistant.components.number import NumberEntity
 from homeassistant.const import PERCENTAGE
 from homeassistant.const import UnitOfTemperature
-from pythermiagenesis.const import REGISTERS
+from genesis_wp.const import REGISTERS
 
 from .const import ATTR_DEFAULT_ENABLED
 from .const import ATTR_ICON

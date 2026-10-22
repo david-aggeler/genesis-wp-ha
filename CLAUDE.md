@@ -228,7 +228,7 @@ This file names commands only by intent. Arguments, flags and exit codes come fr
 
 - `LICENSE` — MIT with the upstream notice; see *License and third-party material*.
 - `openbrain-client.yaml` — committed product truth for `openbrain-client` (product, process, placeholders).
-- `custom_components/genesis_wp/` — the integration, domain `genesis_wp`. It still requires `pythermiagenesis==0.1.8` until the library switch (genesis-wp-ha change_request-3) lands.
+- `custom_components/genesis_wp/` — the integration, domain `genesis_wp`, on the read-only genesis-wp client. `manifest.json` pins the library as `genesis-wp@git+…@<sha>`, written without spaces because hassfest rejects them. `requirements_test.txt` must pin the same SHA, and `tests/test_manifest.py` checks that it does.
 - `hacs.json` — HACS metadata.
 - `tests/` — pytest suite inherited from upstream.
 - `.github/workflows/tests.yaml` — hosted, upstream-inherited; see *The gate*.

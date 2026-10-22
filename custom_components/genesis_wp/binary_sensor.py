@@ -1,18 +1,13 @@
 import logging
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
-from pythermiagenesis.const import REGISTERS
+from genesis_wp.const import REGISTERS
 
 from .const import ATTR_CLASS
 from .const import ATTR_DEFAULT_ENABLED
 from .const import ATTR_LABEL
-from .const import ATTR_MANUFACTURER
 from .const import BINARY_SENSOR_TYPES
 from .const import DOMAIN
-
-ATTR_COUNTER = "counter"
-ATTR_FIRMWARE = "firmware"
-ATTR_MODEL = "Diplomat Inverter Duo"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -23,13 +18,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     sensors = []
 
-    device_info = {
-        "identifiers": {(DOMAIN, ATTR_MODEL)},
-        "name": ATTR_MODEL,
-        "manufacturer": ATTR_MANUFACTURER,
-        "model": ATTR_MODEL,
-        "sw_version": coordinator.data.get(ATTR_FIRMWARE),
-    }
+    device_info = coordinator.device_info
 
     for sensor in BINARY_SENSOR_TYPES:
         if REGISTERS[sensor][coordinator.kind]:
@@ -44,7 +33,7 @@ class ThermiaBinarySensor(BinarySensorEntity):
         """Initialize."""
         self._name = f"{BINARY_SENSOR_TYPES[kind][ATTR_LABEL]}"
         # self._name = f"{coordinator.data[ATTR_MODEL]} {SENSOR_TYPES[kind][ATTR_LABEL]}"
-        self._unique_id = f"{DOMAIN}_{kind}"
+        self._unique_id = f"{coordinator.entry_id}_{kind}"
         self._device_info = device_info
         self.coordinator = coordinator
         self.kind = kind
