@@ -52,7 +52,7 @@ class ThermiaHeatpumpSensor(Entity):
         """Initialize."""
         self._name = "Heatpump"
         # self._name = f"{coordinator.data[ATTR_MODEL]} {SENSOR_TYPES[kind][ATTR_LABEL]}"
-        self._unique_id = "thermiagenesis_heatpump"
+        self._unique_id = f"{DOMAIN}_heatpump"
         self._device_info = device_info
         self.coordinator = coordinator
         self.kind = kind
@@ -150,7 +150,7 @@ class ThermiaGenericSensor(Entity):
         """Initialize."""
         self._name = f"{SENSOR_TYPES[kind][ATTR_LABEL]}"
         # self._name = f"{coordinator.data[ATTR_MODEL]} {SENSOR_TYPES[kind][ATTR_LABEL]}"
-        self._unique_id = f"thermiagenesis_{kind}"
+        self._unique_id = f"{DOMAIN}_{kind}"
         self._device_info = device_info
         self.coordinator = coordinator
         self.kind = kind

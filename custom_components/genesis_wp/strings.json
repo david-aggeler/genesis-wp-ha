@@ -1,9 +1,9 @@
 {
-  "title": "Thermia Heatpump: {model}",
+  "title": "Genesis WP heat pump: {model}",
   "config": {
     "step": {
       "user": {
-        "description": "Set up Thermia Genesis Heatpump integration.",
+        "description": "Set up a heat pump on the Thermia Genesis controller platform.",
         "data": {
           "host": "Hostname or IP address",
           "port": "Modbus port",
@@ -16,7 +16,7 @@
       "connection_error": "Connection error."
     },
     "abort": {
-      "already_configured": "This heatpump is already configured."
+      "already_configured": "This heat pump is already configured."
     }
   }
 }

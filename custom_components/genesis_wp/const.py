@@ -38,7 +38,7 @@ UNIT_WATT = "W"
 UNIT_ENERGY = "kWh"
 
 
-DOMAIN = "thermiagenesis"
+DOMAIN = "genesis_wp"
 
 MODEL_MEGA = "mega"
 MODEL_INVERTER = "inverter"

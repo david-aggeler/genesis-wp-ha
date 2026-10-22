@@ -1,0 +1,16 @@
+{
+  "domain": "genesis_wp",
+  "name": "Genesis WP",
+  "codeowners": [
+    "@david-aggeler"
+  ],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/david-aggeler/genesis-wp-ha",
+  "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/david-aggeler/genesis-wp-ha/issues",
+  "requirements": [
+    "pythermiagenesis==0.1.8"
+  ],
+  "version": "0.1.0"
+}

@@ -1,1 +1,1 @@
-"""Tests for Thermia Genesis integration."""
+"""Tests for genesis_wp integration."""

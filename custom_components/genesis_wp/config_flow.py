@@ -117,7 +117,7 @@ class ThermiaGenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 #                 )
 #                 await thermia.async_update()
 #
-#                 await self.async_set_unique_id("thermiagenesis")
+#                 await self.async_set_unique_id(DOMAIN)
 #                 self._abort_if_unique_id_configured()
 #
 #                 title = f"{thermia.model}"

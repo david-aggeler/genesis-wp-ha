@@ -1,14 +1,14 @@
 import logging
 
-from homeassistant.components.switch import SwitchEntity
+from homeassistant.components.binary_sensor import BinarySensorEntity
 from pythermiagenesis.const import REGISTERS
 
 from .const import ATTR_CLASS
 from .const import ATTR_DEFAULT_ENABLED
 from .const import ATTR_LABEL
 from .const import ATTR_MANUFACTURER
+from .const import BINARY_SENSOR_TYPES
 from .const import DOMAIN
-from .const import SWITCH_TYPES
 
 ATTR_COUNTER = "counter"
 ATTR_FIRMWARE = "firmware"
@@ -31,20 +31,20 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         "sw_version": coordinator.data.get(ATTR_FIRMWARE),
     }
 
-    for sensor in SWITCH_TYPES:
+    for sensor in BINARY_SENSOR_TYPES:
         if REGISTERS[sensor][coordinator.kind]:
-            sensors.append(ThermiaSwitch(coordinator, sensor, device_info))
+            sensors.append(ThermiaBinarySensor(coordinator, sensor, device_info))
     async_add_entities(sensors, False)
 
 
-class ThermiaSwitch(SwitchEntity):
-    """Define a Thermia generic switch."""
+class ThermiaBinarySensor(BinarySensorEntity):
+    """Define a Thermia generic sensor."""
 
     def __init__(self, coordinator, kind, device_info):
         """Initialize."""
-        self._name = f"{SWITCH_TYPES[kind][ATTR_LABEL]}"
+        self._name = f"{BINARY_SENSOR_TYPES[kind][ATTR_LABEL]}"
         # self._name = f"{coordinator.data[ATTR_MODEL]} {SENSOR_TYPES[kind][ATTR_LABEL]}"
-        self._unique_id = f"thermiagenesis_{kind}"
+        self._unique_id = f"{DOMAIN}_{kind}"
         self._device_info = device_info
         self.coordinator = coordinator
         self.kind = kind
@@ -64,9 +64,9 @@ class ThermiaSwitch(SwitchEntity):
     @property
     def device_class(self):
         """Return the device class."""
-        if ATTR_CLASS not in SWITCH_TYPES[self.kind]:
+        if ATTR_CLASS not in BINARY_SENSOR_TYPES[self.kind]:
             return None
-        return SWITCH_TYPES[self.kind][ATTR_CLASS]
+        return BINARY_SENSOR_TYPES[self.kind][ATTR_CLASS]
 
     @property
     def extra_state_attributes(self):
@@ -96,7 +96,7 @@ class ThermiaSwitch(SwitchEntity):
     @property
     def entity_registry_enabled_default(self):
         """Return if the entity should be enabled when first added to the entity registry."""
-        return SWITCH_TYPES[self.kind][ATTR_DEFAULT_ENABLED]
+        return BINARY_SENSOR_TYPES[self.kind][ATTR_DEFAULT_ENABLED]
 
     def async_write_ha_state(self):
         super().async_write_ha_state()
@@ -110,12 +110,4 @@ class ThermiaSwitch(SwitchEntity):
 
     async def async_update(self):
         """Update Thermia entity."""
-        await self.coordinator.wantsRefresh(self.kind)
-
-    async def async_turn_on(self, **kwargs):
-        """Turn the entity on."""
-        await self.coordinator._async_set_data(self.kind, True)
-
-    async def async_turn_off(self, **kwargs):
-        """Turn the entity on."""
-        await self.coordinator._async_set_data(self.kind, False)
+        await self.coordinator.async_request_refresh()

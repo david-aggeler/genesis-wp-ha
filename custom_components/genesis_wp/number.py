@@ -57,7 +57,7 @@ class ThermiaGenericNumber(NumberEntity):
         """Initialize."""
         self._name = f"{NUMBER_TYPES[kind][ATTR_LABEL]}"
         # self._name = f"{coordinator.data[ATTR_MODEL]} {SENSOR_TYPES[kind][ATTR_LABEL]}"
-        self._unique_id = f"thermiagenesis_{kind}"
+        self._unique_id = f"{DOMAIN}_{kind}"
         self._device_info = device_info
         self.coordinator = coordinator
         self.kind = kind

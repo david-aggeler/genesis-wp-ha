@@ -63,7 +63,7 @@ class ThermiaClimateSensor(ClimateEntity):
         self.meta = CLIMATE_TYPES[kind]
         self._name = f"{self.meta[ATTR_LABEL]}"
         # self._name = f"{coordinator.data[ATTR_MODEL]} {SENSOR_TYPES[kind][ATTR_LABEL]}"
-        self._unique_id = f"thermiagenesis_{kind}"
+        self._unique_id = f"{DOMAIN}_{kind}"
         self._device_info = device_info
         self.coordinator = coordinator
         self._hvac_mode = HVACAction.IDLE
