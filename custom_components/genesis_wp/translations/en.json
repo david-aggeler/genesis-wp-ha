@@ -10,13 +10,22 @@
           "unit": "Modbus unit ID",
           "model": "Heat pump model"
         }
+      },
+      "reconfigure": {
+        "description": "Change how Home Assistant reaches this heat pump. Its entities and history stay.",
+        "data": {
+          "host": "Host name or IP address",
+          "port": "Modbus TCP port",
+          "unit": "Modbus unit ID"
+        }
       }
     },
     "error": {
       "cannot_connect": "The heat pump did not answer a read request."
     },
     "abort": {
-      "already_configured": "This heat pump is already configured."
+      "already_configured": "This heat pump is already configured.",
+      "reconfigure_successful": "The heat pump connection was updated."
     }
   }
 }

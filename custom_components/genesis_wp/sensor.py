@@ -55,12 +55,13 @@ class RegisterSensor(SensorEntity):
     """A sensor fed by registers of the coordinator's last update."""
 
     _attr_should_poll = False
+    _attr_has_entity_name = True
 
     def __init__(self, coordinator, kind):
         """Initialize."""
         self.coordinator = coordinator
         self.kind = kind
-        self._attr_unique_id = f"{coordinator.entry_id}_{kind}"
+        self._attr_unique_id = coordinator.unique_id(kind)
         self._attr_device_info = coordinator.device_info
 
     def _subscribed(self):

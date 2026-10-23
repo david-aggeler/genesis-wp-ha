@@ -19,7 +19,7 @@ def entry_data(emu) -> dict:
 
 async def setup_entry(hass, emu) -> MockConfigEntry:
     """Add and set up a config entry for a running emulator."""
-    entry = MockConfigEntry(domain=DOMAIN, data=entry_data(emu), unique_id=f"{emu.host}:{emu.port}:{UNIT}")
+    entry = MockConfigEntry(domain=DOMAIN, data=entry_data(emu))
     entry.add_to_hass(hass)
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()

@@ -29,11 +29,13 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 class ThermiaBinarySensor(BinarySensorEntity):
     """Define a Thermia generic sensor."""
 
+    _attr_has_entity_name = True
+
     def __init__(self, coordinator, kind, device_info):
         """Initialize."""
         self._name = f"{BINARY_SENSOR_TYPES[kind][ATTR_LABEL]}"
         # self._name = f"{coordinator.data[ATTR_MODEL]} {SENSOR_TYPES[kind][ATTR_LABEL]}"
-        self._unique_id = f"{coordinator.entry_id}_{kind}"
+        self._unique_id = coordinator.unique_id(kind)
         self._device_info = device_info
         self.coordinator = coordinator
         self.kind = kind

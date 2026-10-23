@@ -7,6 +7,8 @@ from genesis_wp import ThermiaException
 from genesis_wp import ThermiaGenesis
 from genesis_wp import const as genesis_const
 from genesis_wp.const import GENESIS_17_MODELS
+from genesis_wp.const import KEY_ADDRESS
+from genesis_wp.const import KEY_REG_TYPE
 from genesis_wp.const import MODEL_NAMES
 from genesis_wp.const import REGISTERS
 from homeassistant.config_entries import ConfigEntry
@@ -142,6 +144,14 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             and self.data.get(register) is not None
             and register not in self.thermia.unread
         )
+
+    def unique_id(self, register) -> str:
+        """Registry key of a register entity: entry ID plus the firmware's register type and address.
+
+        Never the library's attribute name, which may be renamed, nor host or port, which change.
+        """
+        spec = REGISTERS[register]
+        return f"{self.entry_id}_{spec[KEY_REG_TYPE]}_{spec[KEY_ADDRESS]}"
 
     def _version(self, registers):
         if not registers or not all(self.has_value(r) for r in registers):
