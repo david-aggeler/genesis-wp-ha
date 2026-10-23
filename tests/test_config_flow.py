@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 
-import pytest
 from custom_components.genesis_wp.const import CONF_UNIT
 from custom_components.genesis_wp.const import DOMAIN
 from homeassistant import config_entries
@@ -124,13 +123,13 @@ async def test_integration_never_logs_the_host(hass, start_emulator, caplog):
 
 
 # DHF-REQ: genesis-wp-ha/requirement-4  DHF-TEST: genesis-wp-ha/ac-11
-@pytest.mark.xfail(
-    strict=True,
-    reason="genesis-wp issue-1: the library logs the host when it connects; fixed upstream, then the manifest pin moves",
-)
 async def test_library_never_logs_the_host(hass, start_emulator, caplog):
     caplog.set_level(logging.DEBUG)
     emu = await start_emulator()
     entry = await setup_entry(hass, emu)
     await hass.data[DOMAIN][entry.entry_id].async_refresh()
-    assert _host_records(caplog, emu.host, "genesis_wp") == []
+    await emu.stop()  # the failure path must not leak the host either
+    await hass.data[DOMAIN][entry.entry_id].async_refresh()
+    # The in-process emulator logs its own bind address: test topology, not the device.
+    library = [r for r in _host_records(caplog, emu.host, "genesis_wp") if not r.name.startswith("genesis_wp.emulator")]
+    assert library == []
