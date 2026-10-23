@@ -7,9 +7,14 @@ from genesis_wp.const import MODEL_NAMES
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST
 from homeassistant.const import CONF_PORT
+from homeassistant.data_entry_flow import section
+from homeassistant.helpers.selector import NumberSelector
+from homeassistant.helpers.selector import NumberSelectorConfig
+from homeassistant.helpers.selector import NumberSelectorMode
 from homeassistant.helpers.selector import selector
 
 from . import create_client
+from .const import CONF_ADVANCED
 from .const import CONF_MODEL
 from .const import CONF_UNIT
 from .const import DEFAULT_MODEL
@@ -51,15 +56,33 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return False
         return True
 
+    @staticmethod
+    def _flatten(user_input):
+        """Form input to entry data: lift port and unit out of their section, as ints."""
+        advanced = user_input[CONF_ADVANCED]
+        data = {key: value for key, value in user_input.items() if key != CONF_ADVANCED}
+        data[CONF_HOST] = data[CONF_HOST].strip()
+        data[CONF_PORT] = int(advanced[CONF_PORT])
+        data[CONF_UNIT] = int(advanced[CONF_UNIT])
+        return data
+
+    @staticmethod
+    def _number_box(low, high):
+        return NumberSelector(
+            NumberSelectorConfig(min=low, max=high, step=1, mode=NumberSelectorMode.BOX)
+        )
+
     def _schema(self, defaults, with_model=True):
+        # Port and unit sit in a collapsed section: nearly every install keeps 502 and 1.
+        advanced = vol.Schema(
+            {
+                vol.Required(CONF_PORT, default=defaults[CONF_PORT]): self._number_box(1, 65535),
+                vol.Required(CONF_UNIT, default=defaults[CONF_UNIT]): self._number_box(0, 255),
+            }
+        )
         fields = {
             vol.Required(CONF_HOST, default=defaults[CONF_HOST]): str,
-            vol.Required(CONF_PORT, default=defaults[CONF_PORT]): vol.All(
-                vol.Coerce(int), vol.Range(min=1, max=65535)
-            ),
-            vol.Required(CONF_UNIT, default=defaults[CONF_UNIT]): vol.All(
-                vol.Coerce(int), vol.Range(min=0, max=255)
-            ),
+            vol.Required(CONF_ADVANCED): section(advanced, {"collapsed": True}),
         }
         if with_model:
             fields[vol.Required(CONF_MODEL, default=defaults[CONF_MODEL])] = selector(
@@ -78,7 +101,7 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Handle the initial step."""
         errors = {}
         if user_input is not None:
-            user_input = {**user_input, CONF_HOST: user_input[CONF_HOST].strip()}
+            user_input = self._flatten(user_input)
             # No unique_id: HA forbids host-derived ones, so duplicates are found by data match.
             self._async_abort_entries_match(self._connection(user_input))
             if await self._try_connect(user_input, errors):
@@ -101,7 +124,7 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         entry = self._get_reconfigure_entry()
         errors = {}
         if user_input is not None:
-            user_input = {**user_input, CONF_HOST: user_input[CONF_HOST].strip()}
+            user_input = self._flatten(user_input)
             connection = self._connection(user_input)
             for other in self._async_current_entries(include_ignore=False):
                 if other.entry_id != entry.entry_id and self._connection(other.data) == connection:

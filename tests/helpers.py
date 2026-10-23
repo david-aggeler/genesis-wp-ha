@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from custom_components.genesis_wp.const import CONF_ADVANCED
 from custom_components.genesis_wp.const import CONF_MODEL
 from custom_components.genesis_wp.const import CONF_UNIT
 from custom_components.genesis_wp.const import DOMAIN
@@ -15,6 +16,14 @@ from .harness import WPE_I_KIND
 
 def entry_data(emu) -> dict:
     return {CONF_HOST: emu.host, CONF_PORT: emu.port, CONF_UNIT: UNIT, CONF_MODEL: WPE_I_KIND}
+
+
+def form_input(data, with_model=True) -> dict:
+    """Entry data as the config flow form submits it: port and unit inside the advanced section."""
+    fields = {CONF_HOST: data[CONF_HOST], CONF_ADVANCED: {CONF_PORT: data[CONF_PORT], CONF_UNIT: data[CONF_UNIT]}}
+    if with_model:
+        fields[CONF_MODEL] = data[CONF_MODEL]
+    return fields
 
 
 async def setup_entry(hass, emu) -> MockConfigEntry:

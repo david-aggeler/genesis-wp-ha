@@ -33,6 +33,7 @@ DOMAIN = "genesis_wp"
 
 CONF_UNIT = "unit"
 CONF_MODEL = "model"
+CONF_ADVANCED = "advanced"  # config flow section holding port and unit; never stored in entry data
 DEFAULT_PORT = 502
 DEFAULT_UNIT = 1
 DEFAULT_MODEL = thermiaconst.MODEL_STIEBEL_WPE_I_071

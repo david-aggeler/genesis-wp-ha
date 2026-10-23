@@ -4,15 +4,20 @@ from __future__ import annotations
 
 import logging
 
+from custom_components.genesis_wp.const import CONF_ADVANCED
 from custom_components.genesis_wp.const import CONF_UNIT
 from custom_components.genesis_wp.const import DOMAIN
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST
 from homeassistant.const import CONF_PORT
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.data_entry_flow import section
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.selector import NumberSelector
+from homeassistant.helpers.selector import NumberSelectorMode
 
 from .helpers import entry_data
+from .helpers import form_input
 from .helpers import setup_entry
 
 
@@ -21,7 +26,32 @@ async def _submit(hass, data):
         DOMAIN, context={"source": config_entries.SOURCE_USER}
     )
     assert result["type"] is FlowResultType.FORM
-    return await hass.config_entries.flow.async_configure(result["flow_id"], data)
+    return await hass.config_entries.flow.async_configure(result["flow_id"], form_input(data))
+
+
+def _advanced_section(schema):
+    (advanced,) = [v for k, v in schema.schema.items() if k == CONF_ADVANCED]
+    assert isinstance(advanced, section)
+    return advanced
+
+
+# DHF-REQ: genesis-wp-ha/requirement-4  DHF-TEST: genesis-wp-ha/ac-8
+async def test_port_and_unit_are_number_boxes_in_a_collapsed_section(hass, start_emulator):
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    entry = await setup_entry(hass, await start_emulator())
+    reconfigure = await entry.start_reconfigure_flow(hass)
+
+    for form in (result, reconfigure):
+        schema = form["data_schema"]
+        assert {str(k) for k in schema.schema} >= {CONF_HOST, CONF_ADVANCED}
+        assert not {CONF_PORT, CONF_UNIT} & {str(k) for k in schema.schema}
+        advanced = _advanced_section(schema)
+        assert advanced.options["collapsed"] is True
+        fields = {str(k): v for k, v in advanced.schema.schema.items()}
+        for name, low, high in ((CONF_PORT, 1, 65535), (CONF_UNIT, 0, 255)):
+            assert isinstance(fields[name], NumberSelector), name
+            config = fields[name].config
+            assert (config["mode"], config["min"], config["max"], config["step"]) == (NumberSelectorMode.BOX, low, high, 1)
 
 
 # DHF-REQ: genesis-wp-ha/requirement-4  DHF-TEST: genesis-wp-ha/ac-8
@@ -29,8 +59,19 @@ async def test_valid_input_creates_an_entry(hass, start_emulator):
     emu = await start_emulator()
     result = await _submit(hass, entry_data(emu))
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert result["data"] == entry_data(emu)
+    assert result["data"] == entry_data(emu)  # flat: the section never reaches entry data
+    assert type(result["data"][CONF_PORT]) is int and type(result["data"][CONF_UNIT]) is int
     assert emu.writes == []
+    await hass.async_block_till_done()
+
+
+# DHF-REQ: genesis-wp-ha/requirement-4  DHF-TEST: genesis-wp-ha/ac-8
+async def test_selector_floats_are_stored_as_ints(hass, start_emulator):
+    emu = await start_emulator()
+    data = {**entry_data(emu), CONF_PORT: float(emu.port), CONF_UNIT: 1.0}  # NumberSelector returns floats
+    result = await _submit(hass, data)
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert type(result["data"][CONF_PORT]) is int and type(result["data"][CONF_UNIT]) is int
     await hass.async_block_till_done()
 
 
@@ -75,9 +116,8 @@ async def test_reconfigure_to_new_host_keeps_entity_ids(hass, start_emulator):
 
     result = await entry.start_reconfigure_flow(hass)
     assert result["type"] is FlowResultType.FORM
-    new = entry_data(emu_b)
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_HOST: new[CONF_HOST], CONF_PORT: new[CONF_PORT], CONF_UNIT: new[CONF_UNIT]}
+        result["flow_id"], form_input(entry_data(emu_b), with_model=False)
     )
     await hass.async_block_till_done()
 
@@ -97,9 +137,8 @@ async def test_reconfigure_onto_another_entry_aborts(hass, start_emulator):
     await setup_entry(hass, emu_b)
 
     result = await entry.start_reconfigure_flow(hass)
-    other = entry_data(emu_b)
     result = await hass.config_entries.flow.async_configure(
-        result["flow_id"], {CONF_HOST: other[CONF_HOST], CONF_PORT: other[CONF_PORT], CONF_UNIT: other[CONF_UNIT]}
+        result["flow_id"], form_input(entry_data(emu_b), with_model=False)
     )
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "already_configured"

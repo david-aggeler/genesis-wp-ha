@@ -6,17 +6,33 @@
         "description": "Set up a heat pump on the Thermia Genesis controller platform.",
         "data": {
           "host": "Host name or IP address",
-          "port": "Modbus TCP port",
-          "unit": "Modbus unit ID",
           "model": "Heat pump model"
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "description": "Most heat pumps use port 502 and unit 1.",
+            "data": {
+              "port": "Modbus TCP port",
+              "unit": "Modbus unit ID"
+            }
+          }
         }
       },
       "reconfigure": {
         "description": "Change how Home Assistant reaches this heat pump. Its entities and history stay.",
         "data": {
-          "host": "Host name or IP address",
-          "port": "Modbus TCP port",
-          "unit": "Modbus unit ID"
+          "host": "Host name or IP address"
+        },
+        "sections": {
+          "advanced": {
+            "name": "Advanced",
+            "description": "Most heat pumps use port 502 and unit 1.",
+            "data": {
+              "port": "Modbus TCP port",
+              "unit": "Modbus unit ID"
+            }
+          }
         }
       }
     },
