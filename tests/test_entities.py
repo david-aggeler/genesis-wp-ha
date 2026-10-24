@@ -117,6 +117,12 @@ async def test_unique_ids_use_register_type_and_address(hass, start_emulator):
     expected = {("sensor", f"{entry.entry_id}_heatpump")}
     expected |= {("sensor", _unique_id(entry, r)) for r in fitted(SENSOR_TYPES)}
     expected |= {("binary_sensor", _unique_id(entry, r)) for r in fitted(BINARY_SENSOR_TYPES)}
+    settings = [r for r in fitted(c.REGISTERS) if c.REGISTERS[r][c.KEY_REG_TYPE] in ("holding", "coil")]
+    expected |= {
+        ("binary_sensor" if c.REGISTERS[r][c.KEY_REG_TYPE] == "coil" else "sensor", _unique_id(entry, r))
+        for r in settings
+        if r != c.ATTR_COIL_RESET_ALL_ALARMS
+    }
     assert actual == expected
     for _, unique_id in actual:
         assert not any(name in unique_id for name in c.REGISTERS), unique_id

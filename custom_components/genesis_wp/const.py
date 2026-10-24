@@ -66,6 +66,34 @@ HEATPUMP_ALARMS = [
     thermiaconst.ATTR_DINPUT_ALARM_ACTIVE_CLASS_C,
 ]
 
+# Coils that trigger an action rather than hold a state; they get no entity.
+COMMAND_COILS = {thermiaconst.ATTR_COIL_RESET_ALL_ALARMS}
+
+# Interim names of the default-enabled set temperatures, all °C, until the library carries
+# per-model names and units (genesis-wp issue-5, issue-6).
+_CURVE_OUTDOOR = (17, 10, 5, 0, -5, -15, -25)  # heating curve points of the WPE-I display
+CORE_SETTINGS = {
+    thermiaconst.ATTR_INPUT_SYSTEM_SUPPLY_LINE_CALCULATED_SET_POINT: "Heating circuit 1 set temperature",
+    thermiaconst.ATTR_INPUT_DESIRED_TEMPERATURE_DISTRIBUTION_CIRCUIT_MIX_VALVE_1: "Heating circuit 2 set temperature",
+    thermiaconst.ATTR_HOLDING_COMFORT_WHEEL_SETTING: "Room set point",
+    **{
+        getattr(thermiaconst, f"ATTR_HOLDING_SET_POINT_HEAT_CURVE_Y_{point}"): f"Heating circuit 1 curve at {outdoor} °C outdoor"
+        for point, outdoor in enumerate(_CURVE_OUTDOOR, start=1)
+    },
+    **{
+        getattr(thermiaconst, f"ATTR_HOLDING_SET_POINT_CURVE_Y_COORDINATE_{point}_MIX_VALVE_1"): f"Heating circuit 2 curve at {outdoor} °C outdoor"
+        for point, outdoor in enumerate(_CURVE_OUTDOOR, start=1)
+    },
+}
+
+# Registers a setting entity subscribes besides its own: the library reads holding 116 only
+# while it knows coil 41 is True.
+SETTING_DEPENDENCIES = {
+    thermiaconst.ATTR_HOLDING_FIXED_SYSTEM_SUPPLY_SET_POINT: [
+        thermiaconst.ATTR_COIL_ENABLE_FIXED_SYSTEM_SUPPLY_SET_POINT
+    ],
+}
+
 
 BINARY_SENSOR_TYPES = {
     thermiaconst.ATTR_DINPUT_ALARM_ACTIVE_CLASS_A: {

@@ -1,5 +1,7 @@
 import logging
 
+from genesis_wp.const import KEY_REG_TYPE
+from genesis_wp.const import REG_HOLDING
 from genesis_wp.const import REGISTERS
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.sensor import SensorEntity
@@ -12,11 +14,13 @@ from .const import ATTR_ICON
 from .const import ATTR_LABEL
 from .const import ATTR_STATE_CLASS
 from .const import ATTR_UNIT
+from .const import CORE_SETTINGS
 from .const import DOMAIN
 from .const import HEATPUMP_ALARMS
 from .const import HEATPUMP_ATTRIBUTES
 from .const import HEATPUMP_SENSOR
 from .const import SENSOR_TYPES
+from .const import SETTING_DEPENDENCIES
 from .const import UNIT_AMPERE
 from .const import UNIT_ENERGY
 from .const import UNIT_HOURS
@@ -48,6 +52,9 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     for sensor in SENSOR_TYPES:
         if REGISTERS[sensor][coordinator.kind]:
             sensors.append(ThermiaGenericSensor(coordinator, sensor))
+    for register, spec in REGISTERS.items():
+        if spec[KEY_REG_TYPE] == REG_HOLDING and spec[coordinator.kind]:
+            sensors.append(ThermiaSettingSensor(coordinator, register))
     async_add_entities(sensors, False)
 
 
@@ -66,6 +73,13 @@ class RegisterSensor(SensorEntity):
 
     def _subscribed(self):
         return [self.kind]
+
+    def _use_core_setting(self):
+        """A default-enabled set temperature: interim name, °C."""
+        self._attr_name = CORE_SETTINGS[self.kind]
+        self._attr_native_unit_of_measurement = UNIT_TEMPERATURE
+        self._attr_device_class, self._attr_state_class = UNIT_CLASSES[UNIT_TEMPERATURE]
+        self._attr_entity_registry_enabled_default = True
 
     @property
     def available(self):
@@ -144,6 +158,30 @@ class ThermiaGenericSensor(RegisterSensor):
         self._attr_device_class = meta.get(ATTR_CLASS, device_class)
         self._attr_state_class = meta.get(ATTR_STATE_CLASS, state_class)
         self._attr_entity_registry_enabled_default = meta[ATTR_DEFAULT_ENABLED]
+        if kind in CORE_SETTINGS:
+            self._use_core_setting()
+
+    @property
+    def native_value(self):
+        """Return the state."""
+        return self.coordinator.data.get(self.kind)
+
+
+class ThermiaSettingSensor(RegisterSensor):
+    """One holding register, a heat pump setting, shown read-only."""
+
+    _attr_icon = "mdi:tune"
+    _attr_entity_registry_enabled_default = False
+
+    def __init__(self, coordinator, kind):
+        """Initialize."""
+        super().__init__(coordinator, kind)
+        self._attr_name = kind.removeprefix("holding_").replace("_", " ").title()
+        if kind in CORE_SETTINGS:
+            self._use_core_setting()
+
+    def _subscribed(self):
+        return [self.kind, *SETTING_DEPENDENCIES.get(self.kind, ())]
 
     @property
     def native_value(self):
