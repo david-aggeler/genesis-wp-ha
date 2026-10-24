@@ -2,6 +2,7 @@
 import logging
 import time
 from datetime import timedelta
+from pathlib import Path
 
 from genesis_wp import ThermiaException
 from genesis_wp import ThermiaGenesis
@@ -13,6 +14,9 @@ from genesis_wp.const import MODEL_NAMES
 from genesis_wp.const import REGISTERS
 from genesis_wp.emulator import Emulator
 from genesis_wp.emulator import get_profile
+from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL
+from homeassistant.components.frontend import add_extra_js_url
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST
 from homeassistant.const import CONF_PORT
@@ -24,6 +28,7 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
+from .const import CARD_URL
 from .const import CONF_MODE
 from .const import CONF_MODEL
 from .const import CONF_PROFILE
@@ -67,7 +72,12 @@ def create_client(data) -> ThermiaGenesis:
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType):
-    """Set up the genesis_wp component."""
+    """Serve the heating curve card and load it in every dashboard (requirement-11)."""
+    if hass.http is not None:
+        card = Path(__file__).parent / "frontend" / Path(CARD_URL).name
+        await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(card), False)])
+    if DATA_EXTRA_MODULE_URL in hass.data:  # absent when the frontend is not loaded
+        add_extra_js_url(hass, CARD_URL)
     return True
 
 

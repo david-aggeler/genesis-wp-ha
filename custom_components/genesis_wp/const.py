@@ -77,19 +77,24 @@ COMMAND_COILS = {thermiaconst.ATTR_COIL_RESET_ALL_ALARMS}
 # Interim names of the default-enabled set temperatures, all °C, until the library carries
 # per-model names and units (genesis-wp issue-5, issue-6).
 _CURVE_OUTDOOR = (17, 10, 5, 0, -5, -15, -25)  # heating curve points of the WPE-I display
+_POINTS = range(1, len(_CURVE_OUTDOOR) + 1)
+CURVE_X = [getattr(thermiaconst, f"ATTR_INPUT_HEAT_CURVE_X_COORDINATE_{point}") for point in _POINTS]
+_CURVE_Y_1 = [getattr(thermiaconst, f"ATTR_HOLDING_SET_POINT_HEAT_CURVE_Y_{point}") for point in _POINTS]
+_CURVE_Y_2 = [getattr(thermiaconst, f"ATTR_HOLDING_SET_POINT_CURVE_Y_COORDINATE_{point}_MIX_VALVE_1") for point in _POINTS]
+_SET_TEMPERATURE_1 = thermiaconst.ATTR_INPUT_SYSTEM_SUPPLY_LINE_CALCULATED_SET_POINT
+_SET_TEMPERATURE_2 = thermiaconst.ATTR_INPUT_DESIRED_TEMPERATURE_DISTRIBUTION_CIRCUIT_MIX_VALVE_1
 CORE_SETTINGS = {
-    thermiaconst.ATTR_INPUT_SYSTEM_SUPPLY_LINE_CALCULATED_SET_POINT: "Heating circuit 1 set temperature",
-    thermiaconst.ATTR_INPUT_DESIRED_TEMPERATURE_DISTRIBUTION_CIRCUIT_MIX_VALVE_1: "Heating circuit 2 set temperature",
+    _SET_TEMPERATURE_1: "Heating circuit 1 set temperature",
+    _SET_TEMPERATURE_2: "Heating circuit 2 set temperature",
     thermiaconst.ATTR_HOLDING_COMFORT_WHEEL_SETTING: "Room set point",
-    **{
-        getattr(thermiaconst, f"ATTR_HOLDING_SET_POINT_HEAT_CURVE_Y_{point}"): f"Heating circuit 1 curve at {outdoor} °C outdoor"
-        for point, outdoor in enumerate(_CURVE_OUTDOOR, start=1)
-    },
-    **{
-        getattr(thermiaconst, f"ATTR_HOLDING_SET_POINT_CURVE_Y_COORDINATE_{point}_MIX_VALVE_1"): f"Heating circuit 2 curve at {outdoor} °C outdoor"
-        for point, outdoor in enumerate(_CURVE_OUTDOOR, start=1)
-    },
+    **{y: f"Heating circuit 1 curve at {outdoor} °C outdoor" for y, outdoor in zip(_CURVE_Y_1, _CURVE_OUTDOOR)},
+    **{y: f"Heating circuit 2 curve at {outdoor} °C outdoor" for y, outdoor in zip(_CURVE_Y_2, _CURVE_OUTDOOR)},
 }
+
+# A circuit's set temperature sensor carries its heating curve for the card (requirement-11).
+HEATING_CURVES = {_SET_TEMPERATURE_1: _CURVE_Y_1, _SET_TEMPERATURE_2: _CURVE_Y_2}
+OUTDOOR_TEMPERATURE = thermiaconst.ATTR_INPUT_OUTDOOR_TEMPERATURE
+CARD_URL = "/genesis_wp/genesis-wp-heating-curve-card.js"
 
 # Registers a setting entity subscribes besides its own: the library reads holding 116 only
 # while it knows coil 41 is True.

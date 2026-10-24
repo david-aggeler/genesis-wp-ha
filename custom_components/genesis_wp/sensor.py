@@ -16,10 +16,13 @@ from .const import ATTR_LABEL
 from .const import ATTR_STATE_CLASS
 from .const import ATTR_UNIT
 from .const import CORE_SETTINGS
+from .const import CURVE_X
 from .const import DOMAIN
 from .const import HEATPUMP_ALARMS
 from .const import HEATPUMP_ATTRIBUTES
+from .const import HEATING_CURVES
 from .const import HEATPUMP_SENSOR
+from .const import OUTDOOR_TEMPERATURE
 from .const import SENSOR_TYPES
 from .const import SETTING_DEPENDENCIES
 from .const import UNIT_AMPERE
@@ -175,10 +178,36 @@ class ThermiaGenericSensor(RegisterSensor):
         if kind in CORE_SETTINGS:
             self._use_core_setting()
 
+    def _subscribed(self):
+        curve = HEATING_CURVES.get(self.kind)
+        if curve is None:
+            return [self.kind]
+        return [self.kind, OUTDOOR_TEMPERATURE, *CURVE_X, *curve]
+
     @property
     def native_value(self):
         """Return the state."""
         return self.coordinator.data.get(self.kind)
+
+    @property
+    def extra_state_attributes(self):
+        """A set temperature carries its circuit's heating curve and the outdoor temperature for the card."""
+        curve = HEATING_CURVES.get(self.kind)
+        if curve is None:
+            return None
+        coordinator = self.coordinator
+        if coordinator.data is None:
+            return None
+        return {
+            "curve": [
+                [coordinator.data[x], coordinator.data[y]]
+                for x, y in zip(CURVE_X, curve)
+                if coordinator.has_value(x) and coordinator.has_value(y)
+            ],
+            "outdoor_temperature": (
+                coordinator.data[OUTDOOR_TEMPERATURE] if coordinator.has_value(OUTDOOR_TEMPERATURE) else None
+            ),
+        }
 
 
 class ThermiaSettingSensor(RegisterSensor):

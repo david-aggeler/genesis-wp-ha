@@ -1,6 +1,10 @@
 {
   "domain": "genesis_wp",
   "name": "Genesis WP",
+  "after_dependencies": [
+    "frontend",
+    "http"
+  ],
   "codeowners": [
     "@david-aggeler"
   ],

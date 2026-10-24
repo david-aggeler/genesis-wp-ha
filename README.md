@@ -28,6 +28,18 @@ Manual install: copy `custom_components/genesis_wp/` into your Home Assistant `c
 
 An emulator on another machine also works: run `genesis-wp-emulator --host 0.0.0.0 --port 5020 --dynamics` there (from the genesis-wp library's `emulator` extra), then add a **Real heat pump** with that host and port 5020.
 
+## Heating curve card
+
+The integration ships a dashboard card and loads it automatically; there is no resource to add. One card shows one heating circuit: supply temperature over outdoor temperature through the seven curve points, and a marker for the current operating point.
+
+```yaml
+type: custom:genesis-wp-heating-curve-card
+entity: sensor.stiebel_eltron_wpe_i_07_1_heating_circuit_1_set_temperature
+# title: Heating circuit 1   (optional; defaults to the sensor's name)
+```
+
+Use the heating circuit 2 set temperature sensor for the second circuit. The card only reads; it cannot change the curve.
+
 ## Contributions are welcome!
 
 If you want to contribute, please read the [contribution guidelines](CONTRIBUTING.md).

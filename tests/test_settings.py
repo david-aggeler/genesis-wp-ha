@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from custom_components.genesis_wp.const import DOMAIN
 from genesis_wp import const as c
 from genesis_wp.emulator import get_profile
@@ -173,3 +174,21 @@ async def test_negative_curve_points_keep_their_sign_in_the_entity_id(hass, star
         for i, t in enumerate(signs):
             entity_id = _registry_entry(hass, entry, "sensor", _register("holding", first + i)).entity_id
             assert entity_id.endswith(f"_heating_circuit_{circuit}_curve_at_{signs[t]}_degc_outdoor"), entity_id
+
+
+CURVE_X = [f"input_heat_curve_x_coordinate_{i}" for i in range(1, 8)]
+
+
+# DHF-REQ: genesis-wp-ha/requirement-11  DHF-TEST: genesis-wp-ha/ac-34
+@pytest.mark.parametrize(("circuit", "set_point", "first_y"), [(1, 18, 6), (2, 147, 109)])
+async def test_set_temperature_sensor_carries_its_curve_and_the_outdoor_temperature(hass, start_emulator, circuit, set_point, first_y):
+    entry = await setup_entry(hass, await start_emulator(PROFILE_615))
+    sensor = _registry_entry(hass, entry, "sensor", _register("input", set_point))
+    attributes = hass.states.get(sensor.entity_id).attributes
+
+    expected = [
+        [_emulator_value(PROFILE_615, x), _emulator_value(PROFILE_615, _register("holding", first_y + i))]
+        for i, x in enumerate(CURVE_X)
+    ]
+    assert attributes["curve"] == expected, circuit
+    assert attributes["outdoor_temperature"] == _emulator_value(PROFILE_615, _register("input", 13))
