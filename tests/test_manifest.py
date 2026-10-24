@@ -39,3 +39,11 @@ def test_manifest_matches_requirements_test_pin():
     manifest_pin = json.loads((PACKAGE / "manifest.json").read_text())["requirements"][0]
     sha = manifest_pin.rsplit("@", 1)[1]
     assert sha in (PACKAGE.parents[1] / "requirements_test.txt").read_text()
+
+
+# DHF-REQ: genesis-wp-ha/requirement-4  DHF-TEST: genesis-wp-ha/ac-32
+def test_integration_title_has_no_placeholder():
+    files = [PACKAGE / "strings.json", *sorted((PACKAGE / "translations").glob("*.json"))]
+    for path in files:
+        title = json.loads(path.read_text())["title"]
+        assert title and "{" not in title, f"{path.name}: {title}"  # HA formats the title with no context
