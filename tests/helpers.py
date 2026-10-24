@@ -6,6 +6,7 @@ from custom_components.genesis_wp.const import CONF_ADVANCED
 from custom_components.genesis_wp.const import CONF_MODEL
 from custom_components.genesis_wp.const import CONF_UNIT
 from custom_components.genesis_wp.const import DOMAIN
+from homeassistant import config_entries
 from homeassistant.const import CONF_HOST
 from homeassistant.const import CONF_PORT
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -24,6 +25,12 @@ def form_input(data, with_model=True) -> dict:
     if with_model:
         fields[CONF_MODEL] = data[CONF_MODEL]
     return fields
+
+
+async def real_form(hass) -> dict:
+    """Start the config flow and pick "Real heat pump" from the menu; returns the host form."""
+    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    return await hass.config_entries.flow.async_configure(result["flow_id"], {"next_step_id": "real"})
 
 
 async def setup_entry(hass, emu) -> MockConfigEntry:

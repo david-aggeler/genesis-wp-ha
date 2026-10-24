@@ -7,7 +7,6 @@ import logging
 from custom_components.genesis_wp.const import CONF_ADVANCED
 from custom_components.genesis_wp.const import CONF_UNIT
 from custom_components.genesis_wp.const import DOMAIN
-from homeassistant import config_entries
 from homeassistant.const import CONF_HOST
 from homeassistant.const import CONF_PORT
 from homeassistant.data_entry_flow import FlowResultType
@@ -18,13 +17,12 @@ from homeassistant.helpers.selector import NumberSelectorMode
 
 from .helpers import entry_data
 from .helpers import form_input
+from .helpers import real_form
 from .helpers import setup_entry
 
 
 async def _submit(hass, data):
-    result = await hass.config_entries.flow.async_init(
-        DOMAIN, context={"source": config_entries.SOURCE_USER}
-    )
+    result = await real_form(hass)
     assert result["type"] is FlowResultType.FORM
     return await hass.config_entries.flow.async_configure(result["flow_id"], form_input(data))
 
@@ -37,7 +35,7 @@ def _advanced_section(schema):
 
 # DHF-REQ: genesis-wp-ha/requirement-4  DHF-TEST: genesis-wp-ha/ac-8
 async def test_port_is_a_number_box_in_a_collapsed_section_and_unit_is_not_asked(hass, start_emulator):
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    result = await real_form(hass)
     entry = await setup_entry(hass, await start_emulator())
     reconfigure = await entry.start_reconfigure_flow(hass)
 

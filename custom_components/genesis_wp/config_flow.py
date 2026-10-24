@@ -4,6 +4,7 @@ import logging
 import voluptuous as vol
 from genesis_wp import ThermiaException
 from genesis_wp.const import MODEL_NAMES
+from genesis_wp.emulator import packaged_profiles
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST
 from homeassistant.const import CONF_PORT
@@ -15,13 +16,16 @@ from homeassistant.helpers.selector import selector
 
 from . import create_client
 from .const import CONF_ADVANCED
+from .const import CONF_MODE
 from .const import CONF_MODEL
+from .const import CONF_PROFILE
 from .const import CONF_UNIT
 from .const import DEFAULT_MODEL
 from .const import DEFAULT_PORT
 from .const import DEFAULT_UNIT
 from .const import DOMAIN
 from .const import HEATPUMP_SENSOR
+from .const import MODE_EMULATED
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,7 +48,7 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     @staticmethod
     def _connection(data):
         """The connection data that identifies a heat pump; the device has no serial or MAC to use."""
-        return {key: data[key] for key in (CONF_HOST, CONF_PORT, CONF_UNIT)}
+        return {key: data.get(key) for key in (CONF_HOST, CONF_PORT, CONF_UNIT)}
 
     async def _try_connect(self, data, errors):
         try:
@@ -72,6 +76,19 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             NumberSelectorConfig(min=low, max=high, step=1, mode=NumberSelectorMode.BOX)
         )
 
+    @staticmethod
+    def _model_selector():
+        return selector(
+            {
+                "select": {
+                    "options": [
+                        {"value": kind, "label": name}
+                        for kind, name in MODEL_NAMES.items()
+                    ],
+                }
+            }
+        )
+
     def _schema(self, defaults, with_model=True):
         # Port sits in a collapsed section: nearly every install keeps 502.
         advanced = vol.Schema(
@@ -84,20 +101,37 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             vol.Required(CONF_ADVANCED): section(advanced, {"collapsed": True}),
         }
         if with_model:
-            fields[vol.Required(CONF_MODEL, default=defaults[CONF_MODEL])] = selector(
-                {
-                    "select": {
-                        "options": [
-                            {"value": kind, "label": name}
-                            for kind, name in MODEL_NAMES.items()
-                        ],
-                    }
-                }
-            )
+            fields[vol.Required(CONF_MODEL, default=defaults[CONF_MODEL])] = self._model_selector()
         return vol.Schema(fields)
 
     async def async_step_user(self, user_input=None):
-        """Handle the initial step."""
+        """Choose between a real heat pump and an emulated one."""
+        return self.async_show_menu(step_id="user", menu_options=["real", MODE_EMULATED])
+
+    async def async_step_emulated(self, user_input=None):
+        """Pick a packaged firmware profile; the integration runs it in-process on loopback."""
+        if user_input is not None:
+            self._async_abort_entries_match({CONF_MODE: MODE_EMULATED, CONF_PROFILE: user_input[CONF_PROFILE]})
+            model = user_input[CONF_MODEL]
+            return self.async_create_entry(
+                title=f"{MODEL_NAMES[model]} (emulated)",
+                data={CONF_MODE: MODE_EMULATED, CONF_PROFILE: user_input[CONF_PROFILE], CONF_MODEL: model},
+            )
+
+        profiles = packaged_profiles()
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_PROFILE, default=profiles[-1]): selector(
+                    {"select": {"options": [{"value": p, "label": p} for p in profiles]}}
+                ),
+                # Profiles do not name their model kind yet; every packaged one is a WPE-I.
+                vol.Required(CONF_MODEL, default=DEFAULT_MODEL): self._model_selector(),
+            }
+        )
+        return self.async_show_form(step_id=MODE_EMULATED, data_schema=schema)
+
+    async def async_step_real(self, user_input=None):
+        """Connect to a heat pump by host."""
         errors = {}
         if user_input is not None:
             user_input = self._flatten(user_input)
@@ -115,12 +149,14 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_MODEL: DEFAULT_MODEL,
         }
         return self.async_show_form(
-            step_id="user", data_schema=self._schema(defaults), errors=errors
+            step_id="real", data_schema=self._schema(defaults), errors=errors
         )
 
     async def async_step_reconfigure(self, user_input=None):
         """Move an entry to a new host or port; the entry, its unit and its entities stay."""
         entry = self._get_reconfigure_entry()
+        if entry.data.get(CONF_MODE) == MODE_EMULATED:
+            return self.async_abort(reason="emulated_not_reconfigurable")
         errors = {}
         if user_input is not None:
             user_input = {**self._flatten(user_input), CONF_UNIT: entry.data[CONF_UNIT]}

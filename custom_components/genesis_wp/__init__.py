@@ -11,6 +11,8 @@ from genesis_wp.const import KEY_ADDRESS
 from genesis_wp.const import KEY_REG_TYPE
 from genesis_wp.const import MODEL_NAMES
 from genesis_wp.const import REGISTERS
+from genesis_wp.emulator import Emulator
+from genesis_wp.emulator import get_profile
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST
 from homeassistant.const import CONF_PORT
@@ -22,9 +24,14 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
+from .const import CONF_MODE
 from .const import CONF_MODEL
+from .const import CONF_PROFILE
 from .const import CONF_UNIT
 from .const import DOMAIN
+from .const import EMULATOR_DYNAMICS_INTERVAL
+from .const import EMULATOR_HOST
+from .const import MODE_EMULATED
 
 # Read-only: the write platforms (climate, number, switch) are not forwarded.
 PLATFORMS = ["sensor", "binary_sensor"]
@@ -64,13 +71,39 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     return True
 
 
+async def _start_emulator(entry: ConfigEntry) -> Emulator:
+    """Run the entry's firmware profile in-process on a free loopback port."""
+    emulator = Emulator(
+        get_profile(entry.data[CONF_PROFILE]),
+        host=EMULATOR_HOST,
+        port=0,
+        dynamics=True,
+        dynamics_interval=EMULATOR_DYNAMICS_INTERVAL,
+    )
+    try:
+        await emulator.start()
+    except OSError as error:
+        raise ConfigEntryNotReady(f"emulator did not start ({type(error).__name__})") from None
+    return emulator
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
-    """Set up a heat pump from a config entry."""
-    coordinator = GenesisDataUpdateCoordinator(hass, entry)
+    """Set up a heat pump from a config entry: a real one by host, or an emulated one in-process."""
+    emulator = None
+    connection = entry.data
+    if entry.data.get(CONF_MODE) == MODE_EMULATED:
+        emulator = await _start_emulator(entry)
+        connection = {
+            **entry.data,
+            CONF_HOST: emulator.host,
+            CONF_PORT: emulator.port,
+            CONF_UNIT: emulator.profile.unit_id,
+        }
+    coordinator = GenesisDataUpdateCoordinator(hass, entry, connection, emulator)
     await coordinator.async_refresh()
 
     if not coordinator.last_update_success:
-        await coordinator.thermia.close()
+        await coordinator.async_close()
         raise ConfigEntryNotReady
 
     coordinator.update_device_info()
@@ -90,7 +123,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         coordinator = hass.data[DOMAIN].pop(entry.entry_id)
-        await coordinator.thermia.close()
+        await coordinator.async_close()
 
     return unload_ok
 
@@ -98,9 +131,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
 class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
     """Fetches the registers the entities of one heat pump subscribed to."""
 
-    def __init__(self, hass, entry: ConfigEntry):
-        """Initialize."""
-        self.thermia = create_client(entry.data)
+    def __init__(self, hass, entry: ConfigEntry, connection, emulator: Emulator | None = None):
+        """Initialize; ``connection`` holds host, port and unit, ``emulator`` is set for an emulated entry."""
+        self.thermia = create_client(connection)
+        self.emulator = emulator
         self.kind = entry.data[CONF_MODEL]
         self.entry_id = entry.entry_id
         self.attributes = {}
@@ -123,6 +157,12 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             update_interval=SCAN_INTERVAL,
         )
         self.update_device_info()
+
+    async def async_close(self):
+        """Close the client, then stop the entry's emulator if it has one."""
+        await self.thermia.close()
+        if self.emulator is not None:
+            await self.emulator.stop()
 
     async def _async_update_data(self):
         """Update data via library."""
@@ -160,12 +200,12 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
 
     def update_device_info(self):
         """Describe the device; versions come from the last update."""
-        name = MODEL_NAMES[self.kind]
+        model = MODEL_NAMES[self.kind]
         self.device_info = DeviceInfo(
             identifiers={(DOMAIN, self.entry_id)},
-            name=name,
-            manufacturer=name.split(" ", 1)[0],
-            model=name,
+            name=model if self.emulator is None else f"{model} (emulated)",
+            manufacturer=model.split(" ", 1)[0],
+            model=model,
             sw_version=self._version(self.sw_version_registers),
             hw_version=self._version(self.hw_version_registers),
         )

@@ -3,6 +3,13 @@
   "config": {
     "step": {
       "user": {
+        "description": "Add a heat pump on the Thermia Genesis controller platform.",
+        "menu_options": {
+          "real": "Real heat pump",
+          "emulated": "Emulated heat pump"
+        }
+      },
+      "real": {
         "description": "Set up a heat pump on the Thermia Genesis controller platform.",
         "data": {
           "host": "Host name or IP address",
@@ -16,6 +23,13 @@
               "port": "Modbus TCP port"
             }
           }
+        }
+      },
+      "emulated": {
+        "description": "Run a recorded heat pump inside Home Assistant on a loopback port. It never reaches a real device.",
+        "data": {
+          "profile": "Firmware profile",
+          "model": "Heat pump model"
         }
       },
       "reconfigure": {
@@ -38,8 +52,9 @@
       "cannot_connect": "The heat pump did not answer a read request."
     },
     "abort": {
-      "already_configured": "This heat pump is already configured.",
-      "reconfigure_successful": "The heat pump connection was updated."
+      "already_configured": "This heat pump or firmware profile is already configured.",
+      "reconfigure_successful": "The heat pump connection was updated.",
+      "emulated_not_reconfigurable": "An emulated heat pump has no connection to change."
     }
   }
 }

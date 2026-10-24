@@ -21,6 +21,13 @@ Manual install: copy `custom_components/genesis_wp/` into your Home Assistant `c
 
 ## Configuration is done in the UI
 
+*Settings → Devices & services → Add integration → Genesis WP* asks what to add:
+
+- **Real heat pump**: enter the host name or IP address and pick the model. The Modbus TCP port (default 502) sits under *Advanced*. The integration only reads; it never writes to the heat pump.
+- **Emulated heat pump**: pick a firmware profile recorded from a real unit. The integration runs [genesis-wp-emulator](https://github.com/david-aggeler/genesis-wp) inside Home Assistant on `127.0.0.1` with a free port and simulated drift. It never reaches a real device. The device is named "… (emulated)" and can sit next to a real one. Removing or reloading the entry stops the emulator.
+
+An emulator on another machine also works: run `genesis-wp-emulator --host 0.0.0.0 --port 5020 --dynamics` there (from the genesis-wp library's `emulator` extra), then add a **Real heat pump** with that host and port 5020.
+
 ## Contributions are welcome!
 
 If you want to contribute, please read the [contribution guidelines](CONTRIBUTING.md).

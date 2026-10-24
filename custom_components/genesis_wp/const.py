@@ -33,7 +33,12 @@ DOMAIN = "genesis_wp"
 
 CONF_UNIT = "unit"
 CONF_MODEL = "model"
-CONF_ADVANCED = "advanced"  # config flow section holding port and unit; never stored in entry data
+CONF_ADVANCED = "advanced"  # config flow section holding the port; never stored in entry data
+CONF_MODE = "mode"  # absent for a real heat pump
+CONF_PROFILE = "profile"
+MODE_EMULATED = "emulated"
+EMULATOR_HOST = "127.0.0.1"  # the in-process emulator never binds outside loopback
+EMULATOR_DYNAMICS_INTERVAL = 5  # seconds between simulated plant steps
 DEFAULT_PORT = 502
 DEFAULT_UNIT = 1
 DEFAULT_MODEL = thermiaconst.MODEL_STIEBEL_WPE_I_071

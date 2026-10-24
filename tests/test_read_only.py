@@ -6,12 +6,12 @@ from pathlib import Path
 
 from custom_components.genesis_wp import PLATFORMS
 from custom_components.genesis_wp.const import DOMAIN
-from homeassistant import config_entries
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
 
 from .helpers import entry_data
 from .helpers import form_input
+from .helpers import real_form
 from .helpers import setup_entry
 
 PACKAGE = Path(__file__).parents[1] / "custom_components" / "genesis_wp"
@@ -32,7 +32,7 @@ async def test_only_read_platforms_are_forwarded(hass, start_emulator):
 async def test_whole_lifecycle_sends_zero_writes(hass, start_emulator):
     emu = await start_emulator()
 
-    result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+    result = await real_form(hass)
     result = await hass.config_entries.flow.async_configure(result["flow_id"], form_input(entry_data(emu)))
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()

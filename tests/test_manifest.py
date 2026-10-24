@@ -9,7 +9,7 @@ from pathlib import Path
 
 PACKAGE = Path(__file__).parents[1] / "custom_components" / "genesis_wp"
 # hassfest rejects spaces, so the PEP 508 direct reference is written without them.
-PIN = re.compile(r"^genesis-wp@git\+https://github\.com/david-aggeler/genesis-wp@[0-9a-f]{40}$")
+PIN = re.compile(r"^genesis-wp\[emulator\]@git\+https://github\.com/david-aggeler/genesis-wp@[0-9a-f]{40}$")
 FORBIDDEN = {"pymodbus", "pyModbusTCP", "pythermiagenesis", "modbus_connection"}
 
 
