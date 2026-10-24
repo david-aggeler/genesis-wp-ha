@@ -1,4 +1,5 @@
 import logging
+import re
 
 from genesis_wp.const import KEY_REG_TYPE
 from genesis_wp.const import REG_HOLDING
@@ -80,6 +81,12 @@ class RegisterSensor(SensorEntity):
         self._attr_native_unit_of_measurement = UNIT_TEMPERATURE
         self._attr_device_class, self._attr_state_class = UNIT_CLASSES[UNIT_TEMPERATURE]
         self._attr_entity_registry_enabled_default = True
+
+    @property
+    def suggested_object_id(self):
+        """Spell a negative number as minus: slugify would drop the sign of '-5 °C'."""
+        name = super().suggested_object_id
+        return re.sub(r"-(?=\d)", "minus ", name) if isinstance(name, str) else name
 
     @property
     def available(self):

@@ -162,3 +162,14 @@ async def test_fixed_supply_set_point_reads_while_its_coil_is_on(hass, start_emu
     scale = c.REGISTERS[c.ATTR_HOLDING_FIXED_SYSTEM_SUPPLY_SET_POINT][c.KEY_SCALE]
     assert float(hass.states.get(fixed.entity_id).state) == raw / scale
     assert any(r.function_code == 3 and r.address <= 116 < r.address + r.count for r in emu.requests)
+
+
+# DHF-REQ: genesis-wp-ha/requirement-9  DHF-TEST: genesis-wp-ha/ac-31
+async def test_negative_curve_points_keep_their_sign_in_the_entity_id(hass, start_emulator):
+    entry = await setup_entry(hass, await start_emulator(PROFILE_615))
+    signs = {t: f"minus_{-t}" if t < 0 else str(t) for t in (17, 10, 5, 0, -5, -15, -25)}
+
+    for circuit, first in ((1, 6), (2, 109)):
+        for i, t in enumerate(signs):
+            entity_id = _registry_entry(hass, entry, "sensor", _register("holding", first + i)).entity_id
+            assert entity_id.endswith(f"_heating_circuit_{circuit}_curve_at_{signs[t]}_degc_outdoor"), entity_id
