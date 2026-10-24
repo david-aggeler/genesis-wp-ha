@@ -83,6 +83,13 @@ class RegisterSensor(SensorEntity):
         self._attr_entity_registry_enabled_default = True
 
     @property
+    def icon(self):
+        """Leave the icon to Home Assistant when a device class names the quantity; else the fallback."""
+        if self.device_class is not None:
+            return None
+        return super().icon
+
+    @property
     def suggested_object_id(self):
         """Spell a negative number as minus: slugify would drop the sign of '-5 °C'."""
         name = super().suggested_object_id

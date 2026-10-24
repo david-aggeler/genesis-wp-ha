@@ -139,3 +139,21 @@ async def test_entities_use_has_entity_name(hass, start_emulator):
     (device,) = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
     state = hass.states.get(_entity_id(hass, entry, outdoor))
     assert state.attributes["friendly_name"] == f"{device.name} Outdoor Temperature"
+
+
+# DHF-REQ: genesis-wp-ha/requirement-7  DHF-TEST: genesis-wp-ha/ac-33
+async def test_sensors_with_a_device_class_leave_the_icon_to_home_assistant(hass, start_emulator):
+    entry = await setup_entry(hass, await start_emulator())
+    registry = er.async_get(hass)
+    for registry_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if registry_entry.disabled_by is not None:
+            registry.async_update_entity(registry_entry.entity_id, disabled_by=None)
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    sensors = [hass.states.get(e.entity_id) for e in er.async_entries_for_config_entry(registry, entry.entry_id) if e.domain == "sensor"]
+    with_class = [s for s in sensors if "device_class" in s.attributes]
+    without_class = [s for s in sensors if "device_class" not in s.attributes]
+    assert with_class and without_class
+    assert [s.entity_id for s in with_class if "icon" in s.attributes] == []
+    assert [s.entity_id for s in without_class if "icon" not in s.attributes] == []
