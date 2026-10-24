@@ -19,8 +19,8 @@ def entry_data(emu) -> dict:
 
 
 def form_input(data, with_model=True) -> dict:
-    """Entry data as the config flow form submits it: port and unit inside the advanced section."""
-    fields = {CONF_HOST: data[CONF_HOST], CONF_ADVANCED: {CONF_PORT: data[CONF_PORT], CONF_UNIT: data[CONF_UNIT]}}
+    """Entry data as the config flow form submits it: port inside the advanced section, no unit."""
+    fields = {CONF_HOST: data[CONF_HOST], CONF_ADVANCED: {CONF_PORT: data[CONF_PORT]}}
     if with_model:
         fields[CONF_MODEL] = data[CONF_MODEL]
     return fields

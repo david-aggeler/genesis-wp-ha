@@ -11,10 +11,9 @@
         "sections": {
           "advanced": {
             "name": "Advanced",
-            "description": "Most heat pumps use port 502 and unit 1.",
+            "description": "Most heat pumps use port 502.",
             "data": {
-              "port": "Modbus TCP port",
-              "unit": "Modbus unit ID"
+              "port": "Modbus TCP port"
             }
           }
         }
@@ -27,10 +26,9 @@
         "sections": {
           "advanced": {
             "name": "Advanced",
-            "description": "Most heat pumps use port 502 and unit 1.",
+            "description": "Most heat pumps use port 502.",
             "data": {
-              "port": "Modbus TCP port",
-              "unit": "Modbus unit ID"
+              "port": "Modbus TCP port"
             }
           }
         }

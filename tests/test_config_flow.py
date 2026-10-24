@@ -1,4 +1,4 @@
-"""Config flow: host, port, unit and model, verified by a read (requirement-4); duplicates and reconfigure (requirement-8)."""
+"""Config flow: host, port and model, unit fixed to 1, verified by a read (requirement-4); duplicates and reconfigure (requirement-8)."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ def _advanced_section(schema):
 
 
 # DHF-REQ: genesis-wp-ha/requirement-4  DHF-TEST: genesis-wp-ha/ac-8
-async def test_port_and_unit_are_number_boxes_in_a_collapsed_section(hass, start_emulator):
+async def test_port_is_a_number_box_in_a_collapsed_section_and_unit_is_not_asked(hass, start_emulator):
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
     entry = await setup_entry(hass, await start_emulator())
     reconfigure = await entry.start_reconfigure_flow(hass)
@@ -48,10 +48,10 @@ async def test_port_and_unit_are_number_boxes_in_a_collapsed_section(hass, start
         advanced = _advanced_section(schema)
         assert advanced.options["collapsed"] is True
         fields = {str(k): v for k, v in advanced.schema.schema.items()}
-        for name, low, high in ((CONF_PORT, 1, 65535), (CONF_UNIT, 0, 255)):
-            assert isinstance(fields[name], NumberSelector), name
-            config = fields[name].config
-            assert (config["mode"], config["min"], config["max"], config["step"]) == (NumberSelectorMode.BOX, low, high, 1)
+        assert set(fields) == {CONF_PORT}  # the WPM-G answers on unit 1; there is no gateway to address
+        assert isinstance(fields[CONF_PORT], NumberSelector)
+        config = fields[CONF_PORT].config
+        assert (config["mode"], config["min"], config["max"], config["step"]) == (NumberSelectorMode.BOX, 1, 65535, 1)
 
 
 # DHF-REQ: genesis-wp-ha/requirement-4  DHF-TEST: genesis-wp-ha/ac-8
@@ -60,6 +60,7 @@ async def test_valid_input_creates_an_entry(hass, start_emulator):
     result = await _submit(hass, entry_data(emu))
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert result["data"] == entry_data(emu)  # flat: the section never reaches entry data
+    assert result["data"][CONF_UNIT] == 1
     assert type(result["data"][CONF_PORT]) is int and type(result["data"][CONF_UNIT]) is int
     assert emu.writes == []
     await hass.async_block_till_done()
@@ -68,7 +69,7 @@ async def test_valid_input_creates_an_entry(hass, start_emulator):
 # DHF-REQ: genesis-wp-ha/requirement-4  DHF-TEST: genesis-wp-ha/ac-8
 async def test_selector_floats_are_stored_as_ints(hass, start_emulator):
     emu = await start_emulator()
-    data = {**entry_data(emu), CONF_PORT: float(emu.port), CONF_UNIT: 1.0}  # NumberSelector returns floats
+    data = {**entry_data(emu), CONF_PORT: float(emu.port)}  # NumberSelector returns floats
     result = await _submit(hass, data)
     assert result["type"] is FlowResultType.CREATE_ENTRY
     assert type(result["data"][CONF_PORT]) is int and type(result["data"][CONF_UNIT]) is int
@@ -124,6 +125,7 @@ async def test_reconfigure_to_new_host_keeps_entity_ids(hass, start_emulator):
     assert result["type"] is FlowResultType.ABORT
     assert result["reason"] == "reconfigure_successful"
     assert entry.data[CONF_PORT] == emu_b.port
+    assert entry.data[CONF_UNIT] == 1
     assert hass.config_entries.async_get_entry(entry_id) is entry
     assert _registry_pairs(hass, entry) == before
     assert hass.data[DOMAIN][entry_id].last_update_success

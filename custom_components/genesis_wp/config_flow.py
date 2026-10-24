@@ -58,12 +58,12 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     @staticmethod
     def _flatten(user_input):
-        """Form input to entry data: lift port and unit out of their section, as ints."""
+        """Form input to entry data: lift port out of its section as an int; the unit is always 1."""
         advanced = user_input[CONF_ADVANCED]
         data = {key: value for key, value in user_input.items() if key != CONF_ADVANCED}
         data[CONF_HOST] = data[CONF_HOST].strip()
         data[CONF_PORT] = int(advanced[CONF_PORT])
-        data[CONF_UNIT] = int(advanced[CONF_UNIT])
+        data[CONF_UNIT] = DEFAULT_UNIT  # the WPM-G serves Modbus TCP itself: no gateway, no other unit
         return data
 
     @staticmethod
@@ -73,11 +73,10 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     def _schema(self, defaults, with_model=True):
-        # Port and unit sit in a collapsed section: nearly every install keeps 502 and 1.
+        # Port sits in a collapsed section: nearly every install keeps 502.
         advanced = vol.Schema(
             {
                 vol.Required(CONF_PORT, default=defaults[CONF_PORT]): self._number_box(1, 65535),
-                vol.Required(CONF_UNIT, default=defaults[CONF_UNIT]): self._number_box(0, 255),
             }
         )
         fields = {
@@ -120,11 +119,11 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_reconfigure(self, user_input=None):
-        """Move an entry to a new host, port or unit; the entry and its entities stay."""
+        """Move an entry to a new host or port; the entry, its unit and its entities stay."""
         entry = self._get_reconfigure_entry()
         errors = {}
         if user_input is not None:
-            user_input = self._flatten(user_input)
+            user_input = {**self._flatten(user_input), CONF_UNIT: entry.data[CONF_UNIT]}
             connection = self._connection(user_input)
             for other in self._async_current_entries(include_ignore=False):
                 if other.entry_id != entry.entry_id and self._connection(other.data) == connection:
