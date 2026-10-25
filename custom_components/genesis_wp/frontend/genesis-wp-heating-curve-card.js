@@ -105,27 +105,50 @@ class GenesisWpHeatingCurveCard extends HTMLElement {
       .join("");
     const line = sorted.map((p) => `${px(p[0])},${py(p[1])}`).join(" ");
     const dots = sorted
-      .map((p) => `<circle class="dot" cx="${px(p[0])}" cy="${py(p[1])}" r="3.5"><title>${p[0]} °C outdoor: ${p[1]} °C</title></circle>`)
+      .map((p) => `<circle class="dot" cx="${px(p[0])}" cy="${py(p[1])}" r="3.5"><title>${p[0]} \u00b0C outdoor: ${p[1]} \u00b0C</title></circle>`)
       .join("");
     const marker = now
-      ? `<circle class="now" cx="${px(now[0])}" cy="${py(now[1])}" r="6"><title>now: ${now[0]} °C outdoor, ${now[1]} °C set</title></circle>`
+      ? `<circle class="now" cx="${px(now[0])}" cy="${py(now[1])}" r="6"><title>now: ${now[0]} \u00b0C outdoor, ${now[1]} \u00b0C set</title></circle>`
       : "";
 
     return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="heating curve">
       ${xGrid}${yGrid}
       <polyline class="curve" points="${line}"/>
       ${dots}${marker}
-      <text class="label" x="${(PAD.left + W - PAD.right) / 2}" y="${H - 6}" text-anchor="middle">outdoor temperature [°C]</text>
-      <text class="label" transform="translate(12 ${(PAD.top + H - PAD.bottom) / 2}) rotate(-90)" text-anchor="middle">supply temperature [°C]</text>
+      <text class="label" x="${(PAD.left + W - PAD.right) / 2}" y="${H - 6}" text-anchor="middle">outdoor temperature [\u00b0C]</text>
+      <text class="label" transform="translate(12 ${(PAD.top + H - PAD.bottom) / 2}) rotate(-90)" text-anchor="middle">supply temperature [\u00b0C]</text>
     </svg>`;
   }
 }
 
-customElements.define("genesis-wp-heating-curve-card", GenesisWpHeatingCurveCard);
+const TAG = "genesis-wp-heating-curve-card";
+
+// Home Assistant's frontend replaces window.customElements with a scoped-registry polyfill and
+// looks cards up there; this module can run before that swap (issue-6). Define the card once
+// HA's own hui-view is in the current registry, so the definition lands where HA looks.
+function register() {
+  const registry = window.customElements;
+  if (!registry.get("hui-view")) return false;
+  if (!registry.get(TAG)) registry.define(TAG, GenesisWpHeatingCurveCard);
+  return true;
+}
+
+if (!register()) {
+  const started = Date.now();
+  let warned = false;
+  const timer = setInterval(() => {
+    if (register()) {
+      clearInterval(timer);
+    } else if (!warned && Date.now() - started > 30000) {
+      warned = true;
+      console.warn(`${TAG}: not defined yet, Home Assistant's hui-view is not in window.customElements`);
+    }
+  }, 250);
+}
 
 window.customCards = window.customCards || [];
 window.customCards.push({
-  type: "genesis-wp-heating-curve-card",
+  type: TAG,
   name: "Genesis WP heating curve",
   description: "Heating curve of one heating circuit with the current operating point.",
 });
