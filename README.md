@@ -30,15 +30,17 @@ An emulator on another machine also works: run `genesis-wp-emulator --host 0.0.0
 
 ## Heating curve card
 
-The integration ships a dashboard card and loads it automatically; there is no resource to add. One card shows one heating circuit: supply temperature over outdoor temperature through the seven curve points, and a marker for the current operating point.
+The integration ships a dashboard card and loads it automatically; there is no resource to add. The card draws the heating curves of the listed circuits in one chart: supply temperature over outdoor temperature through the seven curve points of each circuit, a marker for each circuit's current operating point, and a legend with each circuit's current set temperature.
 
 ```yaml
 type: custom:genesis-wp-heating-curve-card
-entity: sensor.stiebel_eltron_wpe_i_07_1_heating_circuit_1_set_temperature
-# title: Heating circuit 1   (optional; defaults to the sensor's name)
+entities:
+  - sensor.stiebel_eltron_wpe_i_07_1_heating_circuit_1_set_temperature
+  - sensor.stiebel_eltron_wpe_i_07_1_heating_circuit_2_set_temperature
+# title: Heating curves   (optional; defaults to the device name)
 ```
 
-Use the heating circuit 2 set temperature sensor for the second circuit. The card only reads; it cannot change the curve.
+For a single circuit, use `entity: <set temperature sensor>` instead of `entities`. The card only reads; it cannot change the curves.
 
 ## Contributions are welcome!
 

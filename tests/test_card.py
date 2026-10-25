@@ -34,7 +34,7 @@ async def test_card_module_is_served_and_registered(hass, hass_client, start_emu
     assert b'const TAG = "genesis-wp-heating-curve-card"' in CARD.read_bytes()
 
 
-# DHF-REQ: genesis-wp-ha/requirement-11  DHF-TEST: genesis-wp-ha/ac-37
+# DHF-REQ: genesis-wp-ha/requirement-11  DHF-TEST: genesis-wp-ha/ac-37 genesis-wp-ha/ac-38
 def test_card_is_defined_in_the_registry_home_assistant_swaps_in():
     node = shutil.which("node")
     if node is None:
@@ -49,6 +49,7 @@ def test_card_is_defined_in_the_registry_home_assistant_swaps_in():
         "markers": 1,
         "x_label": True,
         "y_label": True,
+        "overlay": {"svgs": 1, "curves": 2, "dots": 14, "markers": 2, "legend": 2, "in_plot": True},
         "late_defined_immediately": True,
     }
 

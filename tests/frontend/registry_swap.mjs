@@ -53,6 +53,26 @@ if (Card) {
   result.markers = (html.match(/class="now"/g) || []).length;
   result.x_label = html.includes("outdoor temperature [°C]");
   result.y_label = html.includes("supply temperature [°C]");
+
+  // ac-38: both circuits in one chart, 5 K apart as on the owner's plant.
+  const overlay = new Card();
+  overlay.setConfig({ entities: ["sensor.hc1", "sensor.hc2"] });
+  overlay.hass = {
+    states: {
+      "sensor.hc1": { state: "29.0", attributes: { curve, outdoor_temperature: 7.5 } },
+      "sensor.hc2": { state: "24.0", attributes: { curve: curve.map(([x, y]) => [x, y - 5]), outdoor_temperature: 7.5 } },
+    },
+  };
+  const both = overlay.shadowRoot.innerHTML;
+  const circles = [...both.matchAll(/<circle[^>]*cx="([-\d.]+)" cy="([-\d.]+)"/g)].map((m) => [Number(m[1]), Number(m[2])]);
+  result.overlay = {
+    svgs: (both.match(/<svg/g) || []).length,
+    curves: (both.match(/class="curve"/g) || []).length,
+    dots: (both.match(/class="dot"/g) || []).length,
+    markers: (both.match(/class="now"/g) || []).length,
+    legend: (both.match(/class="legend-item"/g) || []).length,
+    in_plot: circles.length === 16 && circles.every(([x, y]) => x >= 48 && x <= 386 && y >= 14 && y <= 218),
+  };
 }
 // A module that runs after the swap defines immediately, into the current registry, once.
 const late = new Registry("late");
