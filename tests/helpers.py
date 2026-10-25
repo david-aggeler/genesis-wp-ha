@@ -6,17 +6,25 @@ from custom_components.genesis_wp.const import CONF_ADVANCED
 from custom_components.genesis_wp.const import CONF_MODEL
 from custom_components.genesis_wp.const import CONF_UNIT
 from custom_components.genesis_wp.const import DOMAIN
+from genesis_wp.emulator import get_profile
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST
 from homeassistant.const import CONF_PORT
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from .harness import PROFILE_615
 from .harness import UNIT
-from .harness import WPE_I_KIND
+
+
+class Unreachable:
+    """Stands in for an emulator where nothing listens: loopback port 1, the 6.1.5 profile's model."""
+
+    host, port = "127.0.0.1", 1
+    profile = get_profile(PROFILE_615)
 
 
 def entry_data(emu) -> dict:
-    return {CONF_HOST: emu.host, CONF_PORT: emu.port, CONF_UNIT: UNIT, CONF_MODEL: WPE_I_KIND}
+    return {CONF_HOST: emu.host, CONF_PORT: emu.port, CONF_UNIT: UNIT, CONF_MODEL: emu.profile.model}
 
 
 def form_input(data, with_model=True) -> dict:

@@ -10,6 +10,7 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .harness import PROFILES
+from .helpers import Unreachable
 from .helpers import entry_data
 from .helpers import setup_entry
 
@@ -41,10 +42,7 @@ async def test_setup_refresh_and_unload(hass, start_emulator, profile):
 
 
 async def test_unreachable_device_is_not_ready(hass, socket_enabled):
-    class Gone:
-        host, port = "127.0.0.1", 1  # nothing listens on port 1
-
-    entry = MockConfigEntry(domain=DOMAIN, data=entry_data(Gone))
+    entry = MockConfigEntry(domain=DOMAIN, data=entry_data(Unreachable))
     entry.add_to_hass(hass)
     assert not await hass.config_entries.async_setup(entry.entry_id)
     assert entry.state is ConfigEntryState.SETUP_RETRY

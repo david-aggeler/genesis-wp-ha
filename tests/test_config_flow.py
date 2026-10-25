@@ -15,6 +15,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.selector import NumberSelector
 from homeassistant.helpers.selector import NumberSelectorMode
 
+from .helpers import Unreachable
 from .helpers import entry_data
 from .helpers import form_input
 from .helpers import real_form
@@ -76,10 +77,7 @@ async def test_selector_floats_are_stored_as_ints(hass, start_emulator):
 
 # DHF-REQ: genesis-wp-ha/requirement-4  DHF-TEST: genesis-wp-ha/ac-9
 async def test_unreachable_host_shows_cannot_connect(hass, socket_enabled):
-    class Gone:
-        host, port = "127.0.0.1", 1  # nothing listens on port 1
-
-    result = await _submit(hass, entry_data(Gone))
+    result = await _submit(hass, entry_data(Unreachable))
     assert result["type"] is FlowResultType.FORM
     assert result["errors"] == {"base": "cannot_connect"}
     assert hass.config_entries.async_entries(DOMAIN) == []
