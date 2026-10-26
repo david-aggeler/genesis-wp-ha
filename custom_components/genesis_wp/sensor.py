@@ -49,15 +49,15 @@ UNIT_CLASSES = {
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    """Add the heat pump's sensors from a config_entry."""
+    """Add the heat pump's sensors from a config_entry, except those of absent modules (requirement-12)."""
     coordinator = hass.data[DOMAIN][config_entry.entry_id]
 
     sensors = [ThermiaHeatpumpSensor(coordinator, HEATPUMP_SENSOR)]
     for sensor in SENSOR_TYPES:
-        if REGISTERS[sensor][coordinator.kind]:
+        if REGISTERS[sensor][coordinator.kind] and sensor not in coordinator.excluded:
             sensors.append(ThermiaGenericSensor(coordinator, sensor))
     for register, spec in REGISTERS.items():
-        if spec[KEY_REG_TYPE] == REG_HOLDING and spec[coordinator.kind]:
+        if spec[KEY_REG_TYPE] == REG_HOLDING and spec[coordinator.kind] and register not in coordinator.excluded:
             sensors.append(ThermiaSettingSensor(coordinator, register))
     async_add_entities(sensors, False)
 

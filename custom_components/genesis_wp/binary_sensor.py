@@ -16,7 +16,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
-    """Add Thermia entities from a config_entry."""
+    """Add Thermia entities from a config_entry, except those of absent modules (requirement-12)."""
     coordinator = hass.data[DOMAIN][config_entry.entry_id]
 
     sensors = []
@@ -24,10 +24,15 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     device_info = coordinator.device_info
 
     for sensor in BINARY_SENSOR_TYPES:
-        if REGISTERS[sensor][coordinator.kind]:
+        if REGISTERS[sensor][coordinator.kind] and sensor not in coordinator.excluded:
             sensors.append(ThermiaBinarySensor(coordinator, sensor, device_info))
     for register, spec in REGISTERS.items():
-        if spec[KEY_REG_TYPE] == REG_COIL and spec[coordinator.kind] and register not in COMMAND_COILS:
+        if (
+            spec[KEY_REG_TYPE] == REG_COIL
+            and spec[coordinator.kind]
+            and register not in COMMAND_COILS
+            and register not in coordinator.excluded
+        ):
             sensors.append(ThermiaCoilSensor(coordinator, register))
     async_add_entities(sensors, False)
 

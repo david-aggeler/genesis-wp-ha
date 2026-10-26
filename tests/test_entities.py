@@ -10,8 +10,10 @@ from genesis_wp import const as c
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
+from .harness import ABSENT_615
 from .harness import PROFILE_615
 from .harness import WPE_I_KIND
+from .harness import gates
 from .helpers import setup_entry
 
 FITTED = {  # wired on the owner's unit (installer documents)
@@ -20,10 +22,12 @@ FITTED = {  # wired on the owner's unit (installer documents)
     "T33 system supply": c.ATTR_INPUT_SYSTEM_SUPPLY_LINE_TEMPERATURE,
     "T35 outdoor": c.ATTR_INPUT_OUTDOOR_TEMPERATURE,
 }
-NOT_FITTED = {
-    "T34 room": c.ATTR_INPUT_ROOM_TEMPERATURE_SENSOR,
-    "T36 tap water top": c.ATTR_INPUT_TAP_WATER_TOP_TEMPERATURE,
-    "T37 tap water lower": c.ATTR_INPUT_TAP_WATER_LOWER_TEMPERATURE,
+# Absent modules get no entities (requirement-12), so the not-fitted case needs a present one:
+# hot water switched on in the emulator, its top sensor reporting the not-fitted sentinel.
+NOT_FITTED = {"T36 tap water top": c.ATTR_INPUT_TAP_WATER_TOP_TEMPERATURE}
+HOT_WATER_TOP_NOT_FITTED = {
+    "capabilities": {"hot_water": True},
+    "overrides": {("input_registers", c.REGISTERS[c.ATTR_INPUT_TAP_WATER_TOP_TEMPERATURE][c.KEY_ADDRESS]): 20000},
 }
 POWER = (c.ATTR_INPUT_CURRENT_POWER_OUTPUT, c.ATTR_INPUT_CURRENT_CONSUMED_POWER)
 
@@ -50,7 +54,7 @@ async def _enable(hass, entry, registers):
 
 # DHF-REQ: genesis-wp-ha/requirement-6  DHF-TEST: genesis-wp-ha/ac-15
 async def test_not_fitted_sensors_are_unavailable(hass, start_emulator):
-    entry = await setup_entry(hass, await start_emulator(PROFILE_615))
+    entry = await setup_entry(hass, await start_emulator(PROFILE_615, **HOT_WATER_TOP_NOT_FITTED))
     await _enable(hass, entry, [*FITTED.values(), *NOT_FITTED.values()])
 
     for label, register in NOT_FITTED.items():
@@ -113,7 +117,8 @@ async def test_unique_ids_use_register_type_and_address(hass, start_emulator):
     entries = er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
     actual = {(e.domain, e.unique_id) for e in entries}
 
-    fitted = lambda types: [r for r in types if c.REGISTERS[r][WPE_I_KIND]]  # noqa: E731
+    absent = gates(*ABSENT_615)  # no entities for absent modules (requirement-12)
+    fitted = lambda types: [r for r in types if c.REGISTERS[r][WPE_I_KIND] and r not in absent]  # noqa: E731
     expected = {("sensor", f"{entry.entry_id}_heatpump")}
     expected |= {("sensor", _unique_id(entry, r)) for r in fitted(SENSOR_TYPES)}
     expected |= {("binary_sensor", _unique_id(entry, r)) for r in fitted(BINARY_SENSOR_TYPES)}

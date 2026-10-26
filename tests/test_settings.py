@@ -9,8 +9,10 @@ from genesis_wp.emulator import get_profile
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
+from .harness import ABSENT_615
 from .harness import PROFILE_615
 from .harness import WPE_I_KIND
+from .harness import gates
 from .helpers import setup_entry
 
 BLOCKS = {"input": "input_registers", "holding": "holding_registers"}
@@ -23,6 +25,9 @@ def _flagged(reg_type):
 
 HOLDINGS = _flagged("holding")
 STATE_COILS = [r for r in _flagged("coil") if r not in COMMAND_COILS]
+# Settings of modules absent on the 6.1.5 plant get no entity (requirement-12).
+PLANT_HOLDINGS = [r for r in HOLDINGS if r not in gates(*ABSENT_615)]
+PLANT_STATE_COILS = [r for r in STATE_COILS if r not in gates(*ABSENT_615)]
 
 # The default-enabled core set, written out by register type and address so the test does not
 # share the integration's table.
@@ -78,8 +83,8 @@ async def test_every_flagged_holding_and_state_coil_has_an_entity(hass, start_em
 
     assert (len(HOLDINGS), len(STATE_COILS)) == (66, 24)
     settings = {(domain, u) for domain, u in actual if "_holding_" in u or "_coil_" in u}
-    expected = {("sensor", _unique_id(entry, r)) for r in HOLDINGS}
-    expected |= {("binary_sensor", _unique_id(entry, r)) for r in STATE_COILS}
+    expected = {("sensor", _unique_id(entry, r)) for r in PLANT_HOLDINGS}
+    expected |= {("binary_sensor", _unique_id(entry, r)) for r in PLANT_STATE_COILS}
     assert settings == expected
 
 
@@ -100,7 +105,7 @@ async def test_core_settings_are_enabled_in_celsius_with_emulator_values(hass, s
         assert float(state.state) == _emulator_value(PROFILE_615, register), name
 
     core = {_register(t, a) for t, a in CORE}
-    for register in [*HOLDINGS, *STATE_COILS]:
+    for register in [*PLANT_HOLDINGS, *PLANT_STATE_COILS]:
         if register in core:
             continue
         domain = "binary_sensor" if register in STATE_COILS else "sensor"
@@ -118,7 +123,7 @@ async def test_all_settings_enabled_read_with_fc1_and_fc3_only(hass, start_emula
     for _ in range(3):
         await coordinator.async_refresh()
         assert coordinator.last_update_success
-    assert set(HOLDINGS) | set(STATE_COILS) <= set(coordinator.attributes)
+    assert set(PLANT_HOLDINGS) | set(PLANT_STATE_COILS) <= set(coordinator.attributes)
     assert await hass.config_entries.async_unload(entry.entry_id)
 
     function_codes = {r.function_code for r in emu.requests}

@@ -7,6 +7,8 @@ from pathlib import Path
 from genesis_wp import ThermiaException
 from genesis_wp import ThermiaGenesis
 from genesis_wp import const as genesis_const
+from genesis_wp.capabilities import ABSENT
+from genesis_wp.capabilities import CAPABILITY_RULES
 from genesis_wp.const import GENESIS_17_MODELS
 from genesis_wp.const import KEY_ADDRESS
 from genesis_wp.const import KEY_REG_TYPE
@@ -58,6 +60,12 @@ VERSION_REGISTERS = {
         genesis_const.ATTR_INPUT_SOFTWARE_VERSION_MICRO,
     ),
 }
+
+
+def capability_evidence(kind) -> list[str]:
+    """Registers the library's capability rules read for ``kind``; always fetched (requirement-12)."""
+    names = {n for rule in CAPABILITY_RULES for n in (rule.enable, *rule.sensors, *rule.signals) if n is not None}
+    return sorted(n for n in names if REGISTERS[n][kind])
 
 
 def create_client(data) -> ThermiaGenesis:
@@ -117,6 +125,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         raise ConfigEntryNotReady
 
     coordinator.update_device_info()
+    coordinator.freeze_capabilities()
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
@@ -148,6 +157,10 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self.kind = entry.data[CONF_MODEL]
         self.entry_id = entry.entry_id
         self.attributes = {}
+        # Capability states the entities were created for, set after the first refresh (requirement-12).
+        self.setup_capabilities: dict[str, str] | None = None
+        self.excluded: frozenset[str] = frozenset()
+        self._reload_scheduled = False
         # Controller software and Genesis platform version identify the firmware profile.
         if self.kind in GENESIS_17_MODELS:
             self.sw_version_registers = VERSION_REGISTERS["control_software"]
@@ -158,6 +171,8 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self.registerAttribute(
             [r for r in (*self.sw_version_registers, *self.hw_version_registers) if REGISTERS[r][self.kind]]
         )
+        self.evidence = capability_evidence(self.kind)
+        self.registerAttribute(self.evidence)
 
         super().__init__(
             hass,
@@ -185,7 +200,37 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         _LOGGER.debug(
             "Fetched %d registers in %.2f s", len(data), time.monotonic() - start_time
         )
+        self._check_capabilities()
         return data
+
+    def freeze_capabilities(self):
+        """Fix the capability states the entities are created for; absent ones gate theirs out."""
+        capabilities = self.thermia.capabilities
+        self.setup_capabilities = {name: cap.state for name, cap in capabilities.items()}
+        self.excluded = frozenset(r for cap in capabilities.values() if cap.state == ABSENT for r in cap.gates)
+        for name, cap in capabilities.items():
+            _LOGGER.debug("Capability %s: %s (%s)", name, cap.state, "; ".join(cap.evidence))
+
+    def _check_capabilities(self):
+        """Reload the entry once when a capability absent at setup is no longer absent.
+
+        A capability turning absent at runtime keeps its entities until the next setup, so a
+        seasonal switch such as passive cooling does not make entities come and go. An update
+        that could not read all evidence registers is not taken as a change.
+        """
+        if self.setup_capabilities is None or self._reload_scheduled or self.thermia.unread & set(self.evidence):
+            return
+        appeared = sorted(
+            name
+            for name, cap in self.thermia.capabilities.items()
+            if cap.state != ABSENT and self.setup_capabilities.get(name) == ABSENT
+        )
+        if appeared:
+            for name in appeared:
+                _LOGGER.info("Capability %s changed from absent to %s; reloading to add its entities",
+                             name, self.thermia.capabilities[name].state)
+            self._reload_scheduled = True
+            self.hass.config_entries.async_schedule_reload(self.entry_id)
 
     def has_value(self, register) -> bool:
         """True when the last update read this register and it is fitted (not None)."""
