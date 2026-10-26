@@ -3,8 +3,13 @@ import logging
 
 import voluptuous as vol
 from genesis_wp import ThermiaException
+from genesis_wp.capabilities import CAPABILITY_NAMES
+from genesis_wp.capabilities import PRESENT
 from genesis_wp.const import MODEL_NAMES
+from genesis_wp.emulator import get_profile
 from genesis_wp.emulator import packaged_profiles
+from genesis_wp.emulator.capabilities import CapabilityError
+from genesis_wp.emulator.capabilities import selection_overrides
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST
 from homeassistant.const import CONF_PORT
@@ -15,7 +20,9 @@ from homeassistant.helpers.selector import NumberSelectorMode
 from homeassistant.helpers.selector import selector
 
 from . import create_client
+from . import detect_capabilities
 from .const import CONF_ADVANCED
+from .const import CONF_CAPABILITIES
 from .const import CONF_MODE
 from .const import CONF_MODEL
 from .const import CONF_PROFILE
@@ -30,10 +37,28 @@ from .const import MODE_EMULATED
 _LOGGER = logging.getLogger(__name__)
 
 
+def switchable_capabilities(profile) -> list[str]:
+    """Capabilities the emulator can present both on and off for ``profile``; the library decides."""
+    names = []
+    for name in CAPABILITY_NAMES:
+        try:
+            selection_overrides(profile, {name: True})
+            selection_overrides(profile, {name: False})
+        except CapabilityError:
+            continue
+        names.append(name)
+    return names
+
+
 class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for a genesis_wp heat pump."""
 
     VERSION = 1
+
+    def __init__(self):
+        """Initialize; the emulated path keeps the chosen profile and its detected defaults between steps."""
+        self._profile = None
+        self._module_defaults: dict[str, bool] = {}
 
     async def _validate_input(self, data):
         """Read one register to prove the device answers; never writes."""
@@ -111,12 +136,8 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_emulated(self, user_input=None):
         """Pick a packaged firmware profile; the integration runs it in-process on loopback."""
         if user_input is not None:
-            self._async_abort_entries_match({CONF_MODE: MODE_EMULATED, CONF_PROFILE: user_input[CONF_PROFILE]})
-            model = user_input[CONF_MODEL]
-            return self.async_create_entry(
-                title=f"{MODEL_NAMES[model]} (emulated)",
-                data={CONF_MODE: MODE_EMULATED, CONF_PROFILE: user_input[CONF_PROFILE], CONF_MODEL: model},
-            )
+            self._profile = get_profile(user_input[CONF_PROFILE])
+            return await self.async_step_modules()
 
         profiles = packaged_profiles()
         schema = vol.Schema(
@@ -124,11 +145,34 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 vol.Required(CONF_PROFILE, default=profiles[-1]): selector(
                     {"select": {"options": [{"value": p, "label": p} for p in profiles]}}
                 ),
-                # Profiles do not name their model kind yet; every packaged one is a WPE-I.
-                vol.Required(CONF_MODEL, default=DEFAULT_MODEL): self._model_selector(),
             }
         )
         return self.async_show_form(step_id=MODE_EMULATED, data_schema=schema)
+
+    async def async_step_modules(self, user_input=None):
+        """Switch the profile's plant modules on or off; defaults are what the recording contains (requirement-13)."""
+        profile = self._profile
+        if user_input is None:
+            detected = await detect_capabilities(profile)
+            self._module_defaults = {
+                name: detected.get(name) == PRESENT for name in switchable_capabilities(profile)
+            }
+            schema = vol.Schema(
+                {vol.Required(name, default=on): bool for name, on in self._module_defaults.items()}
+            )
+            return self.async_show_form(step_id="modules", data_schema=schema)
+
+        # Only the choices that differ from the recording: the profile stays the baseline.
+        capabilities = {
+            name: user_input[name]
+            for name, on in self._module_defaults.items()
+            if user_input.get(name, on) != on
+        }
+        data = {CONF_MODE: MODE_EMULATED, CONF_PROFILE: profile.name, CONF_MODEL: profile.model}
+        if capabilities:
+            data[CONF_CAPABILITIES] = capabilities
+        self._async_abort_entries_match(data)
+        return self.async_create_entry(title=f"{MODEL_NAMES[profile.model]} (emulated)", data=data)
 
     async def async_step_real(self, user_input=None):
         """Connect to a heat pump by host."""

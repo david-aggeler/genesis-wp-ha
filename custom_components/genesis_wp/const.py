@@ -36,6 +36,7 @@ CONF_MODEL = "model"
 CONF_ADVANCED = "advanced"  # config flow section holding the port; never stored in entry data
 CONF_MODE = "mode"  # absent for a real heat pump
 CONF_PROFILE = "profile"
+CONF_CAPABILITIES = "capabilities"  # emulated: modules switched against the profile, {name: on}
 MODE_EMULATED = "emulated"
 EMULATOR_HOST = "127.0.0.1"  # the in-process emulator never binds outside loopback
 EMULATOR_DYNAMICS_INTERVAL = 5  # seconds between simulated plant steps

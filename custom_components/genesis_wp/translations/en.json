@@ -28,8 +28,22 @@
       "emulated": {
         "description": "Run a recorded heat pump inside Home Assistant on a loopback port. It never reaches a real device.",
         "data": {
-          "profile": "Firmware profile",
-          "model": "Heat pump model"
+          "profile": "Firmware profile"
+        }
+      },
+      "modules": {
+        "title": "Modules",
+        "description": "Choose the modules the emulated plant has. The defaults are what the recording contains.",
+        "data": {
+          "heating_circuit_2": "Heating circuit 2 (mixing valve)",
+          "buffer_tank": "Buffer tank",
+          "hot_water": "Hot water",
+          "hot_gas_recovery": "Hot gas recovery",
+          "pool": "Pool",
+          "active_cooling": "Active cooling",
+          "passive_cooling": "Passive cooling",
+          "room_sensor": "Room temperature sensor",
+          "electric_meter": "Electric meter"
         }
       },
       "reconfigure": {
@@ -52,7 +66,7 @@
       "cannot_connect": "The heat pump did not answer a read request."
     },
     "abort": {
-      "already_configured": "This heat pump or firmware profile is already configured.",
+      "already_configured": "This heat pump, or this firmware profile with these modules, is already configured.",
       "reconfigure_successful": "The heat pump connection was updated.",
       "emulated_not_reconfigurable": "An emulated heat pump has no connection to change."
     }

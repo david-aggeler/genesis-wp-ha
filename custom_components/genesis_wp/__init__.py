@@ -16,6 +16,7 @@ from genesis_wp.const import MODEL_NAMES
 from genesis_wp.const import REGISTERS
 from genesis_wp.emulator import Emulator
 from genesis_wp.emulator import get_profile
+from genesis_wp.emulator import Profile
 from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
@@ -31,6 +32,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .const import CARD_URL
+from .const import CONF_CAPABILITIES
 from .const import CONF_MODE
 from .const import CONF_MODEL
 from .const import CONF_PROFILE
@@ -89,15 +91,34 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     return True
 
 
-async def _start_emulator(entry: ConfigEntry) -> Emulator:
-    """Run the entry's firmware profile in-process on a free loopback port."""
-    emulator = Emulator(
-        get_profile(entry.data[CONF_PROFILE]),
-        host=EMULATOR_HOST,
-        port=0,
-        dynamics=True,
-        dynamics_interval=EMULATOR_DYNAMICS_INTERVAL,
+async def detect_capabilities(profile: Profile, capabilities=None) -> dict[str, str]:
+    """Capability states the library detects on ``profile`` served with the ``capabilities`` selection."""
+    emulator = Emulator(profile, host=EMULATOR_HOST, port=0, capabilities=capabilities)
+    await emulator.start()
+    client = create_client(
+        {CONF_HOST: emulator.host, CONF_PORT: emulator.port, CONF_MODEL: profile.model, CONF_UNIT: profile.unit_id}
     )
+    try:
+        await client.async_update(only_registers=capability_evidence(profile.model))
+        return {name: cap.state for name, cap in client.capabilities.items()}
+    finally:
+        await client.close()
+        await emulator.stop()
+
+
+async def _start_emulator(entry: ConfigEntry) -> Emulator:
+    """Run the entry's firmware profile, with its module selection, in-process on a free loopback port."""
+    try:
+        emulator = Emulator(
+            get_profile(entry.data[CONF_PROFILE]),
+            host=EMULATOR_HOST,
+            port=0,
+            dynamics=True,
+            dynamics_interval=EMULATOR_DYNAMICS_INTERVAL,
+            capabilities=entry.data.get(CONF_CAPABILITIES) or None,
+        )
+    except ValueError as error:  # CapabilityError: a selection this library version cannot present
+        raise ConfigEntryNotReady(f"emulator profile rejected: {error}") from None
     try:
         await emulator.start()
     except OSError as error:
