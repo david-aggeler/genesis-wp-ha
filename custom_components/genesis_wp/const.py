@@ -38,6 +38,12 @@ CONF_MODE = "mode"  # absent for a real heat pump
 CONF_PROFILE = "profile"
 CONF_CAPABILITIES = "capabilities"  # emulated: modules switched against the profile, {name: on}
 MODE_EMULATED = "emulated"
+
+# Options flow (requirement-14): per module, automatic follows detection; the others are stored in
+# entry.options as {capability: library state} and passed to the library as capability overrides.
+MODULE_AUTOMATIC = "automatic"
+MODULE_INSTALLED = "installed"
+MODULE_NOT_INSTALLED = "not_installed"
 EMULATOR_HOST = "127.0.0.1"  # the in-process emulator never binds outside loopback
 EMULATOR_DYNAMICS_INTERVAL = 5  # seconds between simulated plant steps
 DEFAULT_PORT = 502

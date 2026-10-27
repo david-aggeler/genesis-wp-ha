@@ -70,5 +70,38 @@
       "reconfigure_successful": "The heat pump connection was updated.",
       "emulated_not_reconfigurable": "An emulated heat pump has no connection to change."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Modules",
+        "description": "Automatic follows what the heat pump reports. Choose installed for a module that is fitted but switched off, for example passive cooling in winter, so its entities stay. Choose not installed to hide a module the heat pump does not have.\n\nReported now: {detected}",
+        "data": {
+          "heating_circuit_2": "Heating circuit 2 (mixing valve)",
+          "heating_circuit_3": "Heating circuit 3",
+          "heating_circuit_4": "Heating circuit 4",
+          "buffer_tank": "Buffer tank",
+          "hot_water": "Hot water",
+          "hot_gas_recovery": "Hot gas recovery",
+          "pool": "Pool",
+          "active_cooling": "Active cooling",
+          "passive_cooling": "Passive cooling",
+          "room_sensor": "Room temperature sensor",
+          "additional_heater": "Additional heater",
+          "electric_meter": "Electric meter",
+          "smart_grid": "SG Ready",
+          "ksm": "Refrigerant safety module (KSM)"
+        }
+      }
+    }
+  },
+  "selector": {
+    "module": {
+      "options": {
+        "automatic": "Automatic",
+        "installed": "Installed",
+        "not_installed": "Not installed"
+      }
+    }
   }
 }

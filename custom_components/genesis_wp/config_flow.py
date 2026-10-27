@@ -3,8 +3,11 @@ import logging
 
 import voluptuous as vol
 from genesis_wp import ThermiaException
+from genesis_wp.capabilities import ABSENT
 from genesis_wp.capabilities import CAPABILITY_NAMES
+from genesis_wp.capabilities import CAPABILITY_RULES
 from genesis_wp.capabilities import PRESENT
+from genesis_wp.capabilities import gated_registers
 from genesis_wp.const import MODEL_NAMES
 from genesis_wp.emulator import get_profile
 from genesis_wp.emulator import packaged_profiles
@@ -13,6 +16,7 @@ from genesis_wp.emulator.capabilities import selection_overrides
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST
 from homeassistant.const import CONF_PORT
+from homeassistant.core import callback
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers.selector import NumberSelector
 from homeassistant.helpers.selector import NumberSelectorConfig
@@ -33,8 +37,19 @@ from .const import DEFAULT_UNIT
 from .const import DOMAIN
 from .const import HEATPUMP_SENSOR
 from .const import MODE_EMULATED
+from .const import MODULE_AUTOMATIC
+from .const import MODULE_INSTALLED
+from .const import MODULE_NOT_INSTALLED
 
 _LOGGER = logging.getLogger(__name__)
+
+
+MODULE_STATES = {MODULE_INSTALLED: PRESENT, MODULE_NOT_INSTALLED: ABSENT}
+
+
+def model_capabilities(kind) -> list[str]:
+    """Capabilities that gate registers on model ``kind``: the modules the options step offers."""
+    return [rule.name for rule in CAPABILITY_RULES if gated_registers(rule, kind)]
 
 
 def switchable_capabilities(profile) -> list[str]:
@@ -54,6 +69,12 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for a genesis_wp heat pump."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry):
+        """Module choices for an existing entry (requirement-14)."""
+        return GenesisOptionsFlow()
 
     def __init__(self):
         """Initialize; the emulated path keeps the chosen profile and its detected defaults between steps."""
@@ -217,3 +238,52 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data_schema=self._schema(user_input or entry.data, with_model=False),
             errors=errors,
         )
+
+
+class GenesisOptionsFlow(config_entries.OptionsFlowWithReload):
+    """Per module: automatic follows the library's detection, the others override it (requirement-14)."""
+
+    async def async_step_init(self, user_input=None):
+        """One select per module of the entry's model; only non-automatic choices are stored."""
+        names = model_capabilities(self.config_entry.data[CONF_MODEL])
+        if user_input is not None:
+            return self.async_create_entry(
+                data={
+                    name: MODULE_STATES[user_input[name]]
+                    for name in names
+                    if user_input.get(name, MODULE_AUTOMATIC) in MODULE_STATES
+                }
+            )
+
+        chosen = {state: choice for choice, state in MODULE_STATES.items()}
+        options = self.config_entry.options
+        module = selector(
+            {
+                "select": {
+                    "options": [MODULE_AUTOMATIC, MODULE_INSTALLED, MODULE_NOT_INSTALLED],
+                    "translation_key": "module",
+                }
+            }
+        )
+        schema = vol.Schema(
+            {
+                vol.Required(name, default=chosen.get(options.get(name), MODULE_AUTOMATIC)): module
+                for name in names
+            }
+        )
+        return self.async_show_form(
+            step_id="init", data_schema=schema, description_placeholders={"detected": self._detected(names)}
+        )
+
+    def _detected(self, names) -> str:
+        """What the running entry reports per module, so the user sees what automatic means today."""
+        coordinator = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
+        if coordinator is None:
+            return "-"
+        capabilities = coordinator.thermia.capabilities
+        lines = []
+        for name in names:
+            cap = capabilities.get(name)
+            if cap is not None:
+                lines.append(f"{name}: {cap.state}{' (set here)' if cap.overridden else ''}")
+        return ", ".join(lines) or "-"

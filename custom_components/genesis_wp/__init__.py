@@ -8,7 +8,9 @@ from genesis_wp import ThermiaException
 from genesis_wp import ThermiaGenesis
 from genesis_wp import const as genesis_const
 from genesis_wp.capabilities import ABSENT
+from genesis_wp.capabilities import CAPABILITY_NAMES
 from genesis_wp.capabilities import CAPABILITY_RULES
+from genesis_wp.capabilities import PRESENT
 from genesis_wp.const import GENESIS_17_MODELS
 from genesis_wp.const import KEY_ADDRESS
 from genesis_wp.const import KEY_REG_TYPE
@@ -70,7 +72,18 @@ def capability_evidence(kind) -> list[str]:
     return sorted(n for n in names if REGISTERS[n][kind])
 
 
-def create_client(data) -> ThermiaGenesis:
+def capability_overrides(options) -> dict[str, str]:
+    """The entry's module choices as library overrides; anything this library version rejects is dropped."""
+    overrides = {}
+    for name, state in options.items():
+        if name in CAPABILITY_NAMES and state in (PRESENT, ABSENT):
+            overrides[name] = state
+        else:
+            _LOGGER.warning("Ignoring module option %s=%s: not a capability state", name, state)
+    return overrides
+
+
+def create_client(data, overrides=None) -> ThermiaGenesis:
     """Build the library client for a config entry's data; always read-only."""
     return ThermiaGenesis(
         data[CONF_HOST],
@@ -78,6 +91,7 @@ def create_client(data) -> ThermiaGenesis:
         kind=data[CONF_MODEL],
         unit_id=data[CONF_UNIT],
         read_only=True,
+        capability_overrides=overrides,
     )
 
 
@@ -173,7 +187,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
 
     def __init__(self, hass, entry: ConfigEntry, connection, emulator: Emulator | None = None):
         """Initialize; ``connection`` holds host, port and unit, ``emulator`` is set for an emulated entry."""
-        self.thermia = create_client(connection)
+        self.thermia = create_client(connection, capability_overrides(entry.options))
         self.emulator = emulator
         self.kind = entry.data[CONF_MODEL]
         self.entry_id = entry.entry_id

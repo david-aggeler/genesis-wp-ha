@@ -26,6 +26,8 @@ Manual install: copy `custom_components/genesis_wp/` into your Home Assistant `c
 - **Real heat pump**: enter the host name or IP address and pick the model. The Modbus TCP port (default 502) sits under *Advanced*. The integration only reads; it never writes to the heat pump.
 - **Emulated heat pump**: pick a firmware profile recorded from a real unit. The integration runs [genesis-wp-emulator](https://github.com/david-aggeler/genesis-wp) inside Home Assistant on `127.0.0.1` with a free port and simulated drift. It never reaches a real device. A second step offers the plant's modules (hot water, pool, cooling, second heating circuit and others) as switches, starting from what the recording contains; the library decides which modules can be switched. Entities follow the chosen modules. To change them later, remove the entry and add it again. The device is named "… (emulated)" and can sit next to a real one. Removing or reloading the entry stops the emulator.
 
+Both kinds of entry have **Configure** (the options): one choice per module of the model. *Automatic* follows what the heat pump reports, and a module reported absent gets no entities. *Installed* keeps a module's entities while it is switched off, for example passive cooling in winter. *Not installed* hides a module the heat pump does not have. Saving reloads the entry.
+
 An emulator on another machine also works: run `genesis-wp-emulator --host 0.0.0.0 --port 5020 --dynamics` there (from the genesis-wp library's `emulator` extra), then add a **Real heat pump** with that host and port 5020.
 
 ## Heating curve card
