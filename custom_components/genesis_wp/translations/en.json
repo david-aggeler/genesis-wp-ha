@@ -75,7 +75,7 @@
     "step": {
       "init": {
         "title": "Modules",
-        "description": "Automatic follows what the heat pump reports. Choose installed for a module that is fitted but switched off, for example passive cooling in winter, so its entities stay. Choose not installed to hide a module the heat pump does not have.\n\nReported now: {detected}",
+        "description": "Automatic follows what the heat pump reports. Choose installed for a module that is fitted although the heat pump does not report it, so its entities stay. Choose not installed to hide a module the heat pump does not have.\n\nReported now: {detected}",
         "data": {
           "heating_circuit_2": "Heating circuit 2 (mixing valve)",
           "heating_circuit_3": "Heating circuit 3",
@@ -86,6 +86,7 @@
           "pool": "Pool",
           "active_cooling": "Active cooling",
           "passive_cooling": "Passive cooling",
+          "cooling": "Cooling (active or passive)",
           "room_sensor": "Room temperature sensor",
           "additional_heater": "Additional heater",
           "electric_meter": "Electric meter",

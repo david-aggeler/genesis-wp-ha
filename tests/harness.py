@@ -17,7 +17,7 @@ UNIT = 1
 WPE_I_KIND = "stiebel_wpe_i_07_1"
 
 # Capabilities the library detects as absent on the 6.1.5 capture, the owner's plant (requirement-12).
-ABSENT_615 = ("hot_water", "hot_gas_recovery", "pool", "active_cooling", "passive_cooling", "room_sensor", "electric_meter")
+ABSENT_615 = ("hot_water", "pool", "active_cooling", "room_sensor", "electric_meter")
 _RULES = {rule.name: rule for rule in CAPABILITY_RULES}
 
 

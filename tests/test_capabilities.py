@@ -68,19 +68,19 @@ async def test_present_unknown_and_ungated_registers_keep_entities(hass, start_e
 async def test_capability_detected_later_adds_its_entities(hass, start_emulator):
     emu = await start_emulator(PROFILE_615)
     entry = await setup_entry(hass, emu)
-    passive = {unique_id(entry, r) for r in gates("passive_cooling")}
-    assert passive and not passive & registered(hass, entry)
+    hot_water = {unique_id(entry, r) for r in gates("hot_water")}
+    assert hot_water and not hot_water & registered(hass, entry)
 
-    changed = await restart(emu, capabilities={"passive_cooling": True})  # coil 33 on
+    changed = await restart(emu, capabilities={"hot_water": True})  # hot water sensors fitted
     try:
         coordinator = hass.data[DOMAIN][entry.entry_id]
         await coordinator.async_refresh()
         if not coordinator.last_update_success:  # the client reconnects on the next update
             await coordinator.async_refresh()
-        assert coordinator.thermia.capabilities["passive_cooling"].state == "present"
+        assert coordinator.thermia.capabilities["hot_water"].state == "present"
         await hass.async_block_till_done()
 
-        assert passive <= registered(hass, entry)
+        assert hot_water <= registered(hass, entry)
         assert hass.data[DOMAIN][entry.entry_id] is not coordinator  # reloaded, not restarted
     finally:
         await changed.stop()
@@ -88,21 +88,21 @@ async def test_capability_detected_later_adds_its_entities(hass, start_emulator)
 
 # DHF-REQ: genesis-wp-ha/requirement-12  DHF-TEST: genesis-wp-ha/ac-41
 async def test_capability_turning_absent_keeps_entities_until_next_setup(hass, start_emulator):
-    emu = await start_emulator(PROFILE_615, capabilities={"passive_cooling": True})
+    emu = await start_emulator(PROFILE_615, capabilities={"hot_water": True})
     entry = await setup_entry(hass, emu)
-    passive = {unique_id(entry, r) for r in gates("passive_cooling")}
-    assert passive <= registered(hass, entry)
+    hot_water = {unique_id(entry, r) for r in gates("hot_water")}
+    assert hot_water <= registered(hass, entry)
     coordinator = hass.data[DOMAIN][entry.entry_id]
 
-    changed = await restart(emu)  # coil 33 off
+    changed = await restart(emu)  # hot water sensors not fitted
     try:
         await coordinator.async_refresh()
         if not coordinator.last_update_success:
             await coordinator.async_refresh()
-        assert coordinator.thermia.capabilities["passive_cooling"].state == "absent"
+        assert coordinator.thermia.capabilities["hot_water"].state == "absent"
         await hass.async_block_till_done()
         assert hass.data[DOMAIN][entry.entry_id] is coordinator
-        assert passive <= registered(hass, entry)
+        assert hot_water <= registered(hass, entry)
     finally:
         await changed.stop()
 

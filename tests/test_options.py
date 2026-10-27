@@ -35,16 +35,16 @@ async def refresh(coordinator):
 
 # DHF-REQ: genesis-wp-ha/requirement-14  DHF-TEST: genesis-wp-ha/ac-44
 async def test_installed_module_keeps_entities_while_switched_off(hass, start_emulator):
-    entry = await setup_with_options(hass, await start_emulator(PROFILE_615), {"passive_cooling": "present"})
+    entry = await setup_with_options(hass, await start_emulator(PROFILE_615), {"hot_water": "present"})
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    passive = coordinator.thermia.capabilities["passive_cooling"]
-    assert passive.state == "present" and passive.overridden
-    assert "detected absent" in passive.evidence[0]  # coil 33 is off on the capture
+    module = coordinator.thermia.capabilities["hot_water"]
+    assert module.state == "present" and module.overridden
+    assert "detected absent" in module.evidence[0]  # hot water sensors are not fitted on the capture
 
-    assert {unique_id(entry, r) for r in gates("passive_cooling")} <= registered(hass, entry)
+    assert {unique_id(entry, r) for r in gates("hot_water")} <= registered(hass, entry)
     registry = er.async_get(hass)
     enable = registry.async_get_entity_id(
-        "binary_sensor", DOMAIN, unique_id(entry, c.ATTR_COIL_ENABLE_PASSIVE_COOLING)
+        "binary_sensor", DOMAIN, unique_id(entry, c.ATTR_COIL_ENABLE_TAP_WATER)
     )
     # Settings entities start disabled (requirement-9); enable it as a user would.
     registry.async_update_entity(enable, disabled_by=None)
@@ -74,11 +74,11 @@ async def test_options_step_lists_modules_with_automatic_default(hass, start_emu
     fields = {str(key): key for key in result["data_schema"].schema}
     expected = [name for name in model_capabilities(WPE_I_KIND)]
     assert list(fields) == expected
-    assert "passive_cooling" in fields and "heating_circuit_3" not in fields
+    assert "hot_water" in fields and "heating_circuit_3" not in fields
     for key, select in result["data_schema"].schema.items():
         assert key.default() == "automatic"
         assert select.config["options"] == ["automatic", "installed", "not_installed"]
-    assert "passive_cooling: absent" in result["description_placeholders"]["detected"]
+    assert "hot_water: absent" in result["description_placeholders"]["detected"]
 
     result = await hass.config_entries.options.async_configure(result["flow_id"], {})
     assert result["type"] is FlowResultType.CREATE_ENTRY
@@ -89,33 +89,33 @@ async def test_options_step_lists_modules_with_automatic_default(hass, start_emu
 async def test_saving_module_options_applies_them(hass, start_emulator):
     entry = await setup_with_options(hass, await start_emulator(PROFILE_615), {})
     entry_id = entry.entry_id
-    passive = {unique_id(entry, r) for r in gates("passive_cooling")}
-    assert not passive & registered(hass, entry)
+    hot_water_entities = {unique_id(entry, r) for r in gates("hot_water")}
+    assert not hot_water_entities & registered(hass, entry)
 
     result = await hass.config_entries.options.async_init(entry_id)
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"passive_cooling": "installed", "pool": "not_installed"}
+        result["flow_id"], {"hot_water": "installed", "pool": "not_installed"}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
 
-    assert entry.options == {"passive_cooling": "present", "pool": "absent"}
+    assert entry.options == {"hot_water": "present", "pool": "absent"}
     assert hass.config_entries.async_get_entry(entry_id) is entry
-    assert passive <= registered(hass, entry)
+    assert hot_water_entities <= registered(hass, entry)
 
     # The stored choice is shown again, not reset to automatic.
     result = await hass.config_entries.options.async_init(entry_id)
     defaults = {str(key): key.default() for key in result["data_schema"].schema}
-    assert defaults["passive_cooling"] == "installed" and defaults["pool"] == "not_installed"
-    assert "passive_cooling: present (set here)" in result["description_placeholders"]["detected"]
+    assert defaults["hot_water"] == "installed" and defaults["pool"] == "not_installed"
+    assert "hot_water: present (set here)" in result["description_placeholders"]["detected"]
 
 
 async def test_installed_module_does_not_reload_when_switched(hass, start_emulator):
     emu = await start_emulator(PROFILE_615)
-    entry = await setup_with_options(hass, emu, {"passive_cooling": "present"})
+    entry = await setup_with_options(hass, emu, {"hot_water": "present"})
     coordinator = hass.data[DOMAIN][entry.entry_id]
 
-    changed = await restart(emu, capabilities={"passive_cooling": True})  # coil 33 on
+    changed = await restart(emu, capabilities={"hot_water": True})  # hot water sensors fitted, coil 8 on
     try:
         await refresh(coordinator)
         await hass.async_block_till_done()
@@ -125,6 +125,6 @@ async def test_installed_module_does_not_reload_when_switched(hass, start_emulat
 
 
 def test_unknown_module_options_are_dropped(caplog):
-    options = {"passive_cooling": "present", "sauna": "present", "pool": "installed"}
-    assert capability_overrides(options) == {"passive_cooling": "present"}
+    options = {"hot_water": "present", "sauna": "present", "pool": "installed"}
+    assert capability_overrides(options) == {"hot_water": "present"}
     assert "sauna" in caplog.text and "pool" in caplog.text
