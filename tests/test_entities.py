@@ -9,6 +9,7 @@ from custom_components.genesis_wp.const import SENSOR_TYPES
 from genesis_wp import const as c
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import slugify
 
 from .harness import ABSENT_615
 from .harness import PROFILE_615
@@ -142,8 +143,11 @@ async def test_entities_use_has_entity_name(hass, start_emulator):
     entries = er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)
     assert entries and all(e.has_entity_name for e in entries)
     (device,) = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
-    state = hass.states.get(_entity_id(hass, entry, outdoor))
-    assert state.attributes["friendly_name"] == f"{device.name} Outdoor Temperature"
+    entity = er.async_get(hass).async_get(_entity_id(hass, entry, outdoor))
+    category = dr.async_get(hass).async_get(entity.device_id)  # a child of the heat pump (requirement-15)
+    full_name = f"{device.name} {category.name} Outdoor Temperature"
+    assert er.async_get_full_entity_name(hass, entity) == full_name
+    assert entity.entity_id == f"sensor.{slugify(full_name)}"
 
 
 # DHF-REQ: genesis-wp-ha/requirement-7  DHF-TEST: genesis-wp-ha/ac-33

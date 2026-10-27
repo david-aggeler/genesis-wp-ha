@@ -73,7 +73,8 @@ class RegisterSensor(SensorEntity):
         self.coordinator = coordinator
         self.kind = kind
         self._attr_unique_id = coordinator.unique_id(kind)
-        self._attr_device_info = coordinator.device_info
+        self._attr_device_info = coordinator.device_info_for(kind)
+        self._attr_entity_category = coordinator.entity_category_for(kind)
 
     def _subscribed(self):
         return [self.kind]
@@ -126,6 +127,8 @@ class ThermiaHeatpumpSensor(RegisterSensor):
         """Initialize."""
         super().__init__(coordinator, kind)
         self._attr_unique_id = f"{coordinator.entry_id}_heatpump"
+        self._attr_device_info = coordinator.device_info
+        self._attr_entity_category = None
 
     def _subscribed(self):
         return [self.kind, *(attr[0] for attr in HEATPUMP_ATTRIBUTES), *HEATPUMP_ALARMS]

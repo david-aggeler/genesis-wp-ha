@@ -28,6 +28,8 @@ Manual install: copy `custom_components/genesis_wp/` into your Home Assistant `c
 
 Both kinds of entry have **Configure** (the options): one choice per module of the model. *Automatic* follows what the heat pump reports, and a module reported absent gets no entities. *Installed* keeps the entities of a fitted module the heat pump reports absent. A module that is fitted but switched off, such as passive cooling in winter, already keeps its entities on Automatic. *Not installed* hides a module the heat pump does not have. Saving reloads the entry.
 
+The heat pump's entities sit on child devices of the heat pump, one per plant section: heating system, additional heating circuits, buffer tank, hot water, cooling, pool, internal heat pump, refrigerant safety module, electric meter and energy, controller. A section without entities gets no child device. Alarms and read-only settings appear under *Diagnostic*.
+
 An emulator on another machine also works: run `genesis-wp-emulator --host 0.0.0.0 --port 5020 --dynamics` there (from the genesis-wp library's `emulator` extra), then add a **Real heat pump** with that host and port 5020.
 
 ## Heating curve card

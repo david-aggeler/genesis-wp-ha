@@ -21,11 +21,9 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     sensors = []
 
-    device_info = coordinator.device_info
-
     for sensor in BINARY_SENSOR_TYPES:
         if REGISTERS[sensor][coordinator.kind] and sensor not in coordinator.excluded:
-            sensors.append(ThermiaBinarySensor(coordinator, sensor, device_info))
+            sensors.append(ThermiaBinarySensor(coordinator, sensor))
     for register, spec in REGISTERS.items():
         if (
             spec[KEY_REG_TYPE] == REG_COIL
@@ -50,7 +48,8 @@ class ThermiaCoilSensor(BinarySensorEntity):
         self.coordinator = coordinator
         self.kind = kind
         self._attr_unique_id = coordinator.unique_id(kind)
-        self._attr_device_info = coordinator.device_info
+        self._attr_device_info = coordinator.device_info_for(kind)
+        self._attr_entity_category = coordinator.entity_category_for(kind)
         self._attr_name = kind.removeprefix("coil_").replace("_", " ").title()
 
     @property
@@ -77,12 +76,13 @@ class ThermiaBinarySensor(BinarySensorEntity):
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, kind, device_info):
+    def __init__(self, coordinator, kind):
         """Initialize."""
         self._name = f"{BINARY_SENSOR_TYPES[kind][ATTR_LABEL]}"
         # self._name = f"{coordinator.data[ATTR_MODEL]} {SENSOR_TYPES[kind][ATTR_LABEL]}"
         self._unique_id = coordinator.unique_id(kind)
-        self._device_info = device_info
+        self._device_info = coordinator.device_info_for(kind)
+        self._attr_entity_category = coordinator.entity_category_for(kind)
         self.coordinator = coordinator
         self.kind = kind
         self._attrs = {}

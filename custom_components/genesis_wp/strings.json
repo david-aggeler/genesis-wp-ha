@@ -104,5 +104,37 @@
         "not_installed": "Not installed"
       }
     }
+  },
+  "device": {
+    "heating_system": {
+      "name": "Heating system"
+    },
+    "additional_heating_circuits": {
+      "name": "Additional heating circuits"
+    },
+    "buffer_tank": {
+      "name": "Buffer tank"
+    },
+    "hot_water": {
+      "name": "Hot water"
+    },
+    "cooling": {
+      "name": "Cooling"
+    },
+    "pool": {
+      "name": "Pool"
+    },
+    "internal_heat_pump": {
+      "name": "Internal heat pump"
+    },
+    "ksm": {
+      "name": "Refrigerant safety module (KSM)"
+    },
+    "electric_meter_and_energy": {
+      "name": "Electric meter and energy"
+    },
+    "controller": {
+      "name": "Controller"
+    }
   }
 }

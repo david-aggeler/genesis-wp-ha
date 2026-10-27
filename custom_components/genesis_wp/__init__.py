@@ -7,6 +7,8 @@ from pathlib import Path
 from genesis_wp import ThermiaException
 from genesis_wp import ThermiaGenesis
 from genesis_wp import const as genesis_const
+from genesis_wp import register_category
+from genesis_wp import register_role
 from genesis_wp.capabilities import ABSENT
 from genesis_wp.capabilities import CAPABILITY_NAMES
 from genesis_wp.capabilities import CAPABILITY_RULES
@@ -19,15 +21,19 @@ from genesis_wp.const import REGISTERS
 from genesis_wp.emulator import Emulator
 from genesis_wp.emulator import get_profile
 from genesis_wp.emulator import Profile
+from genesis_wp.groups import ROLE_MEASUREMENT
 from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST
 from homeassistant.const import CONF_PORT
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers.device_registry import ChildDeviceInfo
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -39,6 +45,7 @@ from .const import CONF_MODE
 from .const import CONF_MODEL
 from .const import CONF_PROFILE
 from .const import CONF_UNIT
+from .const import CORE_SETTINGS
 from .const import DOMAIN
 from .const import EMULATOR_DYNAMICS_INTERVAL
 from .const import EMULATOR_HOST
@@ -160,6 +167,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         raise ConfigEntryNotReady
 
     coordinator.update_device_info()
+    # Register the heat pump first: the category sub-devices are its children (requirement-15).
+    coordinator.device_id = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id, **coordinator.device_info
+    ).id
     coordinator.freeze_capabilities()
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
@@ -196,6 +207,8 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self.setup_capabilities: dict[str, str] | None = None
         self.excluded: frozenset[str] = frozenset()
         self._reload_scheduled = False
+        # Device registry ID of the heat pump, the parent of the category devices; set during setup.
+        self.device_id: str | None = None
         # Controller software and Genesis platform version identify the firmware profile.
         if self.kind in GENESIS_17_MODELS:
             self.sw_version_registers = VERSION_REGISTERS["control_software"]
@@ -299,6 +312,22 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             sw_version=self._version(self.sw_version_registers),
             hw_version=self._version(self.hw_version_registers),
         )
+
+    def device_info_for(self, register) -> ChildDeviceInfo:
+        """The child device of the register's category under the heat pump (requirement-15)."""
+        category = register_category(register)
+        return ChildDeviceInfo(
+            identifiers={(DOMAIN, f"{self.entry_id}_{category}")},
+            parent_device_id=self.device_id,
+            translation_key=category,
+        )
+
+    @staticmethod
+    def entity_category_for(register) -> EntityCategory | None:
+        """Alarms and read-only settings are diagnostic; measurements and core set temperatures primary."""
+        if register in CORE_SETTINGS or register_role(register) == ROLE_MEASUREMENT:
+            return None
+        return EntityCategory.DIAGNOSTIC
 
     def registerAttribute(self, attribute):
         if type(attribute) is list:

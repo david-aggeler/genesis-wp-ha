@@ -99,7 +99,8 @@ async def test_core_settings_are_enabled_in_celsius_with_emulator_values(hass, s
         registry_entry = _registry_entry(hass, entry, "sensor", register)
         assert registry_entry.disabled_by is None, name
         state = hass.states.get(registry_entry.entity_id)
-        assert state.attributes["friendly_name"] == f"{device_name} {name}"
+        category = dr.async_get(hass).async_get(registry_entry.device_id).name
+        assert er.async_get_full_entity_name(hass, registry_entry) == f"{device_name} {category} {name}"
         assert state.attributes["unit_of_measurement"] == "°C", name
         assert state.attributes["device_class"] == "temperature", name
         assert float(state.state) == _emulator_value(PROFILE_615, register), name
