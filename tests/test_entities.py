@@ -166,3 +166,13 @@ async def test_sensors_with_a_device_class_leave_the_icon_to_home_assistant(hass
     assert with_class and without_class
     assert [s.entity_id for s in with_class if "icon" in s.attributes] == []
     assert [s.entity_id for s in without_class if "icon" not in s.attributes] == []
+
+
+# DHF-REQ: genesis-wp-ha/requirement-3  DHF-TEST: genesis-wp-ha/ac-7
+async def test_count_sensor_reports_an_integral_state(hass, start_emulator):
+    gear = c.ATTR_INPUT_COMPRESSOR_CURRENT_GEAR
+    address = c.REGISTERS[gear][c.KEY_ADDRESS]
+    entry = await setup_entry(hass, await start_emulator(PROFILE_615, overrides={("input_registers", address): 300}))
+    await _enable(hass, entry, [gear])
+
+    assert hass.states.get(_entity_id(hass, entry, gear)).state == "3"  # library decodes integral counts as int
