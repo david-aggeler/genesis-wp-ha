@@ -143,30 +143,36 @@ async def test_reconfigure_onto_another_entry_aborts(hass, start_emulator):
     assert entry.data[CONF_PORT] == emu_a.port
 
 
-def _host_records(caplog, host, prefix):
-    return [r for r in caplog.records if r.name.startswith(prefix) and host in r.getMessage()]
+def _host_records(caplog, host):
+    """Log records naming the host, from any logger except the in-process emulator and asyncio.
+
+    The emulator logs its own bind address: test topology, not the device. asyncio logs
+    connects only in loop debug mode, which the test plugin forces on and HA enables only
+    under --debug. Every other logger counts, including pymodbus.logging, which the
+    library's transport writes to.
+    """
+    return [
+        r for r in caplog.records
+        if r.name != "asyncio"
+        and not r.name.startswith("genesis_wp.emulator")
+        and host in r.getMessage()
+    ]
 
 
 # DHF-REQ: genesis-wp-ha/requirement-4  DHF-TEST: genesis-wp-ha/ac-11
-async def test_integration_never_logs_the_host(hass, start_emulator, caplog):
+async def test_setup_and_refresh_never_log_the_host(hass, start_emulator, caplog):
     caplog.set_level(logging.DEBUG)
     emu = await start_emulator()
     entry = await setup_entry(hass, emu)
     await hass.data[DOMAIN][entry.entry_id].async_refresh()
     await emu.stop()  # a failing refresh must not leak the host either
     await hass.data[DOMAIN][entry.entry_id].async_refresh()
-    assert _host_records(caplog, emu.host, "custom_components.genesis_wp") == []
-    assert _host_records(caplog, emu.host, "homeassistant") == []
+    assert _host_records(caplog, emu.host) == []
 
 
-# DHF-REQ: genesis-wp-ha/requirement-4  DHF-TEST: genesis-wp-ha/ac-11
-async def test_library_never_logs_the_host(hass, start_emulator, caplog):
+# DHF-REQ: genesis-wp-ha/requirement-4  DHF-TEST: genesis-wp-ha/ac-52
+async def test_failed_connect_never_logs_the_host(hass, socket_enabled, caplog):
     caplog.set_level(logging.DEBUG)
-    emu = await start_emulator()
-    entry = await setup_entry(hass, emu)
-    await hass.data[DOMAIN][entry.entry_id].async_refresh()
-    await emu.stop()  # the failure path must not leak the host either
-    await hass.data[DOMAIN][entry.entry_id].async_refresh()
-    # The in-process emulator logs its own bind address: test topology, not the device.
-    library = [r for r in _host_records(caplog, emu.host, "genesis_wp") if not r.name.startswith("genesis_wp.emulator")]
-    assert library == []
+    result = await _submit(hass, entry_data(Unreachable))
+    assert result["errors"] == {"base": "cannot_connect"}
+    assert _host_records(caplog, Unreachable.host) == []
