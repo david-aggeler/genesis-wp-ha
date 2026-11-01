@@ -85,6 +85,14 @@ async def test_options_step_lists_modules_with_automatic_default(hass, start_emu
     assert entry.options == {}
 
 
+# DHF-REQ: genesis-wp-ha/requirement-14
+def test_options_step_offers_no_built_in_or_combined_module():
+    """Built-in modules cannot be missing and combined ones follow their members (change_request-25)."""
+    names = model_capabilities(WPE_I_KIND)
+    assert not set(names) & {"ksm", "internal_heater", "cooling", "additional_heater"}
+    assert {"external_heater", "passive_cooling", "active_cooling", "hot_gas_recovery"} <= set(names)
+
+
 # DHF-REQ: genesis-wp-ha/requirement-14  DHF-TEST: genesis-wp-ha/ac-47
 async def test_saving_module_options_applies_them(hass, start_emulator):
     entry = await setup_with_options(hass, await start_emulator(PROFILE_615), {})

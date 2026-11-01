@@ -7,6 +7,8 @@ from genesis_wp.capabilities import ABSENT
 from genesis_wp.capabilities import CAPABILITY_NAMES
 from genesis_wp.capabilities import CAPABILITY_RULES
 from genesis_wp.capabilities import PRESENT
+from genesis_wp.capabilities import RULE_ANY_OF
+from genesis_wp.capabilities import RULE_BUILT_IN
 from genesis_wp.capabilities import gated_registers
 from genesis_wp.const import MODEL_NAMES
 from genesis_wp.emulator import get_profile
@@ -48,8 +50,15 @@ MODULE_STATES = {MODULE_INSTALLED: PRESENT, MODULE_NOT_INSTALLED: ABSENT}
 
 
 def model_capabilities(kind) -> list[str]:
-    """Capabilities that gate registers on model ``kind``: the modules the options step offers."""
-    return [rule.name for rule in CAPABILITY_RULES if gated_registers(rule, kind)]
+    """Capabilities that gate registers on model ``kind``: the modules the options step offers.
+
+    Built-in modules cannot be missing and combined ones follow their members, so neither is offered.
+    """
+    return [
+        rule.name
+        for rule in CAPABILITY_RULES
+        if gated_registers(rule, kind) and rule.rule_for(kind) not in (RULE_BUILT_IN, RULE_ANY_OF)
+    ]
 
 
 def switchable_capabilities(profile) -> list[str]:

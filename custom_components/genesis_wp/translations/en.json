@@ -88,6 +88,8 @@
           "passive_cooling": "Passive cooling",
           "cooling": "Cooling (active or passive)",
           "room_sensor": "Room temperature sensor",
+          "internal_heater": "Emergency heater (built in)",
+          "external_heater": "External heater",
           "additional_heater": "Additional heater",
           "electric_meter": "Electric meter",
           "smart_grid": "SG Ready",
