@@ -138,15 +138,24 @@ async def detect_capabilities(profile: Profile, capabilities=None) -> dict[str, 
     """Capability states the library detects on ``profile`` served with the ``capabilities`` selection."""
     emulator = Emulator(profile, host=EMULATOR_HOST, port=0, capabilities=capabilities)
     await emulator.start()
-    client = create_client(
-        {CONF_HOST: emulator.host, CONF_PORT: emulator.port, CONF_MODEL: profile.model, CONF_UNIT: profile.unit_id}
-    )
     try:
-        await client.async_update(only_registers=capability_evidence(profile.model))
+        return await read_capabilities(
+            {CONF_HOST: emulator.host, CONF_PORT: emulator.port, CONF_MODEL: profile.model, CONF_UNIT: profile.unit_id}
+        )
+    finally:
+        await emulator.stop()
+
+
+async def read_capabilities(data) -> dict[str, str]:
+    """Capability states the library detects on the heat pump of ``data``; reads only (requirement-16)."""
+    client = create_client(data)
+    try:
+        await client.async_update(only_registers=capability_evidence(data[CONF_MODEL]))
+        if client.unread & set(capability_evidence(data[CONF_MODEL])):
+            raise ThermiaException("capability evidence not read")
         return {name: cap.state for name, cap in client.capabilities.items()}
     finally:
         await client.close()
-        await emulator.stop()
 
 
 async def _start_emulator(entry: ConfigEntry) -> Emulator:

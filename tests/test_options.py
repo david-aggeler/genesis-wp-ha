@@ -71,11 +71,14 @@ async def test_options_step_lists_modules_with_automatic_default(hass, start_emu
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] is FlowResultType.FORM
 
-    fields = {str(key): key for key in result["data_schema"].schema}
-    expected = [name for name in model_capabilities(WPE_I_KIND)]
+    fields = {str(key): key for key in result["data_schema"].schema if str(key) != "show_absent"}
+    detected = hass.data[DOMAIN][entry.entry_id].thermia.capabilities
+    expected = [name for name in model_capabilities(WPE_I_KIND) if detected[name].state != "absent"]
     assert list(fields) == expected
-    assert "hot_water" in fields and "heating_circuit_3" not in fields
+    assert "hot_water" not in fields and "heating_circuit_3" not in fields  # absent: second page
     for key, select in result["data_schema"].schema.items():
+        if str(key) == "show_absent":
+            continue
         assert key.default() == "automatic"
         assert select.config["options"] == ["automatic", "installed", "not_installed"]
     assert "hot_water: absent" in result["description_placeholders"]["detected"]
@@ -100,7 +103,10 @@ async def test_saving_module_options_applies_them(hass, start_emulator):
     hot_water_entities = {unique_id(entry, r) for r in gates("hot_water")}
     assert not hot_water_entities & registered(hass, entry)
 
+    # Hot water and pool are detected absent: they sit on the second page (requirement-16).
     result = await hass.config_entries.options.async_init(entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"show_absent": True})
+    assert result["step_id"] == "absent_modules"
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"hot_water": "installed", "pool": "not_installed"}
     )

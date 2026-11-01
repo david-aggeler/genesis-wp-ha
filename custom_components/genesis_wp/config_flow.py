@@ -27,6 +27,7 @@ from homeassistant.helpers.selector import selector
 
 from . import create_client
 from . import detect_capabilities
+from . import read_capabilities
 from .const import CONF_ADVANCED
 from .const import CONF_CAPABILITIES
 from .const import CONF_MODE
@@ -47,6 +48,10 @@ _LOGGER = logging.getLogger(__name__)
 
 
 MODULE_STATES = {MODULE_INSTALLED: PRESENT, MODULE_NOT_INSTALLED: ABSENT}
+MODULE_CHOICES = {state: choice for choice, state in MODULE_STATES.items()}
+
+# Opt-in on the module page: the modules detected as not installed follow on a second page (requirement-16).
+SHOW_ABSENT = "show_absent"
 
 
 def model_capabilities(kind) -> list[str]:
@@ -59,6 +64,49 @@ def model_capabilities(kind) -> list[str]:
         for rule in CAPABILITY_RULES
         if gated_registers(rule, kind) and rule.rule_for(kind) not in (RULE_BUILT_IN, RULE_ANY_OF)
     ]
+
+
+def split_modules(kind, states, options) -> tuple[list[str], list[str]]:
+    """Offered modules as (first page, detected-absent page); a module the user set stays on the first."""
+    names = model_capabilities(kind)
+    absent = [name for name in names if states.get(name) == ABSENT and name not in options]
+    return [name for name in names if name not in absent], absent
+
+
+def module_schema(names, options, show_absent: bool) -> vol.Schema:
+    """One automatic / installed / not installed select per module, preset from the stored choices."""
+    module = selector(
+        {
+            "select": {
+                "options": [MODULE_AUTOMATIC, MODULE_INSTALLED, MODULE_NOT_INSTALLED],
+                "translation_key": "module",
+            }
+        }
+    )
+    fields = {
+        vol.Required(name, default=MODULE_CHOICES.get(options.get(name), MODULE_AUTOMATIC)): module
+        for name in names
+    }
+    if show_absent:
+        fields[vol.Required(SHOW_ABSENT, default=False)] = bool
+    return vol.Schema(fields)
+
+
+def module_choices(user_input, names) -> dict[str, str]:
+    """The non-automatic choices among ``names`` as library capability states."""
+    return {
+        name: MODULE_STATES[user_input[name]]
+        for name in names
+        if user_input.get(name, MODULE_AUTOMATIC) in MODULE_STATES
+    }
+
+
+def describe_states(names, states, overridden=frozenset()) -> str:
+    """What detection reports per module, so the user sees what automatic means today."""
+    lines = [
+        f"{name}: {states[name]}{' (set here)' if name in overridden else ''}" for name in names if name in states
+    ]
+    return ", ".join(lines) or "-"
 
 
 def switchable_capabilities(profile) -> list[str]:
@@ -89,6 +137,10 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Initialize; the emulated path keeps the chosen profile and its detected defaults between steps."""
         self._profile = None
         self._module_defaults: dict[str, bool] = {}
+        # Real path: the verified connection, the detected capability states and the module choices so far.
+        self._data: dict = {}
+        self._states: dict[str, str] = {}
+        self._options: dict[str, str] = {}
 
     async def _validate_input(self, data):
         """Read one register to prove the device answers; never writes."""
@@ -211,10 +263,9 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             user_input = self._flatten(user_input)
             # No unique_id: HA forbids host-derived ones, so duplicates are found by data match.
             self._async_abort_entries_match(self._connection(user_input))
-            if await self._try_connect(user_input, errors):
-                return self.async_create_entry(
-                    title=MODEL_NAMES[user_input[CONF_MODEL]], data=user_input
-                )
+            if await self._try_connect(user_input, errors) and await self._detect(user_input, errors):
+                self._data = user_input
+                return await self.async_step_plant_modules()
 
         defaults = user_input or {
             CONF_HOST: "",
@@ -224,6 +275,43 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         }
         return self.async_show_form(
             step_id="real", data_schema=self._schema(defaults), errors=errors
+        )
+
+    async def _detect(self, data, errors) -> bool:
+        """Read the capability evidence of the verified heat pump; never writes."""
+        try:
+            self._states = await read_capabilities(data)
+        except (ThermiaException, ValueError) as err:
+            _LOGGER.info("Heat pump capability read failed: %s", type(err).__name__)
+            errors["base"] = "cannot_connect"
+            return False
+        return True
+
+    async def async_step_plant_modules(self, user_input=None):
+        """Module choices for the detected plant; modules detected absent wait behind an opt-in (requirement-16)."""
+        names, absent = split_modules(self._data[CONF_MODEL], self._states, {})
+        if user_input is None:
+            return self.async_show_form(
+                step_id="plant_modules",
+                data_schema=module_schema(names, {}, show_absent=bool(absent)),
+                description_placeholders={"detected": describe_states(names + absent, self._states)},
+            )
+        self._options = module_choices(user_input, names)
+        if user_input.get(SHOW_ABSENT):
+            return await self.async_step_absent_modules()
+        return self._create_real_entry()
+
+    async def async_step_absent_modules(self, user_input=None):
+        """The modules detected as not installed, for a user who knows better."""
+        _, absent = split_modules(self._data[CONF_MODEL], self._states, {})
+        if user_input is None:
+            return self.async_show_form(step_id="absent_modules", data_schema=module_schema(absent, {}, False))
+        self._options.update(module_choices(user_input, absent))
+        return self._create_real_entry()
+
+    def _create_real_entry(self):
+        return self.async_create_entry(
+            title=MODEL_NAMES[self._data[CONF_MODEL]], data=self._data, options=self._options
         )
 
     async def async_step_reconfigure(self, user_input=None):
@@ -250,49 +338,44 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class GenesisOptionsFlow(config_entries.OptionsFlowWithReload):
-    """Per module: automatic follows the library's detection, the others override it (requirement-14)."""
+    """Per module: automatic follows the library's detection, the others override it (requirement-14, -16)."""
 
-    async def async_step_init(self, user_input=None):
-        """One select per module of the entry's model; only non-automatic choices are stored."""
-        names = model_capabilities(self.config_entry.data[CONF_MODEL])
-        if user_input is not None:
-            return self.async_create_entry(
-                data={
-                    name: MODULE_STATES[user_input[name]]
-                    for name in names
-                    if user_input.get(name, MODULE_AUTOMATIC) in MODULE_STATES
-                }
-            )
+    def __init__(self):
+        """Initialize; the first page's choices wait for the optional detected-absent page."""
+        self._options: dict[str, str] = {}
 
-        chosen = {state: choice for choice, state in MODULE_STATES.items()}
-        options = self.config_entry.options
-        module = selector(
-            {
-                "select": {
-                    "options": [MODULE_AUTOMATIC, MODULE_INSTALLED, MODULE_NOT_INSTALLED],
-                    "translation_key": "module",
-                }
-            }
-        )
-        schema = vol.Schema(
-            {
-                vol.Required(name, default=chosen.get(options.get(name), MODULE_AUTOMATIC)): module
-                for name in names
-            }
-        )
-        return self.async_show_form(
-            step_id="init", data_schema=schema, description_placeholders={"detected": self._detected(names)}
-        )
-
-    def _detected(self, names) -> str:
-        """What the running entry reports per module, so the user sees what automatic means today."""
+    def _states(self) -> tuple[dict[str, str], frozenset[str]]:
+        """Capability states of the running entry and the names the user set; empty when not loaded."""
         coordinator = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id)
         if coordinator is None:
-            return "-"
+            return {}, frozenset()
         capabilities = coordinator.thermia.capabilities
-        lines = []
-        for name in names:
-            cap = capabilities.get(name)
-            if cap is not None:
-                lines.append(f"{name}: {cap.state}{' (set here)' if cap.overridden else ''}")
-        return ", ".join(lines) or "-"
+        return (
+            {name: cap.state for name, cap in capabilities.items()},
+            frozenset(name for name, cap in capabilities.items() if cap.overridden),
+        )
+
+    async def async_step_init(self, user_input=None):
+        """One select per offered module; only non-automatic choices are stored."""
+        states, overridden = self._states()
+        options = self.config_entry.options
+        names, absent = split_modules(self.config_entry.data[CONF_MODEL], states, options)
+        if user_input is not None:
+            self._options = module_choices(user_input, names)
+            if user_input.get(SHOW_ABSENT):
+                return await self.async_step_absent_modules()
+            return self.async_create_entry(data=self._options)
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=module_schema(names, options, show_absent=bool(absent)),
+            description_placeholders={"detected": describe_states(names + absent, states, overridden)},
+        )
+
+    async def async_step_absent_modules(self, user_input=None):
+        """The modules detected as not installed and not set by the user."""
+        states, _ = self._states()
+        _, absent = split_modules(self.config_entry.data[CONF_MODEL], states, self.config_entry.options)
+        if user_input is None:
+            return self.async_show_form(step_id="absent_modules", data_schema=module_schema(absent, {}, False))
+        return self.async_create_entry(data={**self._options, **module_choices(user_input, absent)})
