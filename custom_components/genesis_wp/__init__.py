@@ -41,6 +41,7 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .const import CARD_URL
 from .const import CONF_CAPABILITIES
+from .const import CONF_CAPABILITIES_SEEN
 from .const import CONF_MODE
 from .const import CONF_MODEL
 from .const import CONF_PROFILE
@@ -75,7 +76,12 @@ VERSION_REGISTERS = {
 
 def capability_evidence(kind) -> list[str]:
     """Registers the library's capability rules read for ``kind``; always fetched (requirement-12)."""
-    names = {n for rule in CAPABILITY_RULES for n in (rule.enable, *rule.sensors, *rule.signals) if n is not None}
+    names = {
+        n
+        for rule in CAPABILITY_RULES
+        for n in (rule.enable, *rule.sensors, *rule.signals, *rule.running)
+        if n is not None
+    }
     return sorted(n for n in names if REGISTERS[n][kind])
 
 
@@ -90,7 +96,7 @@ def capability_overrides(options) -> dict[str, str]:
     return overrides
 
 
-def create_client(data, overrides=None) -> ThermiaGenesis:
+def create_client(data, overrides=None, seen=None) -> ThermiaGenesis:
     """Build the library client for a config entry's data; always read-only."""
     return ThermiaGenesis(
         data[CONF_HOST],
@@ -99,7 +105,23 @@ def create_client(data, overrides=None) -> ThermiaGenesis:
         unit_id=data[CONF_UNIT],
         read_only=True,
         capability_overrides=overrides,
+        capabilities_seen=seen,
     )
+
+
+def create_entry_client(entry: ConfigEntry, connection) -> ThermiaGenesis:
+    """The entry's client, seeded with the modules seen running before (issue-8).
+
+    A stored name this library version rejects drops the whole seed with a warning: detection
+    starts over rather than failing setup.
+    """
+    overrides = capability_overrides(entry.options)
+    seen = entry.data.get(CONF_CAPABILITIES_SEEN) or None
+    try:
+        return create_client(connection, overrides, seen)
+    except ValueError as error:
+        _LOGGER.warning("Ignoring stored capabilities seen running: %s", error)
+        return create_client(connection, overrides)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType):
@@ -198,7 +220,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
 
     def __init__(self, hass, entry: ConfigEntry, connection, emulator: Emulator | None = None):
         """Initialize; ``connection`` holds host, port and unit, ``emulator`` is set for an emulated entry."""
-        self.thermia = create_client(connection, capability_overrides(entry.options))
+        self.thermia = create_entry_client(entry, connection)
         self.emulator = emulator
         self.kind = entry.data[CONF_MODEL]
         self.entry_id = entry.entry_id
@@ -249,6 +271,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             "Fetched %d registers in %.2f s", len(data), time.monotonic() - start_time
         )
         self._check_capabilities()
+        self._store_seen()
         return data
 
     def freeze_capabilities(self):
@@ -258,6 +281,15 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self.excluded = frozenset(r for cap in capabilities.values() if cap.state == ABSENT for r in cap.gates)
         for name, cap in capabilities.items():
             _LOGGER.debug("Capability %s: %s (%s)", name, cap.state, "; ".join(cap.evidence))
+
+    def _store_seen(self):
+        """Keep the modules the library has seen running in the entry, so a reload still counts them."""
+        seen = sorted(self.thermia.capabilities_seen)
+        if seen != (self.config_entry.data.get(CONF_CAPABILITIES_SEEN) or []):
+            _LOGGER.info("Capabilities seen running: %s", ", ".join(seen))
+            self.hass.config_entries.async_update_entry(
+                self.config_entry, data={**self.config_entry.data, CONF_CAPABILITIES_SEEN: seen}
+            )
 
     def _check_capabilities(self):
         """Reload the entry once when a capability absent at setup is no longer absent.

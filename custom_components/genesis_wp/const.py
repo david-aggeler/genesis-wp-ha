@@ -37,6 +37,7 @@ CONF_ADVANCED = "advanced"  # config flow section holding the port; never stored
 CONF_MODE = "mode"  # absent for a real heat pump
 CONF_PROFILE = "profile"
 CONF_CAPABILITIES = "capabilities"  # emulated: modules switched against the profile, {name: on}
+CONF_CAPABILITIES_SEEN = "capabilities_seen"  # modules the library has seen running, kept across reloads
 MODE_EMULATED = "emulated"
 
 # Options flow (requirement-14): per module, automatic follows detection; the others are stored in
