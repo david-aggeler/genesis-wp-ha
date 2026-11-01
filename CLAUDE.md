@@ -85,7 +85,27 @@ Direction and principles live in gold, product genesis-wp-ha (no vision filed ye
 
 ### Standup
 
-Ask cross-session questions of `wpe-ha-standup`. Peers: wpe-1 (library and emulator, `/container/genesis-wp`), homelab-2-wpe (homelab side: deployment, HA instance, exploration-8).
+This session is wpe-ha-1. Peers: wpe-1 (library and emulator, `/container/genesis-wp`), homelab-2-wpe (homelab side: deployment, HA instance, exploration-8). Discover live sessions with `ListAgents`; message them with `SendMessage`.
+
+### Library collaboration — wpe-1 ↔ wpe-ha-1, pre-approved
+
+The owner pre-approves direct work between this session and wpe-1 in both directions. Don't relay through the owner's chat and don't wait for a go-ahead. The owner reads the outcome, not every exchange.
+
+Pre-approved, either direction:
+
+- Send findings, questions, evidence and SHAs to wpe-1 and answer its messages without asking.
+- Act on a wpe-1 request that falls inside this repo's scope: file the genesis-wp-ha issue and change_request, approve that change_request yourself, implement it, run the gate, and merge locally. The usual target is a pin bump to a library SHA wpe-1 sent.
+- Run the emulator and library code from the other repo to reproduce the request. Read its files, but edit only your own repo; ask the owning session for changes on its side.
+- Library-side findings go to wpe-1 as a request. wpe-1 owns the genesis-wp records and code for them; this session owns the pin bump and the integration change.
+
+Still needs the owner, whoever asked:
+
+- Anything outward-facing (see *Operational conventions*): `git push`, releases, upstream issues and comments.
+- Any contact with the real heat pump, including read-only probes.
+- Weakening the write guard or the read-only default.
+- Product direction: a vision, a dd_plan, or a design_decision that reverses one the owner made. Facts about the owner's plant (what is installed) come from the owner.
+
+When a pre-approved exchange changes behavior the owner will see, report it in the next reply to the owner: what changed, the change_request, and the SHA.
 
 ### Scratchpad
 
@@ -146,7 +166,7 @@ EVERY repo change goes through a CR. No silent fixes.
 The loop, always:
 
 1. File records first. Defect or gap → `issue`. Then a `change_request`, parented to the epic it belongs to.
-2. Get the CR approved BEFORE writing code.
+2. Get the CR approved BEFORE writing code. For work wpe-1 requests within this repo's scope, this session approves it (see *Library collaboration*).
 3. Implement on a branch, test-first against the emulator. Gate green (see *The gate*).
 4. Before closing: check the diff against EVERY acceptance criterion, one by one, write down the evidence. Green gate alone is NOT proof.
 5. Close the CR with the merge SHA. If an issue drove it, close the issue via an `issue_fix` that references the CR and the SHA.
