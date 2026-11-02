@@ -349,6 +349,7 @@ class GenesisOptionsFlow(config_entries.OptionsFlowWithReload):
     def __init__(self):
         """Initialize; the first page's choices wait for the optional detected-absent page."""
         self._options: dict[str, str] = {}
+        self._page_names: list[str] = []
 
     def _states(self) -> tuple[dict[str, str], frozenset[str]]:
         """Capability states of the running entry and the names the user set; empty when not loaded."""
@@ -363,15 +364,16 @@ class GenesisOptionsFlow(config_entries.OptionsFlowWithReload):
 
     async def async_step_init(self, user_input=None):
         """One select per offered module; only non-automatic choices are stored."""
-        states, overridden = self._states()
-        options = self.config_entry.options
-        names, absent = split_modules(self.config_entry.data[CONF_MODEL], states, options)
         if user_input is not None:
-            self._options = module_choices(user_input, names)
+            self._options = module_choices(user_input, self._page_names)
             if user_input.get(SHOW_ABSENT):
                 return await self.async_step_absent_modules()
             return self.async_create_entry(data=self._options)
 
+        states, overridden = self._states()
+        options = self.config_entry.options
+        names, absent = split_modules(self.config_entry.data[CONF_MODEL], states, options)
+        self._page_names = names
         return self.async_show_form(
             step_id="init",
             data_schema=module_schema(names, options, show_absent=bool(absent)),
@@ -380,8 +382,10 @@ class GenesisOptionsFlow(config_entries.OptionsFlowWithReload):
 
     async def async_step_absent_modules(self, user_input=None):
         """The modules detected as not installed and not set by the user."""
-        states, _ = self._states()
-        _, absent = split_modules(self.config_entry.data[CONF_MODEL], states, self.config_entry.options)
         if user_input is None:
+            states, _ = self._states()
+            _, absent = split_modules(self.config_entry.data[CONF_MODEL], states, self.config_entry.options)
+            # Submit against the displayed fields even if live detection changes meanwhile.
+            self._page_names = absent
             return self.async_show_form(step_id="absent_modules", data_schema=module_schema(absent, {}, False))
-        return self.async_create_entry(data={**self._options, **module_choices(user_input, absent)})
+        return self.async_create_entry(data={**self._options, **module_choices(user_input, self._page_names)})

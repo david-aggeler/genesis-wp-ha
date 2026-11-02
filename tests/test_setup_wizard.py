@@ -8,6 +8,7 @@ from custom_components.genesis_wp.config_flow import SHOW_ABSENT
 from custom_components.genesis_wp.config_flow import model_capabilities
 from custom_components.genesis_wp.const import DOMAIN
 from genesis_wp.capabilities import ABSENT
+from genesis_wp import const as c
 from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
 
@@ -17,6 +18,7 @@ from .harness import gates
 from .helpers import entry_data
 from .helpers import form_input
 from .helpers import real_form
+from .test_capabilities import candidates
 
 
 async def detected(start_emulator, profile) -> tuple:
@@ -100,7 +102,9 @@ async def test_setup_choices_are_stored_as_options_and_gate_entities(hass, start
     ids = {e.unique_id for e in er.async_entries_for_config_entry(er.async_get(hass), entry.entry_id)}
     coordinator = hass.data[DOMAIN][entry.entry_id]
     assert not {coordinator.unique_id(r) for r in gates("hot_gas_recovery")} & ids
-    assert {coordinator.unique_id(r) for r in gates("passive_cooling")} & ids
+    expected = {coordinator.unique_id(r) for r in gates("passive_cooling") & candidates()}
+    assert expected
+    assert expected <= ids
 
 
 # DHF-TEST: genesis-wp-ha/requirement-16
@@ -123,3 +127,49 @@ async def test_options_step_shows_setup_choices_and_hides_absent_modules(hass, s
 
     options = await hass.config_entries.options.async_configure(options["flow_id"], {SHOW_ABSENT: True})
     assert options["step_id"] == "absent_modules" and set(fields(options)) == absent
+
+
+# DHF-TEST: genesis-wp-ha/requirement-16
+# DHF-TEST: genesis-wp-ha/ac-56
+@pytest.mark.parametrize("profile", PROFILES)
+@pytest.mark.parametrize("page", ["init", "absent_modules"])
+async def test_options_submission_keeps_displayed_choices_after_detection_changes(
+    hass, start_emulator, profile, page
+):
+    emu, _ = await detected(start_emulator, profile)
+    form = await modules_form(hass, emu)
+    result = await hass.config_entries.flow.async_configure(form["flow_id"], {})
+    await hass.async_block_till_done()
+    entry = result["result"]
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    address = c.REGISTERS[c.ATTR_INPUT_ROOM_TEMPERATURE_SENSOR][c.KEY_ADDRESS]
+
+    if page == "init":
+        emu.inject_fault("input_registers", address)
+        await coordinator.async_refresh()
+        assert coordinator.last_update_success
+        assert coordinator.thermia.capabilities["room_sensor"].state == "unknown"
+    options = await hass.config_entries.options.async_init(entry.entry_id)
+    if page == "absent_modules":
+        options = await hass.config_entries.options.async_configure(options["flow_id"], {SHOW_ABSENT: True})
+    assert options["step_id"] == page
+    assert "room_sensor" in fields(options)
+
+    if page == "init":
+        emu.clear_faults()
+        await coordinator.async_refresh()
+        assert coordinator.last_update_success
+        assert coordinator.thermia.capabilities["room_sensor"].state == "absent"
+    else:
+        emu.inject_fault("input_registers", address)
+        await coordinator.async_refresh()
+        assert coordinator.last_update_success
+        assert coordinator.thermia.capabilities["room_sensor"].state == "unknown"
+
+    result = await hass.config_entries.options.async_configure(
+        options["flow_id"], {"room_sensor": "installed"}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert entry.options == {"room_sensor": "present"}
+    await hass.async_block_till_done()
+    assert emu.writes == []
