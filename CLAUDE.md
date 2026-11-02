@@ -193,6 +193,8 @@ Commands are NEVER read from a record. Every invoker resolves them from the comm
 
 The merge is the git operation ONLY. It runs no gate and tears nothing down.
 
+Dispatching `openbrain-client run-queue` from this repo: put the venv first on PATH (`PATH=/container/genesis-wp-ha/.venv/bin:$PATH`), because the verb sessions call `python` and the host has none. A unit worktree needs the gitignored `.claude/` tree (skills, agents, materialization.json) copied from the primary checkout, or the runner's skill-currentness gate halts with "missing local materialization".
+
 ## The gate
 
 Cumulative by rung — each rung runs everything below it.
