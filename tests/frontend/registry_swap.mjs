@@ -49,6 +49,7 @@ if (Card) {
   const curve = [[17, 23], [10, 28], [5, 30], [0, 33], [-5, 35], [-15, 40], [-25, 44]];
   card.hass = { states: { "sensor.hc1": { state: "29.0", attributes: { curve, outdoor_temperature: 7.5 } } } };
   const html = card.shadowRoot.innerHTML;
+  result.curves = (html.match(/class="curve"/g) || []).length;
   result.dots = (html.match(/class="dot"/g) || []).length;
   result.markers = (html.match(/class="now"/g) || []).length;
   result.x_label = html.includes("outdoor temperature [°C]");

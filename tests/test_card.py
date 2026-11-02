@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from importlib.util import find_spec
 import shutil
 import subprocess
 from pathlib import Path
@@ -34,17 +35,24 @@ async def test_card_module_is_served_and_registered(hass, hass_client, start_emu
     assert b'const TAG = "genesis-wp-heating-curve-card"' in CARD.read_bytes()
 
 
-# DHF-REQ: genesis-wp-ha/requirement-11  DHF-TEST: genesis-wp-ha/ac-37 genesis-wp-ha/ac-38
+# DHF-REQ: genesis-wp-ha/requirement-11
+# DHF-TEST: genesis-wp-ha/requirement-11 genesis-wp-ha/ac-36 genesis-wp-ha/ac-37 genesis-wp-ha/ac-38
 def test_card_is_defined_in_the_registry_home_assistant_swaps_in():
-    node = shutil.which("node")
+    package = find_spec("nodejs_wheel")
+    node = None
+    if package is not None and package.origin is not None:
+        node = shutil.which("node", path=str(Path(package.origin).parent / "bin"))
     if node is None:
-        pytest.skip("node not installed; run tests/frontend/registry_swap.mjs in node:22-alpine")
+        node = shutil.which("node")
+    if node is None:
+        pytest.fail("Node.js is required; install requirements_test.txt")
     out = subprocess.run([node, str(SWAP_CHECK), str(CARD)], capture_output=True, text=True, check=True, timeout=30)
     assert json.loads(out.stdout) == {
         "defined_before_hui_view": False,
         "defined_in_native": False,
         "defined_in_replacement": True,
         "custom_cards": 1,
+        "curves": 1,
         "dots": 7,
         "markers": 1,
         "x_label": True,
