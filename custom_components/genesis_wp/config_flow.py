@@ -231,7 +231,7 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
         return self.async_show_form(step_id=MODE_EMULATED, data_schema=schema)
 
-    async def async_step_modules(self, user_input=None):
+    async def async_step_emulated_modules(self, user_input=None):
         """Switch the profile's plant modules on or off; defaults are what the recording contains (requirement-13)."""
         profile = self._profile
         if user_input is None:
@@ -242,7 +242,10 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             schema = vol.Schema(
                 {vol.Required(name, default=on): bool for name, on in self._module_defaults.items()}
             )
-            return self.async_show_form(step_id="modules", data_schema=schema)
+            return self.async_show_form(
+                step_id="modules", data_schema=schema,
+                description_placeholders={"detected": describe_states(list(self._module_defaults), detected)},
+            )
 
         # Only the choices that differ from the recording: the profile stays the baseline.
         capabilities = {
@@ -265,7 +268,7 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             self._async_abort_entries_match(self._connection(user_input))
             if await self._try_connect(user_input, errors) and await self._detect(user_input, errors):
                 self._data = user_input
-                return await self.async_step_plant_modules()
+                return await self.async_step_modules()
 
         defaults = user_input or {
             CONF_HOST: "",
@@ -287,12 +290,15 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return False
         return True
 
-    async def async_step_plant_modules(self, user_input=None):
-        """Module choices for the detected plant; modules detected absent wait behind an opt-in (requirement-16)."""
+    # DHF-REQ: genesis-wp-ha/requirement-16
+    async def async_step_modules(self, user_input=None):
+        """Offer module choices for the selected connection mode."""
+        if self._profile is not None:
+            return await self.async_step_emulated_modules(user_input)
         names, absent = split_modules(self._data[CONF_MODEL], self._states, {})
         if user_input is None:
             return self.async_show_form(
-                step_id="plant_modules",
+                step_id="modules",
                 data_schema=module_schema(names, {}, show_absent=bool(absent)),
                 description_placeholders={"detected": describe_states(names + absent, self._states)},
             )

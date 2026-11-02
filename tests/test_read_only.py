@@ -34,7 +34,7 @@ async def test_whole_lifecycle_sends_zero_writes(hass, start_emulator):
 
     result = await real_form(hass)
     result = await hass.config_entries.flow.async_configure(result["flow_id"], form_input(entry_data(emu)))
-    assert result["step_id"] == "plant_modules"  # capability detection: reads only
+    assert result["step_id"] == "modules"  # capability detection: reads only
     result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()

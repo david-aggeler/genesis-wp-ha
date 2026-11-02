@@ -27,7 +27,7 @@ async def _submit(hass, data):
     result = await real_form(hass)
     assert result["type"] is FlowResultType.FORM
     result = await hass.config_entries.flow.async_configure(result["flow_id"], form_input(data))
-    if result["type"] is FlowResultType.FORM and result["step_id"] == "plant_modules":
+    if result["type"] is FlowResultType.FORM and result["step_id"] == "modules":
         result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
     return result
 
