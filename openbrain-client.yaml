@@ -21,6 +21,6 @@ transition_gates:
   integration: {"in_session": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"], ["bash", "scripts/gate_python.sh", "-m", "pytest"]], "runner_owned": []}
   system: {"in_session": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"], ["bash", "scripts/gate_python.sh", "-m", "pytest"]], "runner_owned": []}
 
-# Argv that openbrain-client merge runs from the primary checkout on master; the client
+# Argv that openbrain-client merge runs from the primary checkout on main; the client
 # appends the commit SHA it resolved from branch-or-ref.
 merge_command: ["bash", "scripts/merge_unit.sh"]
