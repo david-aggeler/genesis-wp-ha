@@ -36,10 +36,12 @@ def test_test_rungs_run_pytest() -> None:
         assert WRAPPER + ["-m", "pytest"] in commands, rung
 
 
-def test_merge_command_lands_on_master() -> None:
+# DHF-TEST: genesis-wp-ha/ac-58
+def test_merge_command_lands_on_main() -> None:
+    """openbrain-client run-queue requires the trunk named main (issue-12)."""
     assert CONFIG["merge_command"] == ["bash", "scripts/merge_unit.sh"]
     script = (REPO / "scripts" / "merge_unit.sh").read_text(encoding="utf-8")
-    assert "\nMAIN=master\n" in script
+    assert "\nMAIN=main\n" in script
 
 
 def test_wrapper_runs_the_repo_venv() -> None:

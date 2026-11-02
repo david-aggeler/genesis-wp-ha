@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
-# Land one unit branch cr-<n> on master as a no-ff merge commit titled
+# Land one unit branch cr-<n> on main as a no-ff merge commit titled
 # "Merge cr-<n> (change_request-<n>)" and print code_change_ref=<merge sha>.
 #
 # openbrain-client merge runs this as merge_command (openbrain-client.yaml) and appends one
 # argument: the commit SHA it resolved from branch-or-ref. A person may pass the branch
-# name instead. Fails closed, leaving master untouched: not on master, a merge, cherry-pick,
+# name instead. Fails closed, leaving main untouched: not on main, a merge, cherry-pick,
 # revert, am, rebase, sequencer or bisect already in progress, dirty tracked tree, argument
-# that resolves to no single cr-<n> branch, nothing ahead of master, merge failure, a merge
+# that resolves to no single cr-<n> branch, nothing ahead of main, merge failure, a merge
 # commit whose subject or parents a hook changed. Branches are resolved by full refname, so
-# a tag named master or cr-<n> changes nothing. After a merge it pushes master to the branch
-# master tracks (origin master); a refusal pushes nothing.
+# a tag named main or cr-<n> changes nothing. After a merge it pushes main to the branch main
+# tracks (origin master); a refusal pushes nothing.
 #
-# Mirrors genesis-wp scripts/merge_unit.sh (same owner, MIT); only the default branch differs.
+# Mirrors genesis-wp scripts/merge_unit.sh (same owner, MIT).
 set -euo pipefail
 
-MAIN=master
+MAIN=main
 MAIN_REF=refs/heads/$MAIN
 UNIT='^cr-[1-9][0-9]*$'
 
@@ -78,7 +78,7 @@ fi
 
 printf 'code_change_ref=%s\n' "$merged"
 
-# Push the landed merge to the branch master tracks (as in genesis-wp). Fast-forward only, never
+# Push the landed merge to the branch main tracks. Fast-forward only, never
 # forced. The merge already stands, so a skipped or rejected push is reported, not failed:
 # a non-zero exit would make the runner treat a landed unit as unmerged.
 remote=$(git config --get "branch.$MAIN.remote" || true)
