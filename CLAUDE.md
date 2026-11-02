@@ -189,7 +189,7 @@ Workflow entry points: `/change-request` (manual, owner-driven), `/automated-cha
 
 The field is `transition_gate`. Its values are five cumulative evidence classes — `prose` ⊂ `static` ⊂ `unit` ⊂ `integration` ⊂ `system`.
 
-Commands are NEVER read from a record. Every invoker resolves them from the committed `openbrain-client.yaml` at the repo root, under `transition_gates.<rung>`. Python stages run through `scripts/gate_python.sh`, which uses the primary checkout's `.venv` from any worktree. `merge_command` (`scripts/merge_unit.sh`) lands a `cr-<n>` branch on master as a no-ff merge and pushes origin.
+Commands are NEVER read from a record. Every invoker resolves them from the committed `openbrain-client.yaml` at the repo root, under `transition_gates.<rung>`. Python stages run through `scripts/gate_python.sh`, which uses the primary checkout's `.venv` from any worktree. `merge_command` (`scripts/merge_unit.sh`) lands a `cr-<n>` branch on main as a no-ff merge and pushes origin. The trunk is `main` (renamed from master on 2026-11-02; openbrain-client run-queue requires that name).
 
 The merge is the git operation ONLY. It runs no gate and tears nothing down.
 
