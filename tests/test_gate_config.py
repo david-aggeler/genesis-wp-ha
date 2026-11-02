@@ -49,6 +49,15 @@ def test_runner_owned_stages_prove_every_rung_above_prose() -> None:
         assert any(command[2:4] == ["-m", "pytest"] for command in gates[rung]["runner_owned"]), rung
 
 
+def test_stages_are_cumulative() -> None:
+    """openbrain-client rejects a rung that drops a stage of the rung below (issue-14)."""
+    gates = CONFIG["transition_gates"]
+    for lower, upper in zip(RUNGS, RUNGS[1:]):
+        for kind in ("in_session", "runner_owned"):
+            missing = [c for c in gates[lower][kind] if c not in gates[upper][kind]]
+            assert not missing, f"{upper}.{kind} lacks {lower}.{kind} stages {missing}"
+
+
 # DHF-TEST: genesis-wp-ha/ac-58
 def test_merge_command_lands_on_main() -> None:
     """openbrain-client run-queue requires the trunk named main (issue-12)."""
