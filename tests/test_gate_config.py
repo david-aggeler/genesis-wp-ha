@@ -36,6 +36,19 @@ def test_test_rungs_run_pytest() -> None:
         assert WRAPPER + ["-m", "pytest"] in commands, rung
 
 
+# DHF-TEST: genesis-wp-ha/ac-62
+def test_runner_owned_stages_prove_every_rung_above_prose() -> None:
+    """Merge admission needs a tree the runner itself proved green (issue-14)."""
+    gates = CONFIG["transition_gates"]
+    assert gates["prose"]["runner_owned"] == []
+    for rung in RUNGS[1:]:
+        stages = gates[rung]["runner_owned"]
+        assert stages, rung
+        assert all(command[:2] == WRAPPER for command in stages), rung
+    for rung in ("unit", "integration", "system"):
+        assert any(command[2:4] == ["-m", "pytest"] for command in gates[rung]["runner_owned"]), rung
+
+
 # DHF-TEST: genesis-wp-ha/ac-58
 def test_merge_command_lands_on_main() -> None:
     """openbrain-client run-queue requires the trunk named main (issue-12)."""
