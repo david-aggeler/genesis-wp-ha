@@ -173,3 +173,26 @@ async def test_options_submission_keeps_displayed_choices_after_detection_change
     assert entry.options == {"room_sensor": "present"}
     await hass.async_block_till_done()
     assert emu.writes == []
+
+
+# DHF-TEST: genesis-wp-ha/requirement-16
+@pytest.mark.parametrize("profile", PROFILES)
+@pytest.mark.parametrize("last_page", ["modules", "absent_modules"])
+async def test_a_paused_flow_does_not_duplicate_a_connection_finished_meanwhile(
+    hass, start_emulator, profile, last_page
+):
+    emu, _ = await detected(start_emulator, profile)
+    first = await modules_form(hass, emu)
+    second = await modules_form(hass, emu)  # both passed the connection check, none created yet
+
+    result = await hass.config_entries.flow.async_configure(first["flow_id"], {})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+
+    if last_page == "absent_modules":
+        second = await hass.config_entries.flow.async_configure(second["flow_id"], {SHOW_ABSENT: True})
+        assert second["step_id"] == "absent_modules"
+    result = await hass.config_entries.flow.async_configure(second["flow_id"], {})
+    assert result["type"] is FlowResultType.ABORT and result["reason"] == "already_configured"
+    assert len(hass.config_entries.async_entries(DOMAIN)) == 1
+    assert emu.writes == []

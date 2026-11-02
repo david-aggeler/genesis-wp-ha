@@ -316,6 +316,8 @@ class GenesisConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         return self._create_real_entry()
 
     def _create_real_entry(self):
+        # Recheck: another flow may have finished the same connection while this one sat on a module page.
+        self._async_abort_entries_match(self._connection(self._data))
         return self.async_create_entry(
             title=MODEL_NAMES[self._data[CONF_MODEL]], data=self._data, options=self._options
         )
