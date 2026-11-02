@@ -21,7 +21,7 @@ Rules for coding agents in this repo. Short and blunt on purpose.
 - **Observability is key. No feedback loop without logs.**
 - **Prefer strict data handling.** A not-fitted or unavailable value is `None` → entity unavailable/unknown, never a coerced number.
 - **Prefer git operations over raw operations.**
-- **Expect parallel work to be ongoing.** Work on branches, or in git worktrees under `.claude/worktrees/` where feasible. Simple markdown edits are probably not worth a worktree.
+- **Expect parallel work to be ongoing.** Work on branches, or in git worktrees under `worktrees/` at the project root (gitignored) where feasible. Never create worktrees under `.claude/`, so don't use Claude Code's built-in worktree isolation; use `openbrain-client worktree` or `git worktree add worktrees/<name>`. Simple markdown edits are probably not worth a worktree.
 
 ## Language
 
