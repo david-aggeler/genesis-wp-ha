@@ -3,6 +3,6 @@
 homeassistant==2026.10.0
 pytest-homeassistant-custom-component==0.13.371
 # Same library commit the integration pins; the emulator extra brings the pymodbus server.
-genesis-wp[emulator] @ git+https://github.com/david-aggeler/genesis-wp@5be309cea05cb3dfb5c3a2d633f0ca08b72e7eb8
+genesis-wp[emulator] @ git+https://github.com/david-aggeler/genesis-wp@2edde88a97ef438e6fb24639c832115e711457b1
 modbus-connection[pymodbus]==4.12.3
 pymodbus==3.13.1
