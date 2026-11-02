@@ -2,19 +2,24 @@
 
 from __future__ import annotations
 
+import pytest
 from custom_components.genesis_wp.const import BINARY_SENSOR_TYPES
 from custom_components.genesis_wp.const import COMMAND_COILS
+from custom_components.genesis_wp.const import CONF_CAPABILITIES_SEEN
 from custom_components.genesis_wp.const import DOMAIN
 from custom_components.genesis_wp.const import SENSOR_TYPES
 from genesis_wp import const as c
 from genesis_wp.emulator import Emulator
 from genesis_wp.emulator import get_profile
 from homeassistant.helpers import entity_registry as er
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .harness import ABSENT_615 as ABSENT
 from .harness import PROFILE_615
+from .harness import PROFILES
 from .harness import WPE_I_KIND
 from .harness import gates
+from .helpers import entry_data
 from .helpers import setup_entry
 
 def candidates() -> set[str]:
@@ -119,3 +124,47 @@ async def test_unread_evidence_is_not_a_capability_change(hass, start_emulator):
 
     assert coordinator.thermia.capabilities["room_sensor"].state == "unknown"
     assert hass.data[DOMAIN][entry.entry_id] is coordinator
+
+
+# DHF-REQ: genesis-wp-ha/requirement-12
+@pytest.mark.parametrize("profile", PROFILES)
+async def test_every_capability_evidence_register_is_read(hass, start_emulator, profile):
+    """Each register a capability rule reads, running signals included, is subscribed (issue-8)."""
+    entry = await setup_entry(hass, await start_emulator(profile))
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+
+    not_read = [line for cap in coordinator.thermia.capabilities.values() for line in cap.evidence if "not read" in line]
+    assert not_read == []
+
+
+async def running_passive_cooling(start_emulator) -> Emulator:
+    """A plant whose heating circuit 2 cools: passive cooling selected, outdoor above the season start."""
+    emu = await start_emulator(PROFILE_615, dynamics=True, capabilities={"passive_cooling": True})
+    emu.hold_outdoor(emu.heating.holding[303] + 1)
+    emu.step()
+    return emu
+
+
+# DHF-REQ: genesis-wp-ha/requirement-12
+async def test_module_seen_running_is_stored_in_the_entry(hass, start_emulator):
+    """dinput 245 read as 1 makes passive cooling seen; the entry keeps it (issue-8)."""
+    entry = await setup_entry(hass, await running_passive_cooling(start_emulator))
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+
+    assert coordinator.thermia.capabilities["passive_cooling"].state == "present"
+    assert entry.data[CONF_CAPABILITIES_SEEN] == ["passive_cooling"]
+
+
+# DHF-REQ: genesis-wp-ha/requirement-12
+async def test_module_seen_running_stays_present_after_a_reload(hass, start_emulator):
+    """A winter setup still counts a summer observation: passive cooling present without an override."""
+    emu = await start_emulator(PROFILE_615)  # captured values: dinput 245 = 0, coil 33 = 0
+    entry = MockConfigEntry(domain=DOMAIN, data={**entry_data(emu), CONF_CAPABILITIES_SEEN: ["passive_cooling"]})
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+    capability = hass.data[DOMAIN][entry.entry_id].thermia.capabilities["passive_cooling"]
+    assert capability.state == "present" and not capability.overridden
+    kept = {unique_id(entry, r) for r in gates("passive_cooling") & candidates()}
+    assert kept and kept <= registered(hass, entry)
