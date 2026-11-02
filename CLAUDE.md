@@ -71,7 +71,8 @@ Direction and principles live in gold, product genesis-wp-ha (no vision filed ye
 - Sessions are driven remotely (Claude Desktop → `/rc` → `claude`, kept alive by `zx`). A permission prompt may go unanswered — don't park work behind one.
 - Batch related git operations with `&&` so they land atomically.
 - Prefer a reversible move (new commit, branch, stash) over a destructive in-place edit.
-- **Outward-facing actions need the owner's OK every time.** That covers `git push`, GitHub releases, HACS submission, and upstream issues, PRs or comments (ulrichwi/thermiagenesis, CJNE/thermiagenesis).
+- **Push to `origin` after every commit.** Push the current branch (`git push -u origin HEAD`) as part of the same `&&` batch as the commit. This standing approval covers plain pushes to `origin` only: never force-push, and never push to `upstream` or `cjne`.
+- **Other outward-facing actions need the owner's OK every time.** That covers force-pushes, pushes to any remote other than `origin`, GitHub releases, HACS submission, and upstream issues, PRs or comments (ulrichwi/thermiagenesis, CJNE/thermiagenesis).
 
 ### Access model
 
@@ -113,7 +114,7 @@ Put working files (drafts, one-off scripts, intermediate outputs the user may wa
 
 ## Skill trees — know which one you're editing
 
-- **Local skills** under `.claude/skills/` that have no `x-openbrain-*` frontmatter are repo files. Edit them directly, under a CR, and add a `!` exception to `.gitignore` so they get tracked.
+- **Local skills** under `.claude/skills/` that have no `x-openbrain-*` frontmatter are repo files. Edit them directly (no CR needed, see *Change control*), and add a `!` exception to `.gitignore` so they get tracked.
 - **Materialized skills** carry `x-openbrain-*` in their `SKILL.md` frontmatter. Never edit them here. They are authored and released in gold, then pulled with `openbrain-client init-skills`. `.gitignore` ignores `.claude/skills/`, `.claude/agents/` and `.claude/materialization.json` as whole directories for that reason.
 - `.claude/agents/<slug>.md` is derived from the gold skill's agent block by the same `init-skills` run. Never hand-edit it.
 
@@ -171,13 +172,14 @@ The loop, always:
 4. Before closing: check the diff against EVERY acceptance criterion, one by one, write down the evidence. Green gate alone is NOT proof.
 5. Close the CR with the merge SHA. If an issue drove it, close the issue via an `issue_fix` that references the CR and the SHA.
 
-Small change? Still a CR. Repo docs-only? Still a CR (`transition_gate: prose`).
+Small change? Still a CR. Repo docs-only? Still a CR (`transition_gate: prose`), except for the agent instructions exempted below.
 
 A fix that belongs in the library (register map, decoding, transport, emulator) is a CR in product genesis-wp, implemented by wpe-1 in the library repo; this repo then bumps the pinned library reference under its own genesis-wp-ha CR.
 
 The rule covers the **repo working tree**: code, tests, packaging, `manifest.json`, `hacs.json`, repo markdown. It does NOT cover:
 
 - **SoR records** (see above).
+- **Agent instructions.** `CLAUDE.md` (and its `AGENTS.md` symlink) and project-local skills under `.claude/skills/` without `x-openbrain-*` frontmatter. Edit, commit and push them directly.
 - **Catalog items.** Materialized skills, templates, methods, runbooks and executors are owned by OpenBrain. Fix them at the source.
 - **Local, gitignored state**, such as `openbrain-client.local.yaml` and `.logs/`.
 
