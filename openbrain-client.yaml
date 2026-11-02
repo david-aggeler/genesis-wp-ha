@@ -19,9 +19,9 @@ placeholders:
 transition_gates:
   prose: {"in_session": [], "runner_owned": []}
   static: {"in_session": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"]], "runner_owned": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"]]}
-  unit: {"in_session": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"], ["bash", "scripts/gate_python.sh", "-m", "pytest"]], "runner_owned": [["bash", "scripts/gate_python.sh", "-m", "pytest", "-q"]]}
-  integration: {"in_session": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"], ["bash", "scripts/gate_python.sh", "-m", "pytest"]], "runner_owned": [["bash", "scripts/gate_python.sh", "-m", "pytest", "-q"]]}
-  system: {"in_session": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"], ["bash", "scripts/gate_python.sh", "-m", "pytest"]], "runner_owned": [["bash", "scripts/gate_python.sh", "-m", "pytest", "-q"]]}
+  unit: {"in_session": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"], ["bash", "scripts/gate_python.sh", "-m", "pytest"]], "runner_owned": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"], ["bash", "scripts/gate_python.sh", "-m", "pytest", "-q"]]}
+  integration: {"in_session": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"], ["bash", "scripts/gate_python.sh", "-m", "pytest"]], "runner_owned": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"], ["bash", "scripts/gate_python.sh", "-m", "pytest", "-q"]]}
+  system: {"in_session": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"], ["bash", "scripts/gate_python.sh", "-m", "pytest"]], "runner_owned": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"], ["bash", "scripts/gate_python.sh", "-m", "pytest", "-q"]]}
 
 # Argv that openbrain-client merge runs from the primary checkout on main; the client
 # appends the commit SHA it resolved from branch-or-ref.
