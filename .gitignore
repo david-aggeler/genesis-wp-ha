@@ -143,5 +143,8 @@ init.log
 .claude/skills/
 .claude/agents/
 
+# Git worktrees live at the project root, never under .claude/
+worktrees/
+
 # Agent scratchpad (working files, survives sessions)
 scratchpad/

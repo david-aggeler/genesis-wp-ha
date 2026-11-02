@@ -9,3 +9,20 @@ process: HELIX01
 placeholders:
   build_command: [python, -m, pytest]
   primary_language: "Python"
+
+# Gate commands per transition_gate rung, cumulative (CLAUDE.md, The gate). Python runs
+# through scripts/gate_python.sh so a unit worktree gates with the primary checkout's venv.
+# runner_owned stages are run by the openbrain-client runner itself and record the tree it
+# proved green, which merge admission requires (issue-14).
+# The system rung's homelab check is owner-run and never automated; its in-session part
+# equals integration. One line of JSON flow style per rung.
+transition_gates:
+  prose: {"in_session": [], "runner_owned": []}
+  static: {"in_session": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"]], "runner_owned": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"]]}
+  unit: {"in_session": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"], ["bash", "scripts/gate_python.sh", "-m", "pytest"]], "runner_owned": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"], ["bash", "scripts/gate_python.sh", "-m", "pytest", "-q"]]}
+  integration: {"in_session": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"], ["bash", "scripts/gate_python.sh", "-m", "pytest"]], "runner_owned": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"], ["bash", "scripts/gate_python.sh", "-m", "pytest", "-q"]]}
+  system: {"in_session": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"], ["bash", "scripts/gate_python.sh", "-m", "pytest"]], "runner_owned": [["bash", "scripts/gate_python.sh", "-m", "compileall", "-q", "custom_components", "tests"], ["bash", "scripts/gate_python.sh", "-m", "pytest", "-q"]]}
+
+# Argv that openbrain-client merge runs from the primary checkout on main; the client
+# appends the commit SHA it resolved from branch-or-ref.
+merge_command: ["bash", "scripts/merge_unit.sh"]
