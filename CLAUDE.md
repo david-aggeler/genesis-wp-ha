@@ -189,7 +189,7 @@ Workflow entry points: `/change-request` (manual, owner-driven), `/automated-cha
 
 The field is `transition_gate`. Its values are five cumulative evidence classes — `prose` ⊂ `static` ⊂ `unit` ⊂ `integration` ⊂ `system`.
 
-Commands are NEVER read from a record. Every invoker resolves them from the committed `openbrain-client.yaml` at the repo root, under `transition_gates.<rung>`. `openbrain-client.yaml` does not declare `transition_gates` yet. Until it does, run the rung's stages from *The gate* below, in session.
+Commands are NEVER read from a record. Every invoker resolves them from the committed `openbrain-client.yaml` at the repo root, under `transition_gates.<rung>`. Python stages run through `scripts/gate_python.sh`, which uses the primary checkout's `.venv` from any worktree. `merge_command` (`scripts/merge_unit.sh`) lands a `cr-<n>` branch on master as a no-ff merge and pushes origin.
 
 The merge is the git operation ONLY. It runs no gate and tears nothing down.
 
@@ -249,7 +249,8 @@ This file names commands only by intent. Arguments, flags and exit codes come fr
 ## Key files
 
 - `LICENSE` — MIT with the upstream notice; see *License and third-party material*.
-- `openbrain-client.yaml` — committed product truth for `openbrain-client` (product, process, placeholders).
+- `openbrain-client.yaml` — committed product truth for `openbrain-client` (product, process, placeholders, transition_gates, merge_command).
+- `scripts/` — `gate_python.sh` (venv interpreter for gates) and `merge_unit.sh` (runner merge command).
 - `custom_components/genesis_wp/` — the integration, domain `genesis_wp`, on the read-only genesis-wp client. `manifest.json` pins the library as `genesis-wp@git+…@<sha>`, written without spaces because hassfest rejects them. `requirements_test.txt` must pin the same SHA, and `tests/test_manifest.py` checks that it does.
 - `hacs.json` — HACS metadata.
 - `tests/` — pytest suite inherited from upstream.
