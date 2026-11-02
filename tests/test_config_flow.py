@@ -23,9 +23,13 @@ from .helpers import setup_entry
 
 
 async def _submit(hass, data):
+    """Submit the host form; a verified connection's module step is accepted with its defaults."""
     result = await real_form(hass)
     assert result["type"] is FlowResultType.FORM
-    return await hass.config_entries.flow.async_configure(result["flow_id"], form_input(data))
+    result = await hass.config_entries.flow.async_configure(result["flow_id"], form_input(data))
+    if result["type"] is FlowResultType.FORM and result["step_id"] == "modules":
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+    return result
 
 
 def _advanced_section(schema):

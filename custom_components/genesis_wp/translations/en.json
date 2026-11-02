@@ -32,8 +32,8 @@
         }
       },
       "modules": {
-        "title": "Modules",
-        "description": "Choose the modules the emulated plant has. The defaults are what the recording contains.",
+        "title": "Plant modules",
+        "description": "Configure the modules fitted to the plant. For a real heat pump, automatic follows detection; installed keeps a module available even while switched off, and not installed hides it. For an emulated heat pump, switch the recorded modules on or off.\n\nReported now: {detected}",
         "data": {
           "heating_circuit_2": "Heating circuit 2 (mixing valve)",
           "buffer_tank": "Buffer tank",
@@ -43,7 +43,12 @@
           "active_cooling": "Active cooling",
           "passive_cooling": "Passive cooling",
           "room_sensor": "Room temperature sensor",
-          "electric_meter": "Electric meter"
+          "electric_meter": "Electric meter",
+          "heating_circuit_3": "Heating circuit 3",
+          "heating_circuit_4": "Heating circuit 4",
+          "external_heater": "External heater",
+          "smart_grid": "SG Ready",
+          "show_absent": "Show modules detected as not installed"
         }
       },
       "reconfigure": {
@@ -59,6 +64,25 @@
               "port": "Modbus TCP port"
             }
           }
+        }
+      },
+      "absent_modules": {
+        "title": "Modules detected as not installed",
+        "description": "The heat pump reports these modules as not installed. Choose installed only for a module that is fitted although the heat pump does not report it.",
+        "data": {
+          "heating_circuit_2": "Heating circuit 2 (mixing valve)",
+          "heating_circuit_3": "Heating circuit 3",
+          "heating_circuit_4": "Heating circuit 4",
+          "buffer_tank": "Buffer tank",
+          "hot_water": "Hot water",
+          "hot_gas_recovery": "Hot gas recovery",
+          "pool": "Pool",
+          "active_cooling": "Active cooling",
+          "passive_cooling": "Passive cooling",
+          "room_sensor": "Room temperature sensor",
+          "external_heater": "External heater",
+          "electric_meter": "Electric meter",
+          "smart_grid": "SG Ready"
         }
       }
     },
@@ -86,14 +110,30 @@
           "pool": "Pool",
           "active_cooling": "Active cooling",
           "passive_cooling": "Passive cooling",
-          "cooling": "Cooling (active or passive)",
           "room_sensor": "Room temperature sensor",
-          "internal_heater": "Emergency heater (built in)",
           "external_heater": "External heater",
-          "additional_heater": "Additional heater",
           "electric_meter": "Electric meter",
           "smart_grid": "SG Ready",
-          "ksm": "Refrigerant safety module (KSM)"
+          "show_absent": "Show modules detected as not installed"
+        }
+      },
+      "absent_modules": {
+        "title": "Modules detected as not installed",
+        "description": "The heat pump reports these modules as not installed. Choose installed only for a module that is fitted although the heat pump does not report it.",
+        "data": {
+          "heating_circuit_2": "Heating circuit 2 (mixing valve)",
+          "heating_circuit_3": "Heating circuit 3",
+          "heating_circuit_4": "Heating circuit 4",
+          "buffer_tank": "Buffer tank",
+          "hot_water": "Hot water",
+          "hot_gas_recovery": "Hot gas recovery",
+          "pool": "Pool",
+          "active_cooling": "Active cooling",
+          "passive_cooling": "Passive cooling",
+          "room_sensor": "Room temperature sensor",
+          "external_heater": "External heater",
+          "electric_meter": "Electric meter",
+          "smart_grid": "SG Ready"
         }
       }
     }
