@@ -2,6 +2,7 @@ import logging
 
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from genesis_wp.const import KEY_REG_TYPE
+from genesis_wp.const import REG_DISCRETE_INPUT
 from genesis_wp.const import REG_COIL
 from genesis_wp.const import REGISTERS
 
@@ -9,7 +10,7 @@ from .const import ATTR_CLASS
 from .const import ATTR_DEFAULT_ENABLED
 from .const import ATTR_LABEL
 from .const import BINARY_SENSOR_TYPES
-from .const import COMMAND_COILS
+from .const import REGISTER_EXCLUSIONS
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -21,16 +22,13 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
 
     sensors = []
 
-    for sensor in BINARY_SENSOR_TYPES:
-        if REGISTERS[sensor][coordinator.kind] and sensor not in coordinator.excluded:
-            sensors.append(ThermiaBinarySensor(coordinator, sensor))
+    # DHF-REQ: genesis-wp-ha/requirement-17
     for register, spec in REGISTERS.items():
-        if (
-            spec[KEY_REG_TYPE] == REG_COIL
-            and spec[coordinator.kind]
-            and register not in COMMAND_COILS
-            and register not in coordinator.excluded
-        ):
+        if not spec[coordinator.kind] or register in coordinator.excluded or register in REGISTER_EXCLUSIONS:
+            continue
+        if spec[KEY_REG_TYPE] == REG_DISCRETE_INPUT:
+            sensors.append(ThermiaBinarySensor(coordinator, register))
+        elif spec[KEY_REG_TYPE] == REG_COIL:
             sensors.append(ThermiaCoilSensor(coordinator, register))
     async_add_entities(sensors, False)
 
@@ -78,8 +76,7 @@ class ThermiaBinarySensor(BinarySensorEntity):
 
     def __init__(self, coordinator, kind):
         """Initialize."""
-        self._name = f"{BINARY_SENSOR_TYPES[kind][ATTR_LABEL]}"
-        # self._name = f"{coordinator.data[ATTR_MODEL]} {SENSOR_TYPES[kind][ATTR_LABEL]}"
+        self._name = BINARY_SENSOR_TYPES.get(kind, {}).get(ATTR_LABEL, kind.removeprefix("dinput_").replace("_", " ").title())
         self._unique_id = coordinator.unique_id(kind)
         self._device_info = coordinator.device_info_for(kind)
         self._attr_entity_category = coordinator.entity_category_for(kind)
@@ -101,7 +98,7 @@ class ThermiaBinarySensor(BinarySensorEntity):
     @property
     def device_class(self):
         """Return the device class."""
-        if ATTR_CLASS not in BINARY_SENSOR_TYPES[self.kind]:
+        if ATTR_CLASS not in BINARY_SENSOR_TYPES.get(self.kind, {}):
             return None
         return BINARY_SENSOR_TYPES[self.kind][ATTR_CLASS]
 
@@ -133,7 +130,7 @@ class ThermiaBinarySensor(BinarySensorEntity):
     @property
     def entity_registry_enabled_default(self):
         """Return if the entity should be enabled when first added to the entity registry."""
-        return BINARY_SENSOR_TYPES[self.kind][ATTR_DEFAULT_ENABLED]
+        return BINARY_SENSOR_TYPES.get(self.kind, {}).get(ATTR_DEFAULT_ENABLED, False)
 
     def async_write_ha_state(self):
         super().async_write_ha_state()

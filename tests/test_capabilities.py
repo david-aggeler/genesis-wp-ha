@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import pytest
-from custom_components.genesis_wp.const import BINARY_SENSOR_TYPES
-from custom_components.genesis_wp.const import COMMAND_COILS
+from custom_components.genesis_wp.const import REGISTER_EXCLUSIONS
 from custom_components.genesis_wp.const import CONF_CAPABILITIES_SEEN
 from custom_components.genesis_wp.const import DOMAIN
-from custom_components.genesis_wp.const import SENSOR_TYPES
 from genesis_wp import const as c
 from genesis_wp.emulator import Emulator
 from genesis_wp.emulator import get_profile
@@ -25,8 +23,7 @@ from .helpers import setup_entry
 def candidates() -> set[str]:
     """Every register the integration makes an entity of when no capability is absent."""
     fitted = {r for r, spec in c.REGISTERS.items() if spec[WPE_I_KIND]}
-    settings = {r for r in fitted if c.REGISTERS[r][c.KEY_REG_TYPE] in ("holding", "coil")} - set(COMMAND_COILS)
-    return (fitted & (set(SENSOR_TYPES) | set(BINARY_SENSOR_TYPES))) | settings
+    return fitted - set(REGISTER_EXCLUSIONS)
 
 
 def unique_id(entry, register) -> str:
