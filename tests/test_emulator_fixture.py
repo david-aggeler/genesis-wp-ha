@@ -7,13 +7,17 @@ from genesis_wp import ThermiaGenesis
 
 from .harness import FIRMWARE
 from .harness import PROFILES
+from .harness import TEST_CLIENT_TIMEOUT
 from .harness import UNIT
 
 
 @pytest.mark.parametrize("profile", PROFILES)
 async def test_emulator_answers_a_full_read_only_update(start_emulator, profile):
     emu = await start_emulator(profile)
-    client = ThermiaGenesis(emu.host, port=emu.port, kind=emu.profile.model, unit_id=UNIT)
+    client = ThermiaGenesis(
+        emu.host, port=emu.port, kind=emu.profile.model, unit_id=UNIT,
+        timeout=TEST_CLIENT_TIMEOUT,
+    )
     try:
         data = await client.async_update()
     finally:
