@@ -1065,11 +1065,6 @@ REGISTER_EXCLUSIONS = {
 # DHF-REQ: genesis-wp-ha/requirement-17
 # Explicit exceptions to library metadata; remove as library corrections land.
 REGISTER_OVERRIDES = {
-    thermiaconst.ATTR_HOLDING_COMFORT_WHEEL_SETTING: {
-        "unit": "°C",
-        "kind": "temperature",
-        "reason": "Absolute room set point; library temperature_delta misclassification pending library fix",
-    },
     thermiaconst.ATTR_INPUT_ELECTRIC_METER_KWH_TOTAL: {
         "unit": "kWh",
         "kind": "energy",
