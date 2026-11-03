@@ -2,6 +2,8 @@
 # HA 2026.10 needs Python >= 3.14.2; see CLAUDE.md, "Tests".
 homeassistant==2026.10.0
 pytest-homeassistant-custom-component==0.13.371
+# MIT; the card render check requires Node.js even when the host has no node.
+nodejs-wheel-binaries==24.19.0
 # Same library commit the integration pins; the emulator extra brings the pymodbus server.
 genesis-wp[emulator] @ git+https://github.com/david-aggeler/genesis-wp@2edde88a97ef438e6fb24639c832115e711457b1
 modbus-connection[pymodbus]==4.12.3
