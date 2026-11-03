@@ -6,7 +6,7 @@ from genesis_wp import const as c
 from genesis_wp.capabilities import CAPABILITY_RULES, gated_registers
 from homeassistant.helpers import entity_registry as er
 
-from custom_components.genesis_wp.const import DOMAIN
+from custom_components.genesis_wp.const import DOMAIN, REGISTER_OVERRIDES
 from .harness import PROFILES, WPE_I_KIND
 from .helpers import setup_entry
 
@@ -54,9 +54,12 @@ async def test_register_metadata_and_coverage(hass, start_emulator, profile):
             continue
         name = entity.kind
         spec = c.REGISTERS[name]
-        unit = 'kWh' if name == c.ATTR_INPUT_ELECTRIC_METER_KWH_TOTAL else spec[c.KEY_UNIT][WPE_I_KIND]
+        override = REGISTER_OVERRIDES.get(name, {})
+        if override:
+            assert override['reason'].strip(), name
+        unit = override.get('unit', spec[c.KEY_UNIT][WPE_I_KIND])
         assert entity.native_unit_of_measurement == unit, name
-        expected = ('energy', 'total_increasing') if name == c.ATTR_INPUT_ELECTRIC_METER_KWH_TOTAL else CLASSES[spec[c.KEY_KIND][WPE_I_KIND]]
+        expected = CLASSES[override.get('kind', spec[c.KEY_KIND][WPE_I_KIND])]
         assert (entity.device_class, entity.state_class) == expected, name
     from custom_components.genesis_wp.const import REGISTER_EXCLUSIONS
     assert set(REGISTER_EXCLUSIONS) <= c.REGISTERS.keys()
