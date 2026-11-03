@@ -25,6 +25,7 @@ from genesis_wp.emulator import Emulator
 from genesis_wp.emulator import get_profile
 
 from .harness import PROFILE_615
+from .harness import TEST_CLIENT_TIMEOUT
 
 pytest_plugins = "pytest_homeassistant_custom_component"
 
@@ -119,3 +120,17 @@ async def start_emulator(socket_enabled) -> AsyncIterator[Callable[..., Emulator
     yield start
     for emu in running:
         await emu.stop()
+
+
+@pytest.fixture(autouse=True)
+def test_client_timeout(monkeypatch):
+    """DHF-REQ: genesis-wp-ha/requirement-1 — longer timeout only in tests."""
+    import custom_components.genesis_wp as integration
+
+    constructor = integration.ThermiaGenesis
+
+    def create(*args, **kwargs):
+        kwargs["timeout"] = TEST_CLIENT_TIMEOUT
+        return constructor(*args, **kwargs)
+
+    monkeypatch.setattr(integration, "ThermiaGenesis", create)

@@ -13,6 +13,8 @@ PROFILE_606 = "stiebel-wpe-i-07.1-plus-6.0.6"  # software 6.0.6 / Genesis 17.2.4
 PROFILE_615 = "stiebel-wpe-i-07.1-plus-6.1.5"  # software 6.1.5 / Genesis 17.3.145
 PROFILES = (PROFILE_606, PROFILE_615)
 FIRMWARE = {PROFILE_606: "6.0.6", PROFILE_615: "6.1.5"}
+# DHF-REQ: genesis-wp-ha/requirement-1
+TEST_CLIENT_TIMEOUT = 15.0
 UNIT = 1
 WPE_I_KIND = "stiebel_wpe_i_07_1"
 
