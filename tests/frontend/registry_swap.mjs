@@ -1,5 +1,6 @@
 // ac-37: the card must end up in the registry Home Assistant uses after its frontend replaces
 // window.customElements (scoped-registry polyfill), and render with it. Usage: node registry_swap.mjs <card.js>
+import assert from "node:assert/strict";
 import { copyFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -49,6 +50,34 @@ if (Card) {
   const curve = [[17, 23], [10, 28], [5, 30], [0, 33], [-5, 35], [-15, 40], [-25, 44]];
   card.hass = { states: { "sensor.hc1": { state: "29.0", attributes: { curve, outdoor_temperature: 7.5 } } } };
   const html = card.shadowRoot.innerHTML;
+  // DHF-TEST: genesis-wp-ha/ac-36
+  // Independent fixture oracle: x ticks -30..20, y ticks 20..45;
+  // plot corners (48, 14) and (386, 218). Coordinates are hand-calculated,
+  // never obtained from the card's projection helpers or its rendered dots.
+  const expectedCurve = [
+    [81.8, 22.16], [149.4, 54.8], [217, 95.6], [250.8, 111.92],
+    [284.6, 136.4], [318.4, 152.72], [365.72, 193.52],
+  ];
+  const assertCoordinates = (actual, expected, label) => {
+    assert.equal(actual.length, expected.length, `${label}: point count`);
+    actual.forEach((point, i) => {
+      assert.equal(point.length, 2, `${label}: coordinate pair`);
+      point.forEach((value, j) => assert.ok(
+        Number.isFinite(value) && Math.abs(value - expected[i][j]) < 1e-6,
+        `${label}: point ${i}, coordinate ${j}: ${value} != ${expected[i][j]}`,
+      ));
+    });
+  };
+  const line = html.match(/<polyline class="curve"[^>]*points="([^"]+)"/);
+  assert.ok(line, "curve polyline exists");
+  assertCoordinates(line[1].trim().split(/\s+/).map((p) => p.split(",").map(Number)), expectedCurve, "curve line");
+  const centers = (className) => [...html.matchAll(new RegExp(
+    `<circle class="${className}"[^>]*cx="([-\\d.]+)" cy="([-\\d.]+)"`, "g",
+  ))].map((m) => [Number(m[1]), Number(m[2])]);
+  assertCoordinates(centers("dot"), expectedCurve, "curve dots");
+  // Operating point (7.5, 29.0), distinct from every supplied curve point.
+  assertCoordinates(centers("now"), [[301.5, 144.56]], "operating marker");
+  result.geometry_verified = true;
   result.curves = (html.match(/class="curve"/g) || []).length;
   result.dots = (html.match(/class="dot"/g) || []).length;
   result.markers = (html.match(/class="now"/g) || []).length;

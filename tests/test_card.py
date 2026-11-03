@@ -52,6 +52,7 @@ def test_card_is_defined_in_the_registry_home_assistant_swaps_in():
         "defined_in_native": False,
         "defined_in_replacement": True,
         "custom_cards": 1,
+        "geometry_verified": True,
         "curves": 1,
         "dots": 7,
         "markers": 1,
