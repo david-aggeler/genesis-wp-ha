@@ -1,15 +1,11 @@
 import genesis_wp.const as thermiaconst
-from homeassistant.components.sensor import SensorStateClass
-from homeassistant.const import PERCENTAGE
 from homeassistant.const import UnitOfTemperature
 
 ATTR_ICON = "icon"
 ATTR_LABEL = "label"
 ATTR_MANUFACTURER = "Thermia"
 ATTR_STATUS = "status"
-ATTR_UNIT = "unit"
 ATTR_CLASS = "device_class"
-ATTR_STATE_CLASS = "state_class"
 ATTR_UPTIME = "uptime"
 ATTR_DEFAULT_ENABLED = "default_enabled"
 ATTR_SCALE = "scale"
@@ -17,16 +13,8 @@ ATTR_ADDR = "address"
 
 KEY_STATE_ATTRIBUTES = "state_attrs"
 
-UNIT_RPM = "rpm"
-UNIT_KELVIN = "K"
-UNIT_SECONDS = "s"
 UNIT_HOURS = "h"
 UNIT_TEMPERATURE = UnitOfTemperature.CELSIUS
-UNIT_VOLTAGE = "V"
-UNIT_AMPERE = "A"
-UNIT_WATT = "W"
-UNIT_KILOWATT = "kW"
-UNIT_ENERGY = "kWh"
 
 
 DOMAIN = "genesis_wp"
@@ -82,8 +70,8 @@ HEATPUMP_ALARMS = [
 # Coils that trigger an action rather than hold a state; they get no entity.
 COMMAND_COILS = {thermiaconst.ATTR_COIL_RESET_ALL_ALARMS}
 
-# Interim names of the default-enabled set temperatures, all °C, until the library carries
-# per-model names and units (genesis-wp issue-5, issue-6).
+# Established names of default-enabled core settings, until the library carries
+# per-model names (genesis-wp issue-6). Units and classes come from the library.
 _CURVE_OUTDOOR = (17, 10, 5, 0, -5, -15, -25)  # heating curve points of the WPE-I display
 _POINTS = range(1, len(_CURVE_OUTDOOR) + 1)
 CURVE_X = [getattr(thermiaconst, f"ATTR_INPUT_HEAT_CURVE_X_COORDINATE_{point}") for point in _POINTS]
@@ -647,830 +635,437 @@ BINARY_SENSOR_TYPES = {
 
 SENSOR_TYPES = {
     thermiaconst.ATTR_INPUT_FIRST_PRIORITISED_DEMAND: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "First Prioritised Demand",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_COMPRESSOR_AVAILABLE_GEARS: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Compressor Available Gears",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_COMPRESSOR_SPEED_RPM: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Compressor Speed Rpm",
-        ATTR_UNIT: UNIT_RPM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_EXTERNAL_ADDITIONAL_HEATER_CURRENT_DEMAND: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "External Additional Heater Current Demand",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_DISCHARGE_PIPE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Discharge Pipe Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_CONDENSER_IN_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Condenser In Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_CONDENSER_OUT_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Condenser Out Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_BRINE_IN_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Brine In Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_BRINE_OUT_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Brine Out Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_SYSTEM_SUPPLY_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "System Supply Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_OUTDOOR_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Outdoor Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_TAP_WATER_TOP_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Tap Water Top Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_TAP_WATER_LOWER_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Tap Water Lower Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_TAP_WATER_WEIGHTED_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Tap Water Weighted Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_SYSTEM_SUPPLY_LINE_CALCULATED_SET_POINT: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "System Supply Line Calculated Set Point",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_SELECTED_HEAT_CURVE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Selected Heat Curve",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_HEAT_CURVE_X_COORDINATE_1: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Heat Curve X Coordinate 1",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_HEAT_CURVE_X_COORDINATE_2: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Heat Curve X Coordinate 2",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_HEAT_CURVE_X_COORDINATE_3: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Heat Curve X Coordinate 3",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_HEAT_CURVE_X_COORDINATE_4: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Heat Curve X Coordinate 4",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_HEAT_CURVE_X_COORDINATE_5: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Heat Curve X Coordinate 5",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_HEAT_CURVE_X_COORDINATE_6: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Heat Curve X Coordinate 6",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_HEAT_CURVE_X_COORDINATE_7: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Heat Curve X Coordinate 7",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_COOLING_SEASON_INTEGRAL_VALUE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Cooling Season Integral Value",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_CONDENSER_CIRCULATION_PUMP_SPEED: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Condenser Circulation Pump Speed",
-        ATTR_UNIT: PERCENTAGE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_MIX_VALVE_1_SUPPLY_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Mix Valve 1 Supply Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_BUFFER_TANK_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Buffer Tank Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_MIX_VALVE_1_POSITION: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Mix Valve 1 Position",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_BRINE_CIRCULATION_PUMP_SPEED: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Brine Circulation Pump Speed",
-        ATTR_UNIT: PERCENTAGE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_HGW_SUPPLY_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Hgw Supply Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_HOT_WATER_DIRECTIONAL_VALVE_POSITION: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Hot Water Directional Valve Position",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_COMPRESSOR_OPERATING_HOURS: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Compressor Operating Hours",
-        ATTR_UNIT: UNIT_HOURS,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_TAP_WATER_OPERATING_HOURS: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Tap Water Operating Hours",
-        ATTR_UNIT: UNIT_HOURS,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_EXTERNAL_ADDITIONAL_HEATER_OPERATING_HOURS: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "External Additional Heater Operating Hours",
-        ATTR_UNIT: UNIT_HOURS,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_COMPRESSOR_SPEED_PERCENT: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Compressor Speed Percent",
-        ATTR_UNIT: PERCENTAGE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_SECOND_PRIORITISED_DEMAND: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Second Prioritised Demand",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_THIRD_PRIORITISED_DEMAND: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Third Prioritised Demand",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_SOFTWARE_VERSION_MAJOR: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Software Version Major",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_SOFTWARE_VERSION_MINOR: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Software Version Minor",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_SOFTWARE_VERSION_MICRO: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Software Version Micro",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_COMPRESSOR_TEMPORARILY_BLOCKED: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Compressor Temporarily Blocked",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_COMPRESSOR_CURRENT_GEAR: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Compressor Current Gear",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_QUEUED_DEMAND_FIRST_PRIORITY: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Queued Demand First Priority",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_QUEUED_DEMAND_SECOND_PRIORITY: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Queued Demand Second Priority",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_QUEUED_DEMAND_THIRD_PRIORITY: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Queued Demand Third Priority",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_QUEUED_DEMAND_FOURTH_PRIORITY: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Queued Demand Fourth Priority",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_QUEUED_DEMAND_FIFTH_PRIORITY: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Queued Demand Fifth Priority",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_INTERNAL_ADDITIONAL_HEATER_CURRENT_STEP: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Internal Additional Heater Current Step",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_BUFFER_TANK_CHARGE_SET_POINT: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Buffer Tank Charge Set Point",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_ELECTRIC_METER_L1_CURRENT: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Electric Meter L1 Current",
-        ATTR_UNIT: UNIT_AMPERE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_ELECTRIC_METER_L2_CURRENT: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Electric Meter L2 Current",
-        ATTR_UNIT: UNIT_AMPERE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_ELECTRIC_METER_L3_CURRENT: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Electric Meter L3 Current",
-        ATTR_UNIT: UNIT_AMPERE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_ELECTRIC_METER_L1_0_VOLTAGE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Electric Meter L1 0 Voltage",
-        ATTR_UNIT: UNIT_VOLTAGE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_ELECTRIC_METER_L2_0_VOLTAGE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Electric Meter L2 0 Voltage",
-        ATTR_UNIT: UNIT_VOLTAGE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_ELECTRIC_METER_L3_0_VOLTAGE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Electric Meter L3 0 Voltage",
-        ATTR_UNIT: UNIT_VOLTAGE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_ELECTRIC_METER_L1_L2_VOLTAGE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Electric Meter L1 L2 Voltage",
-        ATTR_UNIT: UNIT_VOLTAGE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_ELECTRIC_METER_L2_L3_VOLTAGE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Electric Meter L2 L3 Voltage",
-        ATTR_UNIT: UNIT_VOLTAGE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_ELECTRIC_METER_L3_L1_VOLTAGE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Electric Meter L3 L1 Voltage",
-        ATTR_UNIT: UNIT_VOLTAGE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     # Inputs 157/158; kW per the display's daily COP (homelab exploration-8 round 10).
     thermiaconst.ATTR_INPUT_CURRENT_POWER_OUTPUT: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Current Power Output",
-        ATTR_UNIT: UNIT_KILOWATT,
         ATTR_DEFAULT_ENABLED: True,
     },
     thermiaconst.ATTR_INPUT_CURRENT_CONSUMED_POWER: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Current Consumed Power",
-        ATTR_UNIT: UNIT_KILOWATT,
         ATTR_DEFAULT_ENABLED: True,
     },
     thermiaconst.ATTR_INPUT_ELECTRIC_METER_L1_POWER: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Electric Meter L1 Power",
-        ATTR_UNIT: UNIT_WATT,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_ELECTRIC_METER_L2_POWER: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Electric Meter L2 Power",
-        ATTR_UNIT: UNIT_WATT,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_ELECTRIC_METER_L3_POWER: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Electric Meter L3 Power",
-        ATTR_UNIT: UNIT_WATT,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_ELECTRIC_METER_METER_VALUE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Electric Meter Meter Value",
-        ATTR_UNIT: UNIT_ENERGY,
-        ATTR_STATE_CLASS: SensorStateClass.TOTAL_INCREASING,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_COMFORT_MODE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Comfort Mode",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_ELECTRIC_METER_KWH_TOTAL: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Electric Meter Kwh Total",
-        ATTR_UNIT: UNIT_ENERGY,
-        ATTR_STATE_CLASS: SensorStateClass.TOTAL_INCREASING,
-        ATTR_CLASS: CLASS_ENERGY,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_WCS_VALVE_POSITION: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "WCS Valve Position",
-        ATTR_UNIT: PERCENTAGE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_TWC_VALVE_POSITION: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "TWC Valve Position",
-        ATTR_UNIT: PERCENTAGE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_MIX_VALVE_2_POSITION: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Mix Valve 2 Position",
-        ATTR_UNIT: PERCENTAGE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_MIX_VALVE_3_POSITION: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Mix Valve 3 Position",
-        ATTR_UNIT: PERCENTAGE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_MIX_VALVE_4_POSITION: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Mix Valve 4 Position",
-        ATTR_UNIT: PERCENTAGE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_MIX_VALVE_5_POSITION: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Mix Valve 5 Position",
-        ATTR_UNIT: PERCENTAGE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_DEW_POINT_ROOM: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Dew Point Room",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_COOLING_SUPPLY_LINE_MIX_VALVE_POSITION: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Cooling Supply Line Mix Valve Position",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_SURPLUS_HEAT_FAN_SPEED: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Surplus Heat Fan Speed",
-        ATTR_UNIT: PERCENTAGE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_POOL_SUPPLY_LINE_MIX_VALVE_POSITION: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Pool Supply Line Mix Valve Position",
-        ATTR_UNIT: PERCENTAGE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_TWC_SUPPLY_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "TWC Supply Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_TWC_RETURN_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "TWC Return Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_WCS_RETURN_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "WCS Return Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_TWC_END_TANK_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "TWC End Tank Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_MIX_VALVE_2_SUPPLY_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Mix Valve 2 Supply Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_MIX_VALVE_3_SUPPLY_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Mix Valve 3 Supply Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_MIX_VALVE_4_SUPPLY_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Mix Valve 4 Supply Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_COOLING_CIRCUIT_RETURN_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Cooling Circuit Return Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_COOLING_TANK_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Cooling Tank Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_COOLING_TANK_RETURN_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Cooling Tank Return Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_COOLING_CIRCUIT_SUPPLY_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Cooling Circuit Supply Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_MIX_VALVE_5_SUPPLY_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Mix Valve 5 Supply Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_MIX_VALVE_2_RETURN_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Mix Valve 2 Return Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_MIX_VALVE_3_RETURN_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Mix Valve 3 Return Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_MIX_VALVE_4_RETURN_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Mix Valve 4 Return Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_MIX_VALVE_5_RETURN_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Mix Valve 5 Return Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_SURPLUS_HEAT_RETURN_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Surplus Heat Return Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_SURPLUS_HEAT_SUPPLY_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Surplus Heat Supply Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_POOL_SUPPLY_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Pool Supply Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_POOL_RETURN_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Pool Return Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_ROOM_TEMPERATURE_SENSOR: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Room Temperature Sensor",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_BUBBLE_POINT: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Bubble Point",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_DEW_POINT: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Dew Point",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_SUPERHEAT_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Superheat Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_SUB_COOLING_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Sub Cooling Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_LOW_PRESSURE_SIDE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Low Pressure Side",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_HIGH_PRESSURE_SIDE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "High Pressure Side",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_LIQUID_LINE_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Liquid Line Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_SUCTION_GAS_TEMPERATURE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Suction Gas Temperature",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_HEATING_SEASON_INTEGRAL_VALUE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Heating Season Integral Value",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_P_VALUE_FOR_GEAR_SHIFTING_AND_DEMAND_CALCULATION: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "P Value For Gear Shifting And Demand Calculation",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_I_VALUE_FOR_GEAR_SHIFTING_AND_DEMAND_CALCULATION: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "I Value For Gear Shifting And Demand Calculation",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_D_VALUE_FOR_GEAR_SHIFTING_AND_DEMAND_CALCULATION: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "D Value For Gear Shifting And Demand Calculation",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_I_VALUE_FOR_COMPRESSOR_ON_OFF_BUFFER_TANK: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "I Value For Compressor On Off Buffer Tank",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_P_VALUE_FOR_COMPRESSOR_ON_OFF_BUFFER_TANK: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "P Value For Compressor On Off Buffer Tank",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_MIX_VALVE_COOLING_OPENING_DEGREE: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Mix Valve Cooling Opening Degree",
-        ATTR_UNIT: PERCENTAGE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_DESIRED_GEAR_FOR_TAP_WATER: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Desired Gear For Tap Water",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_DESIRED_GEAR_FOR_HEATING: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Desired Gear For Heating",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_DESIRED_GEAR_FOR_COOLING: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Desired Gear For Cooling",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_DESIRED_GEAR_FOR_POOL: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Desired Gear For Pool",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_NUMBER_OF_AVAILABLE_SECONDARIES_GENESIS: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Number Of Available Secondaries Genesis",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_NUMBER_OF_AVAILABLE_SECONDARIES_LEGACY: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Number Of Available Secondaries Legacy",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_TOTAL_DISTRIBUTED_GEARS_TO_ALL_UNITS: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Total Distributed Gears To All Units",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_MAXIMUM_GEAR_OUT_OF_ALL_THE_CURRENTLY_REQUESTED_GEARS: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Maximum Gear Out Of All The Currently Requested Gears",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_DESIRED_TEMPERATURE_DISTRIBUTION_CIRCUIT_MIX_VALVE_1: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Desired Temperature Distribution Circuit Mix Valve 1",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_DESIRED_TEMPERATURE_DISTRIBUTION_CIRCUIT_MIX_VALVE_2: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Desired Temperature Distribution Circuit Mix Valve 2",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_DESIRED_TEMPERATURE_DISTRIBUTION_CIRCUIT_MIX_VALVE_3: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Desired Temperature Distribution Circuit Mix Valve 3",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_DESIRED_TEMPERATURE_DISTRIBUTION_CIRCUIT_MIX_VALVE_4: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Desired Temperature Distribution Circuit Mix Valve 4",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_DESIRED_TEMPERATURE_DISTRIBUTION_CIRCUIT_MIX_VALVE_5: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Desired Temperature Distribution Circuit Mix Valve 5",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_DISCONNECT_HOT_GAS_END_TANK: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Disconnect Hot Gas End Tank",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_LEGACY_HEAT_PUMP_COMPRESSOR_RUNNING: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Legacy Heat Pump Compressor Running",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_LEGACY_HEAT_PUMP_REPORTING_ALARM: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Legacy Heat Pump Reporting Alarm",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_LEGACY_HEAT_PUMP_START_SIGNAL: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Legacy Heat Pump Start Signal",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_LEGACY_HEAT_PUMP_TAP_WATER_SIGNAL: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Legacy Heat Pump Tap Water Signal",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_PRIMARY_UNIT_ALARM_COMBINED_OUTPUT_OF_ALL_CLASS_D_ALARMS: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Primary Unit Alarm Combined Output Of All Class D Alarms",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_PRIMARY_UNIT_ALARM_PRIMARY_UNIT_HAS_LOST_COMMUNICATION: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Primary Unit Alarm Primary Unit Has Lost Communication",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_PRIMARY_UNIT_ALARM_CLASS_A_ALARM_DETECTED_ON_THE_GENESIS_SECONDARY: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Primary Unit Alarm Class A Alarm Detected On The Genesis Secondary",
-        ATTR_UNIT: UNIT_TEMPERATURE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_PRIMARY_UNIT_ALARM_CLASS_B_ALARM_DETECTED_ON_THE_GENESIS_SECONDARY: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Primary Unit Alarm Class B Alarm Detected On The Genesis Secondary",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_PRIMARY_UNIT_ALARM_COMBINED_OUTPUT_OF_ALL_CLASS_E_ALARMS: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Primary Unit Alarm Combined Output Of All Class E Alarms",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_PRIMARY_UNIT_ALARM_GENERAL_LEGACY_HEAT_PUMP_ALARM: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Primary Unit Alarm General Legacy Heat Pump Alarm",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_INPUT_PRIMARY_UNIT_ALARM_PRIMARY_UNIT_CAN_NOT_COMMUNICATE_WITH_EXPANSION: {
-        ATTR_ICON: ICON_INPUT,
         ATTR_LABEL: "Primary Unit Alarm Primary Unit Can Not Communicate With Expansion",
-        ATTR_UNIT: None,
-        ATTR_DEFAULT_ENABLED: False,
     },
 }
 
+
+
+# DHF-REQ: genesis-wp-ha/requirement-17
+# These registers have a purpose outside the register entity platforms.
+REGISTER_EXCLUSIONS = {
+    thermiaconst.ATTR_COIL_RESET_ALL_ALARMS: "Action command, not a readable state",
+    thermiaconst.ATTR_INPUT_CONTROL_SOFTWARE_VERSION_MAJOR: "Controller software version in device info",
+    thermiaconst.ATTR_INPUT_CONTROL_SOFTWARE_VERSION_MINOR: "Controller software version in device info",
+    thermiaconst.ATTR_INPUT_CONTROL_SOFTWARE_VERSION_MICRO: "Controller software version in device info",
+}
+
+# Explicit exceptions to library metadata; remove when the library resolves its issue-28.
+REGISTER_OVERRIDES = {
+    thermiaconst.ATTR_INPUT_ELECTRIC_METER_KWH_TOTAL: {
+        "unit": "kWh",
+        "kind": "energy",
+        "reason": "Energy total; library count metadata pending genesis-wp issue-28",
+    },
+}

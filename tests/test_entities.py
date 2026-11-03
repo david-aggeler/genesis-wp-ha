@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from custom_components.genesis_wp.const import BINARY_SENSOR_TYPES
+from custom_components.genesis_wp.const import REGISTER_EXCLUSIONS
 from custom_components.genesis_wp.const import DOMAIN
 from custom_components.genesis_wp.const import HEATPUMP_SENSOR
-from custom_components.genesis_wp.const import SENSOR_TYPES
 from genesis_wp import const as c
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
@@ -121,13 +120,10 @@ async def test_unique_ids_use_register_type_and_address(hass, start_emulator):
     absent = gates(*ABSENT_615)  # no entities for absent modules (requirement-12)
     fitted = lambda types: [r for r in types if c.REGISTERS[r][WPE_I_KIND] and r not in absent]  # noqa: E731
     expected = {("sensor", f"{entry.entry_id}_heatpump")}
-    expected |= {("sensor", _unique_id(entry, r)) for r in fitted(SENSOR_TYPES)}
-    expected |= {("binary_sensor", _unique_id(entry, r)) for r in fitted(BINARY_SENSOR_TYPES)}
-    settings = [r for r in fitted(c.REGISTERS) if c.REGISTERS[r][c.KEY_REG_TYPE] in ("holding", "coil")]
     expected |= {
-        ("binary_sensor" if c.REGISTERS[r][c.KEY_REG_TYPE] == "coil" else "sensor", _unique_id(entry, r))
-        for r in settings
-        if r != c.ATTR_COIL_RESET_ALL_ALARMS
+        ("binary_sensor" if c.REGISTERS[r][c.KEY_REG_TYPE] in (c.REG_COIL, c.REG_DISCRETE_INPUT) else "sensor", _unique_id(entry, r))
+        for r in fitted(c.REGISTERS)
+        if r not in REGISTER_EXCLUSIONS
     }
     assert actual == expected
     for _, unique_id in actual:

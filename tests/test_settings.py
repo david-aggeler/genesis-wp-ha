@@ -88,8 +88,8 @@ async def test_every_flagged_holding_and_state_coil_has_an_entity(hass, start_em
     assert settings == expected
 
 
-# DHF-REQ: genesis-wp-ha/requirement-9  DHF-TEST: genesis-wp-ha/ac-25
-async def test_core_settings_are_enabled_in_celsius_with_emulator_values(hass, start_emulator):
+# DHF-TEST: genesis-wp-ha/requirement-17
+async def test_core_settings_keep_names_visibility_and_library_quantities(hass, start_emulator):
     entry = await setup_entry(hass, await start_emulator(PROFILE_615))
     (device,) = dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id)
     device_name = device.name
@@ -101,8 +101,13 @@ async def test_core_settings_are_enabled_in_celsius_with_emulator_values(hass, s
         state = hass.states.get(registry_entry.entity_id)
         category = dr.async_get(hass).async_get(registry_entry.device_id).name
         assert er.async_get_full_entity_name(hass, registry_entry) == f"{device_name} {category} {name}"
-        assert state.attributes["unit_of_measurement"] == "°C", name
-        assert state.attributes["device_class"] == "temperature", name
+        # The room set point is a relative adjustment (K), not an absolute temperature.
+        if (reg_type, address) == ("holding", 5):
+            assert state.attributes["unit_of_measurement"] == "K", name
+            assert state.attributes.get("device_class") is None, name
+        else:
+            assert state.attributes["unit_of_measurement"] == "°C", name
+            assert state.attributes["device_class"] == "temperature", name
         assert float(state.state) == _emulator_value(PROFILE_615, register), name
 
     core = {_register(t, a) for t, a in CORE}

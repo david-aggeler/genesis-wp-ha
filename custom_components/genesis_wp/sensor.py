@@ -1,20 +1,21 @@
 import logging
 import re
+from functools import lru_cache
+from numbers import Number
 
+from genesis_wp.const import KEY_KIND
+from genesis_wp.const import KEY_UNIT
+from genesis_wp.const import REG_INPUT
 from genesis_wp.const import KEY_REG_TYPE
 from genesis_wp.const import REG_HOLDING
 from genesis_wp.const import REGISTERS
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.sensor import SensorStateClass
-from homeassistant.const import PERCENTAGE
 
-from .const import ATTR_CLASS
 from .const import ATTR_DEFAULT_ENABLED
 from .const import ATTR_ICON
 from .const import ATTR_LABEL
-from .const import ATTR_STATE_CLASS
-from .const import ATTR_UNIT
 from .const import CORE_SETTINGS
 from .const import CURVE_X
 from .const import DOMAIN
@@ -23,29 +24,34 @@ from .const import HEATPUMP_ATTRIBUTES
 from .const import HEATING_CURVES
 from .const import HEATPUMP_SENSOR
 from .const import OUTDOOR_TEMPERATURE
+from .const import REGISTER_EXCLUSIONS
+from .const import REGISTER_OVERRIDES
 from .const import SENSOR_TYPES
 from .const import SETTING_DEPENDENCIES
-from .const import UNIT_AMPERE
-from .const import UNIT_ENERGY
-from .const import UNIT_HOURS
-from .const import UNIT_KILOWATT
-from .const import UNIT_TEMPERATURE
-from .const import UNIT_VOLTAGE
-from .const import UNIT_WATT
 
 _LOGGER = logging.getLogger(__name__)
 
-# Device and state class follow the unit unless a SENSOR_TYPES entry names them.
-UNIT_CLASSES = {
-    UNIT_TEMPERATURE: (SensorDeviceClass.TEMPERATURE, SensorStateClass.MEASUREMENT),
-    UNIT_KILOWATT: (SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
-    UNIT_WATT: (SensorDeviceClass.POWER, SensorStateClass.MEASUREMENT),
-    UNIT_VOLTAGE: (SensorDeviceClass.VOLTAGE, SensorStateClass.MEASUREMENT),
-    UNIT_AMPERE: (SensorDeviceClass.CURRENT, SensorStateClass.MEASUREMENT),
-    UNIT_ENERGY: (SensorDeviceClass.ENERGY, SensorStateClass.TOTAL_INCREASING),
-    UNIT_HOURS: (SensorDeviceClass.DURATION, SensorStateClass.TOTAL_INCREASING),
-    PERCENTAGE: (None, SensorStateClass.MEASUREMENT),
+# DHF-REQ: genesis-wp-ha/requirement-17
+KIND_CLASSES = {
+    "temperature": SensorDeviceClass.TEMPERATURE,
+    "temperature_delta": None,
+    "pressure": SensorDeviceClass.PRESSURE,
+    "power": SensorDeviceClass.POWER,
+    "energy": SensorDeviceClass.ENERGY,
+    "current": SensorDeviceClass.CURRENT,
+    "voltage": SensorDeviceClass.VOLTAGE,
+    "duration": SensorDeviceClass.DURATION,
+    "percent": None,
+    "speed": None,
+    "count": None,
+    "state": None,
 }
+
+
+@lru_cache(maxsize=None)
+def _warn_unknown_kind(register, value_kind):
+    """Warn once per register/kind pair, including across entry reloads."""
+    _LOGGER.warning("Register %s has unknown value kind %r; using a plain sensor", register, value_kind)
 
 
 async def async_setup_entry(hass, config_entry, async_add_entities):
@@ -53,11 +59,12 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     coordinator = hass.data[DOMAIN][config_entry.entry_id]
 
     sensors = [ThermiaHeatpumpSensor(coordinator, HEATPUMP_SENSOR)]
-    for sensor in SENSOR_TYPES:
-        if REGISTERS[sensor][coordinator.kind] and sensor not in coordinator.excluded:
-            sensors.append(ThermiaGenericSensor(coordinator, sensor))
     for register, spec in REGISTERS.items():
-        if spec[KEY_REG_TYPE] == REG_HOLDING and spec[coordinator.kind] and register not in coordinator.excluded:
+        if not spec[coordinator.kind] or register in coordinator.excluded or register in REGISTER_EXCLUSIONS:
+            continue
+        if spec[KEY_REG_TYPE] == REG_INPUT:
+            sensors.append(ThermiaGenericSensor(coordinator, register))
+        elif spec[KEY_REG_TYPE] == REG_HOLDING:
             sensors.append(ThermiaSettingSensor(coordinator, register))
     async_add_entities(sensors, False)
 
@@ -75,16 +82,35 @@ class RegisterSensor(SensorEntity):
         self._attr_unique_id = coordinator.unique_id(kind)
         self._attr_device_info = coordinator.device_info_for(kind)
         self._attr_entity_category = coordinator.entity_category_for(kind)
+        if kind in REGISTERS:
+            spec = REGISTERS[kind]
+            override = REGISTER_OVERRIDES.get(kind, {})
+            self._value_kind = override.get("kind", spec.get(KEY_KIND, {}).get(coordinator.kind))
+            self._attr_native_unit_of_measurement = override.get("unit", spec.get(KEY_UNIT, {}).get(coordinator.kind))
+            self._attr_device_class = KIND_CLASSES.get(self._value_kind)
+            self._attr_state_class = (
+                SensorStateClass.TOTAL_INCREASING if self._value_kind == "energy"
+                else None if self._value_kind == "state"
+                else SensorStateClass.MEASUREMENT
+            )
+            if self._value_kind not in KIND_CLASSES:
+                _warn_unknown_kind(kind, self._value_kind)
 
     def _subscribed(self):
         return [self.kind]
 
     def _use_core_setting(self):
-        """A default-enabled set temperature: interim name, °C."""
+        """Keep the established core setting name and default visibility."""
         self._attr_name = CORE_SETTINGS[self.kind]
-        self._attr_native_unit_of_measurement = UNIT_TEMPERATURE
-        self._attr_device_class, self._attr_state_class = UNIT_CLASSES[UNIT_TEMPERATURE]
         self._attr_entity_registry_enabled_default = True
+
+    @property
+    def state_class(self):
+        """Unknown kinds support statistics only while their value is numeric."""
+        if getattr(self, "_value_kind", "state") not in KIND_CLASSES:
+            value = self.coordinator.data.get(self.kind)
+            return SensorStateClass.MEASUREMENT if isinstance(value, Number) and not isinstance(value, bool) else None
+        return self._attr_state_class
 
     @property
     def icon(self):
@@ -169,15 +195,10 @@ class ThermiaGenericSensor(RegisterSensor):
     def __init__(self, coordinator, kind):
         """Initialize."""
         super().__init__(coordinator, kind)
-        meta = SENSOR_TYPES[kind]
-        unit = meta.get(ATTR_UNIT)
-        device_class, state_class = UNIT_CLASSES.get(unit, (None, None))
-        self._attr_name = meta[ATTR_LABEL]
-        self._attr_icon = meta[ATTR_ICON].replace("mdi-", "mdi:")
-        self._attr_native_unit_of_measurement = unit
-        self._attr_device_class = meta.get(ATTR_CLASS, device_class)
-        self._attr_state_class = meta.get(ATTR_STATE_CLASS, state_class)
-        self._attr_entity_registry_enabled_default = meta[ATTR_DEFAULT_ENABLED]
+        meta = SENSOR_TYPES.get(kind, {})
+        self._attr_name = meta.get(ATTR_LABEL, kind.removeprefix("input_").replace("_", " ").title())
+        self._attr_icon = meta.get(ATTR_ICON, "mdi:gauge").replace("mdi-", "mdi:")
+        self._attr_entity_registry_enabled_default = meta.get(ATTR_DEFAULT_ENABLED, False)
         if kind in CORE_SETTINGS:
             self._use_core_setting()
 
