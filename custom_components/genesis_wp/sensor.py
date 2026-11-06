@@ -44,6 +44,7 @@ KIND_CLASSES = {
     "percent": None,
     "speed": None,
     "count": None,
+    "dimensionless": None,
     "state": None,
 }
 

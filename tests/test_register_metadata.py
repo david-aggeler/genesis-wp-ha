@@ -24,6 +24,7 @@ CLASSES = {
     'percent': (None, 'measurement'),
     'speed': (None, 'measurement'),
     'count': (None, 'measurement'),
+    'dimensionless': (None, 'measurement'),
     'state': (None, None),
 }
 
@@ -97,3 +98,31 @@ async def test_unknown_kind_keeps_numeric_sensor_and_warns_once(hass, start_emul
     assert state.attributes.get('state_class') == 'measurement'
     warnings = [r for r in caplog.records if r.levelname == 'WARNING' and name in r.message and 'future_kind' in r.message]
     assert len(warnings) == 1
+
+
+@pytest.mark.parametrize('profile', PROFILES)
+# DHF-TEST: genesis-wp-ha/requirement-17
+# DHF-TEST: genesis-wp-ha/ac-59
+# DHF-TEST: genesis-wp-ha/ac-60
+async def test_calculated_heating_demand_is_dimensionless(hass, start_emulator, profile, caplog):
+    # The warning is once per process; an earlier test may already have spent it.
+    from custom_components.genesis_wp.sensor import _warn_unknown_kind
+    _warn_unknown_kind.cache_clear()
+    entry = await setup_entry(hass, await start_emulator(profile))
+    registry = er.async_get(hass)
+    uid = f'{entry.entry_id}_input_30'
+    entity_id = registry.async_get_entity_id('sensor', DOMAIN, uid)
+    assert entity_id is not None
+    registry.async_update_entity(entity_id, disabled_by=None)
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.data[DOMAIN][entry.entry_id].async_refresh()
+    await hass.async_block_till_done()
+    state = hass.states.get(entity_id)
+    assert state.state not in ('unknown', 'unavailable')
+    assert state.attributes.get('unit_of_measurement') is None
+    assert state.attributes.get('device_class') is None
+    assert state.attributes['state_class'] == 'measurement'
+    assert not [record for record in caplog.records
+                if record.levelname == 'WARNING'
+                and 'input_calculated_heating_demand' in record.message
+                and 'unknown value kind' in record.message]
