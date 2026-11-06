@@ -50,6 +50,15 @@ async def test_register_metadata_and_coverage(hass, start_emulator, profile):
 
     # Imported here so the red test reaches the existing observable unit defect first.
     sensors = hass.data['sensor'].entities
+    meter_name = c.ATTR_INPUT_ELECTRIC_METER_KWH_TOTAL
+    meter_spec = c.REGISTERS[meter_name]
+    assert meter_spec[c.KEY_UNIT][WPE_I_KIND] == 'kWh'
+    assert meter_spec[c.KEY_KIND][WPE_I_KIND] == 'energy'
+    meter = next(e for e in sensors
+                 if getattr(e, 'coordinator', None) is coordinator
+                 and getattr(e, 'kind', None) == meter_name)
+    assert meter.native_unit_of_measurement == 'kWh'
+    assert (meter.device_class, meter.state_class) == ('energy', 'total_increasing')
     for entity in sensors:
         if getattr(entity, 'coordinator', None) is not coordinator or entity.unique_id.endswith('_heatpump'):
             continue
