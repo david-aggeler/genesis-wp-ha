@@ -1064,10 +1064,4 @@ REGISTER_EXCLUSIONS = {
 # DHF-REQ: genesis-wp-ha/requirement-9
 # DHF-REQ: genesis-wp-ha/requirement-17
 # Explicit exceptions to library metadata; remove as library corrections land.
-REGISTER_OVERRIDES = {
-    thermiaconst.ATTR_INPUT_ELECTRIC_METER_KWH_TOTAL: {
-        "unit": "kWh",
-        "kind": "energy",
-        "reason": "Energy total; library count metadata pending genesis-wp issue-34",
-    },
-}
+REGISTER_OVERRIDES = {}
