@@ -146,7 +146,96 @@ assert.doesNotMatch(html(card), /class="alarms"/);
 assert.match(html(render('buffer_tank','absent')), /not found/i);
 hass.states[supply].attributes.friendly_name='<img src=x onerror=alert(1)>';
 assert.doesNotMatch(html(render('buffer_tank')), /<img/);
-for(const category of categories.slice(4)) assert.match(html(render(category)), /not drawn yet/i);
+
+// DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-72
+// DHF-TEST: genesis-wp-ha/ac-66 genesis-wp-ha/ac-68 genesis-wp-ha/ac-71
+// DHF-TEST: genesis-wp-ha/ac-74 genesis-wp-ha/ac-75
+for (const category of categories.slice(4)) {
+  const device=Object.entries(hass.devices).find(([,d])=>d.identifiers.some(([domain,id])=>domain==='genesis_wp'&&id===`${fixture.entry}_${category}`))?.[0];
+  assert.ok(device,category);
+  const own=Object.entries(hass.entities).filter(([,e])=>e.device_id===device&&!e.disabled_by);
+  assert.ok(own.length,category);
+  const card=render(category);
+  assert.match(html(card),/<svg/);
+  assert.doesNotMatch(html(card),/not drawn yet/i);
+  for (const [id] of own) {
+    const state=hass.states[id], register=state.attributes.register;
+    const value=()=>tag(card,register)?.match(/class="value"[^>]*>(.*?)<\/text>/)?.[1];
+    assert.equal(value(), ['unknown','unavailable'].includes(state.state)
+      ? hass.localize('state.default.'+state.state)
+      : [state.state,state.attributes.unit_of_measurement].filter(Boolean).join(' '),id);
+    const original=state.state;
+    for(const next of ['37.125','unknown','unavailable']) {
+      state.state=next; card.hass=hass;
+      assert.equal(value(),next==='37.125'
+        ? [next,state.attributes.unit_of_measurement].filter(Boolean).join(' ')
+        : hass.localize('state.default.'+next),id);
+    }
+    state.state=original; card.hass=hass;
+  }
+  // Unpositioned settings follow measurements in the shared values panel.
+  hass.entities['sensor.new_setting']={device_id:device};
+  hass.states['sensor.new_setting']={state:'12',attributes:{register:'holding_998',unit_of_measurement:'K'}};
+  hass.entities['sensor.new_measurement']={device_id:device};
+  hass.states['sensor.new_measurement']={state:'23',attributes:{register:'input_998',unit_of_measurement:'K'}};
+  card.hass=hass;
+  const panel=html(card).slice(html(card).indexOf('class="values"'));
+  assert.ok(panel.indexOf('data-register="input_998"')<panel.indexOf('data-register="holding_998"'));
+  assert.match(tag(card,'holding_998'),/>12 K<\/text>/);
+  const alarms=own.filter(([id])=>id.startsWith('binary_sensor.')&&hass.states[id].attributes.device_class==='problem');
+  for(const [id] of alarms) hass.states[id].state='off';
+  card.hass=hass;
+  assert.doesNotMatch(html(card),/class="alarms"/);
+  if(alarms.length && category!=='ksm') {
+    hass.states[alarms[0][0]].state='on'; card.hass=hass;
+    assert.match(html(card),/class="alarms"/);
+    hass.states[alarms[0][0]].state='off';
+  }
+  delete hass.entities['sensor.new_setting']; delete hass.states['sensor.new_setting'];
+  delete hass.entities['sensor.new_measurement']; delete hass.states['sensor.new_measurement'];
+}
+for(const [category,keys] of Object.entries({
+  hot_water:[15,16,17,45,47,117,118],cooling:[106,103,104,105,92],pool:[119,120,94]
+})) {
+  const card=render(category);
+  for(const address of keys) {
+    const id=byRegister('input_'+address);
+    if(id) assert.ok(html(card).split('class="values"')[0].includes(`data-register="input_${address}"`));
+  }
+}
+
+
+// Circuit activity and unavailable measurements use the same rendering contract.
+for(const [category,path,register,activeMode] of [
+  ['hot_water','tank-top','input_15','Hot water'],
+  ['cooling','cooling-supply','input_106','Cool'],
+  ['pool','pool-supply','input_119','Pool']
+]) {
+  const state=hass.states[byRegister(register)], original=state.state;
+  hass.states[mode].state=activeMode; state.state='40.0';
+  const card=render(category);
+  assert.match(pipe(card,path),/data-flow="active".*stroke="#df4e29"/);
+  state.state='unavailable'; card.hass=hass;
+  assert.match(pipe(card,path),/stroke="currentColor"/);
+  state.state='40.0'; hass.states[mode].state='Standby'; card.hass=hass;
+  assert.match(pipe(card,path),/data-flow="idle".*stroke="currentColor"/);
+  state.state=original;
+}
+// A three-phase table and controller sections keep the large panels readable.
+card=render('electric_meter_and_energy');
+for(const phase of ['L1','L2','L3']) assert.match(html(card),new RegExp('>'+phase+'</text>'));
+card=render('controller');
+for(const group of ['Operation','Plant','Gears','Versions']) assert.ok(html(card).includes('>'+group+'</text>'));
+const leak=byRegister('dinput_251');
+hass.states[leak].state='on'; card=render('ksm');
+assert.match(tag(card,'dinput_251'),/class="fault own chip"/);
+assert.doesNotMatch(html(card),/class="alarms"/);
+hass.states[leak].state='off'; card.hass=hass;
+assert.doesNotMatch(tag(card,'dinput_251'),/class="fault/);
+for(const category of ['ksm','electric_meter_and_energy','controller']) {
+  assert.doesNotMatch(html(render(category)),/data-path=/);
+}
+
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-71
 assert.equal(services,0); assert.equal(ws,0);
 process.exit(0);
