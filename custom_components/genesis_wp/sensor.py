@@ -13,6 +13,8 @@ from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.sensor import SensorStateClass
 
+from .register_entity import RegisterAnchor
+
 from .const import ATTR_DEFAULT_ENABLED
 from .const import ATTR_ICON
 from .const import ATTR_LABEL
@@ -70,7 +72,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     async_add_entities(sensors, False)
 
 
-class RegisterSensor(SensorEntity):
+class RegisterSensor(RegisterAnchor, SensorEntity):
     """A sensor fed by registers of the coordinator's last update."""
 
     _attr_should_poll = False

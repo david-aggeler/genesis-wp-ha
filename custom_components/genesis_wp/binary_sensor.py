@@ -6,6 +6,8 @@ from genesis_wp.const import REG_DISCRETE_INPUT
 from genesis_wp.const import REG_COIL
 from genesis_wp.const import REGISTERS
 
+from .register_entity import RegisterAnchor
+
 from .const import ATTR_CLASS
 from .const import ATTR_DEFAULT_ENABLED
 from .const import ATTR_LABEL
@@ -33,7 +35,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     async_add_entities(sensors, False)
 
 
-class ThermiaCoilSensor(BinarySensorEntity):
+class ThermiaCoilSensor(RegisterAnchor, BinarySensorEntity):
     """One state coil, an enable setting, shown read-only."""
 
     _attr_has_entity_name = True
@@ -69,7 +71,7 @@ class ThermiaCoilSensor(BinarySensorEntity):
         )
 
 
-class ThermiaBinarySensor(BinarySensorEntity):
+class ThermiaBinarySensor(RegisterAnchor, BinarySensorEntity):
     """Define a Thermia generic sensor."""
 
     _attr_has_entity_name = True
