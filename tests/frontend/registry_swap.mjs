@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { copyFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 class Registry {
@@ -110,6 +110,7 @@ late.define("hui-view", class {});
 globalThis.customElements = late;
 const copy = join(mkdtempSync(join(tmpdir(), "card-")), "late.js"); // a second, uncached module instance
 copyFileSync(process.argv[2], copy);
+copyFileSync(join(dirname(process.argv[2]), 'register-card.js'), join(dirname(copy), 'register-card.js'));
 await import(pathToFileURL(copy).href);
 result.late_defined_immediately = Boolean(late.get(TAG));
 console.log(JSON.stringify(result));

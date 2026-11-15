@@ -39,7 +39,7 @@ from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from .const import CARD_URL
+from .const import CARD_URLS
 from .const import CONF_CAPABILITIES
 from .const import CONF_CAPABILITIES_SEEN
 from .const import CONF_MODE
@@ -125,12 +125,16 @@ def create_entry_client(entry: ConfigEntry, connection) -> ThermiaGenesis:
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType):
-    """Serve the heating curve card and load it in every dashboard (requirement-11)."""
+    """Serve and register the read-only dashboard cards (requirements 11 and 18)."""
+    # DHF-REQ: genesis-wp-ha/requirement-18
     if hass.http is not None:
-        card = Path(__file__).parent / "frontend" / Path(CARD_URL).name
-        await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(card), False)])
-    if DATA_EXTRA_MODULE_URL in hass.data:  # absent when the frontend is not loaded
-        add_extra_js_url(hass, CARD_URL)
+        await hass.http.async_register_static_paths([
+            StaticPathConfig(url, str(Path(__file__).parent / "frontend" / Path(url).name), False)
+            for url in (*CARD_URLS, "/genesis_wp/register-card.js")
+        ])
+    if DATA_EXTRA_MODULE_URL in hass.data:
+        for url in CARD_URLS:
+            add_extra_js_url(hass, url)
     return True
 
 
