@@ -1,3 +1,4 @@
+import { registerCard } from './register-card.js';
 // Heating curve card for genesis_wp (requirement-11): the heating curves of one or more heating
 // circuits in one chart as supply temperature over outdoor temperature, each with its current
 // operating point. Read-only, no dependencies.
@@ -169,33 +170,7 @@ class GenesisWpHeatingCurveCard extends HTMLElement {
 }
 
 const TAG = "genesis-wp-heating-curve-card";
-
-// Home Assistant's frontend replaces window.customElements with a scoped-registry polyfill and
-// looks cards up there; this module can run before that swap (issue-6). Define the card once
-// HA's own hui-view is in the current registry, so the definition lands where HA looks.
-function register() {
-  const registry = window.customElements;
-  if (!registry.get("hui-view")) return false;
-  if (!registry.get(TAG)) registry.define(TAG, GenesisWpHeatingCurveCard);
-  return true;
-}
-
-if (!register()) {
-  const started = Date.now();
-  let warned = false;
-  const timer = setInterval(() => {
-    if (register()) {
-      clearInterval(timer);
-    } else if (!warned && Date.now() - started > 30000) {
-      warned = true;
-      console.warn(`${TAG}: not defined yet, Home Assistant's hui-view is not in window.customElements`);
-    }
-  }, 250);
-}
-
-window.customCards = window.customCards || [];
-window.customCards.push({
-  type: TAG,
-  name: "Genesis WP heating curve",
-  description: "Heating curves of one or more heating circuits in one chart, each with its current operating point.",
+registerCard(TAG, GenesisWpHeatingCurveCard, {
+  name: 'Genesis WP heating curve',
+  description: 'Heating curves of one or more heating circuits in one chart, each with its current operating point.',
 });

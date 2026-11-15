@@ -1,3 +1,4 @@
+import { registerCard } from './register-card.js';
 // DHF-REQ: genesis-wp-ha/requirement-18
 // Read-only entity presentation. Register keys are anchors, never wire reads or decoding.
 // Geometry redrawn from genesis-wp interface_spec-6, process control room editions.
@@ -148,19 +149,7 @@ class GenesisWpDeviceCard extends HTMLElement {
     this.shadowRoot.innerHTML=`<style>:host{display:block;color:var(--primary-text-color)}ha-card{padding:16px}h2{font-size:20px}.mode{color:var(--secondary-text-color)}svg{display:block;width:100%;height:auto}text{fill:currentColor;font-family:inherit;font-size:11px}.own rect,.context rect{fill:var(--card-background-color);stroke:var(--tag-color);stroke-width:1.5}.context{opacity:.65}.context rect{stroke-dasharray:2 3}.own.calculated rect{stroke-dasharray:6 3}.alarms{color:var(--error-color,#d46161);padding:8px}.value{font-size:13px;font-weight:bold}.chip rect{rx:10px}</style><ha-card style="--tag-color:${CATEGORY_COLORS[CATEGORIES.indexOf(category)%4]}"><h2>${escapeText(title)}</h2><div class="mode">${escapeText(mode)}</div>${body}</ha-card>`;
   }
 }
-const TAG = "genesis-wp-device-card";
-function register() {
-  const registry=window.customElements;
-  if(!registry.get('hui-view')) return false;
-  if(!registry.get(TAG)) registry.define(TAG,GenesisWpDeviceCard);
-  return true;
-}
-if(!register()) {
-  const started=Date.now(); let warned=false;
-  const timer=setInterval(()=>{
-    if(register()) clearInterval(timer);
-    else if(!warned&&Date.now()-started>30000) { warned=true; console.warn(`${TAG}: waiting for Home Assistant's hui-view registry`); }
-  },250);
-}
-window.customCards=window.customCards||[];
-if(!window.customCards.some(c=>c.type===TAG)) window.customCards.push({type:TAG,name:'Genesis WP device',description:'Read-only process diagram for one plant sub-device.'});
+registerCard('genesis-wp-device-card', GenesisWpDeviceCard, {
+  name: 'Genesis WP device',
+  description: 'Read-only process diagram for one plant sub-device.',
+});

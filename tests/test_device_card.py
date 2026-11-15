@@ -37,6 +37,9 @@ async def test_device_card_delivery(hass, hass_client, start_emulator):
     assert response.status == 200
     assert await response.read() == CARD.read_bytes()
     CARD.read_bytes().decode("ascii")
+    helper = await (await hass_client()).get("/genesis_wp/register-card.js")
+    assert helper.status == 200
+    assert await helper.read() == (CARD.parent / "register-card.js").read_bytes()
 
 
 # DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-67
