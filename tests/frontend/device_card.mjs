@@ -78,6 +78,16 @@ hass.states[supply].state='26.26'; card.hass=hass;
 assert.match(pipe(card,'supply'), /stroke="#eca143"/);
 hass.states[supply].state='40.0'; card.hass=hass;
 assert.match(pipe(card,'supply'), /stroke="#df4e29"/);
+// HA display-unit conversion: equivalent °F and K readings color the same as °C; the tag keeps the display unit.
+const supplyUnit=hass.states[supply].attributes.unit_of_measurement;
+for (const [value, unit] of [['104.0','°F'],['313.15','K']]) {
+  hass.states[supply].state=value; hass.states[supply].attributes.unit_of_measurement=unit; card.hass=hass;
+  assert.match(pipe(card,'supply'), /stroke="#df4e29"/);
+  assert.match(tag(card,'input_12'), new RegExp(`>${value} ${unit}</text>`));
+}
+hass.states[supply].attributes.unit_of_measurement='kW'; card.hass=hass;
+assert.match(pipe(card,'supply'), /stroke="currentColor"/);
+hass.states[supply].attributes.unit_of_measurement=supplyUnit;
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-68
 for (const value of ['unavailable','unknown']) {
   hass.states[supply].state=value; card.hass=hass;

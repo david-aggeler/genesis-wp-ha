@@ -18,6 +18,14 @@ function temperatureColor(value) {
   const rgb = hex => [1,3,5].map(j => parseInt(hex.slice(j,j+2),16));
   return '#' + rgb(ca).map((c,j) => Math.round(c+(rgb(cb)[j]-c)*(t-a)/(b-a)).toString(16).padStart(2,'0')).join('');
 }
+// HA may convert a temperature entity to the user's display unit; the scale is in Celsius.
+// Returns null for a non-numeric state or a non-temperature unit, so the pipe stays neutral.
+const TO_CELSIUS = {'\u00b0C': v => v, '\u00b0F': v => (v-32)*5/9, 'K': v => v-273.15};
+function toCelsius(raw, unit) {
+  const convert = TO_CELSIUS[unit], value = Number(raw);
+  if (!convert || String(raw ?? '').trim()==='' || !Number.isFinite(value)) return null;
+  return convert(value);
+}
 // [register, x, y] tag anchors in the source drawing's coordinate system.
 const POSITIONS = {
   internal_heat_pump: [[44,210,150],[10,210,300],[11,200,602],[130,420,250],[127,420,296],[124,420,342],[125,420,388],
@@ -123,9 +131,9 @@ class GenesisWpDeviceCard extends HTMLElement {
       const parts=PARTS[category].filter(([sensors])=>sensors.some(exists)).map(([,svg])=>svg).join('');
       const pipes=PIPES[category].filter(([,r])=>exists(r)).map(([id,r,group,d,dash])=>{
         const state=byRegister.get(key(r))?.state;
-        const measured=state && state.attributes.unit_of_measurement==='\u00b0C' && state.state.trim()!=='' && Number.isFinite(Number(state.state));
+        const celsius=state ? toCelsius(state.state, state.attributes.unit_of_measurement) : null;
         const flow=active(group,mode,passiveEnabled);
-        const color=flow&&measured?temperatureColor(Number(state.state)):'currentColor';
+        const color=flow&&celsius!==null?temperatureColor(celsius):'currentColor';
         return `<path data-path="${id}" data-flow="${flow?'active':'idle'}" d="${d}" fill="none" stroke="${color}" stroke-opacity="${flow?1:0.22}" stroke-width="5"${dash?` stroke-dasharray="${dash}"`:''}/>`;
       }).join('');
       const positioned=new Set();
