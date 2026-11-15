@@ -44,7 +44,12 @@ async def test_device_card_delivery(hass, hass_client, start_emulator):
 
 # DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-67
 async def test_register_anchors_and_render(hass, start_emulator):
-    entry = await setup_entry(hass, await start_emulator(PROFILE_615))
+    entry = await setup_entry(hass, await start_emulator(
+        PROFILE_615, capabilities={name: True for name in (
+            "hot_water", "pool", "active_cooling", "passive_cooling", "electric_meter"
+        )},
+    ))
+    assert {"hot_water", "cooling", "pool", "ksm", "electric_meter_and_energy", "controller"} <= set(sub_devices(hass, entry))
     registry = er.async_get(hass)
     for entity in register_entities(hass, entry).values():
         if entity.disabled_by:
