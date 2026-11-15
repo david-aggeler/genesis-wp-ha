@@ -56,7 +56,7 @@ const PARTS = {
     [[92],valve(490,290,'Mix valve')],[[106,103],valve(100,80,'Supply valve')+valve(100,350,'Return valve')]],
   pool: [[[119,120],rect(400,120,160,180,'Pool exchanger')],[[94],valve(300,210,'Mix valve')]],
   ksm: [[[413,'dinput_251'],rect(0,0,550,100,'Refrigerant safety module')]],
-  electric_meter_and_energy: [[[157,158,69],rect(0,0,550,290,'Three-phase grid')+['L1','L2','L3'].map((phase,i)=>`<text x="${10+i*185}" y="120">${phase}</text>`).join('')]],
+  electric_meter_and_energy: [[[157,158,69,70,71,72,73,74,78,79,80],rect(0,0,550,290,'Three-phase grid')+['L1','L2','L3'].map((phase,i)=>`<text x="${10+i*185}" y="120">${phase}</text>`).join('')]],
   controller: [[[1],'<text x="6" y="22">Controller</text>']],
 
   internal_heat_pump: [

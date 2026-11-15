@@ -224,6 +224,28 @@ for(const [category,path,register,activeMode] of [
 // A three-phase table and controller sections keep the large panels readable.
 card=render('electric_meter_and_energy');
 for(const phase of ['L1','L2','L3']) assert.match(html(card),new RegExp('>'+phase+'</text>'));
+// DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-72
+// Each phase measurement can be the only enabled entity; absent/disabled peers
+// must not remove the headings that identify its column.
+const meterRegisters=[157,158,69,70,71,72,73,74,78,79,80].map(n=>'input_'+n);
+const meterIds=meterRegisters.map(byRegister);
+assert.ok(meterIds.every(Boolean));
+for(const disposition of ['missing','disabled']) {
+  for(const address of [69,70,71,72,73,74,78,79,80]) {
+    const retained=byRegister('input_'+address);
+    const entities={...hass.entities};
+    for(const id of meterIds) if(id!==retained) {
+      if(disposition==='missing') delete entities[id];
+      else entities[id]={...entities[id],disabled_by:'user'};
+    }
+    const partial=new Card(); partial.setConfig({device:'electric_meter_and_energy',entry:fixture.entry});
+    partial.hass={...hass,entities};
+    assert.ok(tag(partial,'input_'+address),`${disposition}: input_${address}`);
+    for(const phase of ['L1','L2','L3']) {
+      assert.ok(html(partial).includes('>'+phase+'</text>'),`${disposition}: input_${address} lost ${phase}`);
+    }
+  }
+}
 card=render('controller');
 for(const group of ['Operation','Plant','Gears','Versions']) assert.ok(html(card).includes('>'+group+'</text>'));
 const leak=byRegister('dinput_251');
