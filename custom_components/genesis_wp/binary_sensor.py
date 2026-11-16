@@ -9,7 +9,6 @@ from genesis_wp.const import REGISTERS
 from .register_entity import RegisterAnchor
 
 from .const import ATTR_CLASS
-from .const import ATTR_DEFAULT_ENABLED
 from .const import ATTR_LABEL
 from .const import BINARY_SENSOR_TYPES
 from .const import REGISTER_EXCLUSIONS
@@ -41,7 +40,6 @@ class ThermiaCoilSensor(RegisterAnchor, BinarySensorEntity):
     _attr_has_entity_name = True
     _attr_should_poll = False
     _attr_icon = "mdi:toggle-switch-outline"
-    _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator, kind):
         """Initialize."""
@@ -128,11 +126,6 @@ class ThermiaBinarySensor(RegisterAnchor, BinarySensorEntity):
     def device_info(self):
         """Return the device info."""
         return self._device_info
-
-    @property
-    def entity_registry_enabled_default(self):
-        """Return if the entity should be enabled when first added to the entity registry."""
-        return BINARY_SENSOR_TYPES.get(self.kind, {}).get(ATTR_DEFAULT_ENABLED, False)
 
     def async_write_ha_state(self):
         super().async_write_ha_state()

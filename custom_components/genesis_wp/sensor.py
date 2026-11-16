@@ -15,7 +15,6 @@ from homeassistant.components.sensor import SensorStateClass
 
 from .register_entity import RegisterAnchor
 
-from .const import ATTR_DEFAULT_ENABLED
 from .const import ATTR_ICON
 from .const import ATTR_LABEL
 from .const import CORE_SETTINGS
@@ -201,7 +200,6 @@ class ThermiaGenericSensor(RegisterSensor):
         meta = SENSOR_TYPES.get(kind, {})
         self._attr_name = meta.get(ATTR_LABEL, kind.removeprefix("input_").replace("_", " ").title())
         self._attr_icon = meta.get(ATTR_ICON, "mdi:gauge").replace("mdi-", "mdi:")
-        self._attr_entity_registry_enabled_default = meta.get(ATTR_DEFAULT_ENABLED, False)
         if kind in CORE_SETTINGS:
             self._use_core_setting()
 
@@ -241,7 +239,6 @@ class ThermiaSettingSensor(RegisterSensor):
     """One holding register, a heat pump setting, shown read-only."""
 
     _attr_icon = "mdi:tune"
-    _attr_entity_registry_enabled_default = False
 
     def __init__(self, coordinator, kind):
         """Initialize."""

@@ -114,7 +114,7 @@ async def test_core_settings_keep_names_visibility_and_library_quantities(hass, 
             continue
         domain = "binary_sensor" if register in STATE_COILS else "sensor"
         registry_entry = _registry_entry(hass, entry, domain, register)
-        assert registry_entry.disabled_by is er.RegistryEntryDisabler.INTEGRATION, register
+        assert registry_entry.disabled_by is None, register
 
 
 # DHF-REQ: genesis-wp-ha/requirement-9  DHF-TEST: genesis-wp-ha/ac-26
