@@ -7,7 +7,6 @@ ATTR_MANUFACTURER = "Thermia"
 ATTR_STATUS = "status"
 ATTR_CLASS = "device_class"
 ATTR_UPTIME = "uptime"
-ATTR_DEFAULT_ENABLED = "default_enabled"
 ATTR_SCALE = "scale"
 ATTR_ADDR = "address"
 
@@ -107,531 +106,425 @@ BINARY_SENSOR_TYPES = {
     thermiaconst.ATTR_DINPUT_ALARM_ACTIVE_CLASS_A: {
         ATTR_LABEL: "Alarm Active Class A",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_ALARM_ACTIVE_CLASS_B: {
         ATTR_LABEL: "Alarm Active Class B",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_ALARM_ACTIVE_CLASS_C: {
         ATTR_LABEL: "Alarm Active Class C",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_ALARM_ACTIVE_CLASS_D: {
         ATTR_LABEL: "Alarm Active Class D",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_ALARM_ACTIVE_CLASS_E: {
         ATTR_LABEL: "Alarm Active Class E",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_HIGH_PRESSURE_SWITCH_ALARM: {
         ATTR_LABEL: "High Pressure Switch Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_LOW_PRESSURE_LEVEL_ALARM: {
         ATTR_LABEL: "Low Pressure Level Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_HIGH_DISCHARGE_PIPE_TEMPERATURE_ALARM: {
         ATTR_LABEL: "High Discharge Pipe Temperature Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_OPERATING_PRESSURE_LIMIT_INDICATION: {
         ATTR_LABEL: "Operating Pressure Limit Indication",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_DISCHARGE_PIPE_SENSOR_ALARM: {
         ATTR_LABEL: "Discharge Pipe Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_LIQUID_LINE_SENSOR_ALARM: {
         ATTR_LABEL: "Liquid Line Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_SUCTION_GAS_SENSOR_ALARM: {
         ATTR_LABEL: "Suction Gas Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_FLOW_PRESSURE_SWITCH_ALARM: {
         ATTR_LABEL: "Flow Pressure Switch Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_POWER_INPUT_PHASE_DETECTION_ALARM: {
         ATTR_LABEL: "Power Input Phase Detection Alarm",
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_INVERTER_UNIT_ALARM: {
         ATTR_LABEL: "Inverter Unit Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_SYSTEM_SUPPLY_LOW_TEMPERATURE_ALARM: {
         ATTR_LABEL: "System Supply Low Temperature Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_COMPRESSOR_LOW_SPEED_ALARM: {
         ATTR_LABEL: "Compressor Low Speed Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_LOW_SUPER_HEAT_ALARM: {
         ATTR_LABEL: "Low Super Heat Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_PRESSURE_RATIO_OUT_OF_RANGE_ALARM: {
         ATTR_LABEL: "Pressure Ratio Out Of Range Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_COMPRESSOR_PRESSURE_OUTSIDE_ENVELOPE_ALARM: {
         ATTR_LABEL: "Compressor Pressure Outside Envelope Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_BRINE_TEMPERATURE_OUT_OF_RANGE_ALARM: {
         ATTR_LABEL: "Brine Temperature Out Of Range Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_BRINE_IN_SENSOR_ALARM: {
         ATTR_LABEL: "Brine In Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_BRINE_OUT_SENSOR_ALARM: {
         ATTR_LABEL: "Brine Out Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_CONDENSER_IN_SENSOR_ALARM: {
         ATTR_LABEL: "Condenser In Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_CONDENSER_OUT_SENSOR_ALARM: {
         ATTR_LABEL: "Condenser Out Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_OUTDOOR_SENSOR_ALARM: {
         ATTR_LABEL: "Outdoor Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_SYSTEM_SUPPLY_LINE_SENSOR_ALARM: {
         ATTR_LABEL: "System Supply Line Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_MIX_VALVE_1_SUPPLY_LINE_SENSOR_ALARM: {
         ATTR_LABEL: "Mix Valve 1 Supply Line Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_MIX_VALVE_2_SUPPLY_LINE_SENSOR_ALARM: {
         ATTR_LABEL: "Mix Valve 2 Supply Line Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_MIX_VALVE_3_SUPPLY_LINE_SENSOR_ALARM: {
         ATTR_LABEL: "Mix Valve 3 Supply Line Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_MIX_VALVE_4_SUPPLY_LINE_SENSOR_ALARM: {
         ATTR_LABEL: "Mix Valve 4 Supply Line Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_MIX_VALVE_5_SUPPLY_LINE_SENSOR_ALARM: {
         ATTR_LABEL: "Mix Valve 5 Supply Line Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_WCS_RETURN_LINE_SENSOR_ALARM: {
         ATTR_LABEL: "Wcs Return Line Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_TWC_SUPPLY_LINE_SENSOR_ALARM: {
         ATTR_LABEL: "Twc Supply Line Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_COOLING_TANK_SENSOR_ALARM: {
         ATTR_LABEL: "Cooling Tank Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_COOLING_SUPPLY_LINE_SENSOR_ALARM: {
         ATTR_LABEL: "Cooling Supply Line Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_COOLING_CIRCUIT_RETURN_LINE_SENSOR_ALARM: {
         ATTR_LABEL: "Cooling Circuit Return Line Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_BRINE_DELTA_OUT_OF_RANGE_ALARM: {
         ATTR_LABEL: "Brine Delta Out Of Range Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_TAP_WATER_MID_SENSOR_ALARM: {
         ATTR_LABEL: "Tap Water Mid Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_TWC_CIRCULATION_RETURN_SENSOR_ALARM: {
         ATTR_LABEL: "Twc Circulation Return Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_HGW_SENSOR_ALARM: {
         ATTR_LABEL: "Hgw Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_INTERNAL_ADDITIONAL_HEATER_ALARM: {
         ATTR_LABEL: "Internal Additional Heater Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_BRINE_IN_HIGH_TEMPERATURE_ALARM: {
         ATTR_LABEL: "Brine In High Temperature Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_BRINE_IN_LOW_TEMPERATURE_ALARM: {
         ATTR_LABEL: "Brine In Low Temperature Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_BRINE_OUT_LOW_TEMPERATURE_ALARM: {
         ATTR_LABEL: "Brine Out Low Temperature Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_TWC_CIRCULATION_RETURN_LOW_TEMPERATURE_ALARM: {
         ATTR_LABEL: "Twc Circulation Return Low Temperature Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_TWC_SUPPLY_LOW_TEMPERATURE_ALARM: {
         ATTR_LABEL: "Twc Supply Low Temperature Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_MIX_VALVE_1_SUPPLY_TEMPERATURE_DEVIATION_ALARM: {
         ATTR_LABEL: "Mix Valve 1 Supply Temperature Deviation Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_MIX_VALVE_2_SUPPLY_TEMPERATURE_DEVIATION_ALARM: {
         ATTR_LABEL: "Mix Valve 2 Supply Temperature Deviation Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_MIX_VALVE_3_SUPPLY_TEMPERATURE_DEVIATION_ALARM: {
         ATTR_LABEL: "Mix Valve 3 Supply Temperature Deviation Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_MIX_VALVE_4_SUPPLY_TEMPERATURE_DEVIATION_ALARM: {
         ATTR_LABEL: "Mix Valve 4 Supply Temperature Deviation Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_MIX_VALVE_5_SUPPLY_TEMPERATURE_DEVIATION_ALARM: {
         ATTR_LABEL: "Mix Valve 5 Supply Temperature Deviation Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_WCS_RETURN_LINE_TEMPERATURE_DEVIATION_ALARM: {
         ATTR_LABEL: "Wcs Return Line Temperature Deviation Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_SUM_ALARM: {
         ATTR_LABEL: "Sum Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_COOLING_CIRCUIT_SUPPLY_LINE_TEMPERATURE_DEVIATION_ALARM: {
         ATTR_LABEL: "Cooling Circuit Supply Line Temperature Deviation Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_COOLING_TANK_TEMPERATURE_DEVIATION_ALARM: {
         ATTR_LABEL: "Cooling Tank Temperature Deviation Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_SURPLUS_HEAT_TEMPERATURE_DEVIATION_ALARM: {
         ATTR_LABEL: "Surplus Heat Temperature Deviation Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_HUMIDITY_ROOM_SENSOR_ALARM: {
         ATTR_LABEL: "Humidity Room Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_SURPLUS_HEAT_SUPPLY_LINE_SENSOR_ALARM: {
         ATTR_LABEL: "Surplus Heat Supply Line Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_SURPLUS_HEAT_RETURN_LINE_SENSOR_ALARM: {
         ATTR_LABEL: "Surplus Heat Return Line Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_COOLING_TANK_RETURN_LINE_SENSOR_ALARM: {
         ATTR_LABEL: "Cooling Tank Return Line Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_TEMPERATURE_ROOM_SENSOR_ALARM: {
         ATTR_LABEL: "Temperature Room Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_INVERTER_UNIT_COMMUNICATION_ALARM: {
         ATTR_LABEL: "Inverter Unit Communication Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_POOL_RETURN_LINE_SENSOR_ALARM: {
         ATTR_LABEL: "Pool Return Line Sensor Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_EXTERNAL_STOP_FOR_POOL: {
         ATTR_LABEL: "External Stop For Pool",
         ATTR_CLASS: CLASS_RELAY,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_EXTERNAL_START_BRINE_PUMP: {
         ATTR_LABEL: "External Start Brine Pump",
         ATTR_CLASS: CLASS_RELAY,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_EXTERNAL_RELAY_FOR_BRINE_GROUND_WATER_PUMP: {
         ATTR_LABEL: "External Relay For Brine Ground Water Pump",
         ATTR_CLASS: CLASS_RELAY,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_TAP_WATER_END_TANK_SENSOR_ALARM: {
         ATTR_LABEL: "Tap Water End Tank Sensor Alarm",
         ATTR_CLASS: CLASS_RELAY,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_MAXIMUM_TIME_FOR_ANTI_LEGIONELLA_EXCEEDED_ALARM: {
         ATTR_LABEL: "Maximum Time For Anti Legionella Exceeded Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_GENESIS_SECONDARY_UNIT_ALARM: {
         ATTR_LABEL: "Genesis Secondary Unit Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_PRIMARY_UNIT_CONFLICT_ALARM: {
         ATTR_LABEL: "Primary Unit Conflict Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_PRIMARY_UNIT_NO_SECONDARY_ALARM: {
         ATTR_LABEL: "Primary Unit No Secondary Alarm",
         ATTR_CLASS: CLASS_ALARM,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_OIL_BOOST_IN_PROGRESS: {
         ATTR_LABEL: "Oil Boost In Progress",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_COMPRESSOR_CONTROL_SIGNAL: {
         ATTR_LABEL: "Compressor Control Signal",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_SMART_GRID_1: {
         ATTR_LABEL: "Smart Grid 1",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_EXTERNAL_ALARM_INPUT: {
         ATTR_LABEL: "External Alarm Input",
         ATTR_CLASS: CLASS_RELAY,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_SMART_GRID_2: {
         ATTR_LABEL: "Smart Grid 2",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_EXTERNAL_ADDITIONAL_HEATER_CONTROL_SIGNAL: {
         ATTR_LABEL: "External Additional Heater Control Signal",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_MIX_VALVE_1_CIRCULATION_PUMP_CONTROL_SIGNAL: {
         ATTR_LABEL: "Mix Valve 1 Circulation Pump Control Signal",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_CONDENSER_PUMP_ON_OFF_CONTROL: {
         ATTR_LABEL: "Condenser Pump On Off Control",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_SYSTEM_CIRCULATION_PUMP_CONTROL_SIGNAL: {
         ATTR_LABEL: "System Circulation Pump Control Signal",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_HOT_GAS_CIRCULATION_PUMP_CONTROL_SIGNAL: {
         ATTR_LABEL: "Hot Gas Circulation Pump Control Signal",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_BRINE_PUMP_ON_OFF_CONTROL: {
         ATTR_LABEL: "Brine Pump On Off Control",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_EXTERNAL_HEATER_CIRCULATION_PUMP_CONTROL_SIGNAL: {
         ATTR_LABEL: "External Heater Circulation Pump Control Signal",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_HEATING_SEASON_ACTIVE: {
         ATTR_LABEL: "Heating Season Active",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_EXTERNAL_ADDITIONAL_HEATER_ACTIVE: {
         ATTR_LABEL: "External Additional Heater Active",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_INTERNAL_ADDITIONAL_HEATER_ACTIVE: {
         ATTR_LABEL: "Internal Additional Heater Active",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_HGW_REGULATION_CONTROL_SIGNAL: {
         ATTR_LABEL: "Hgw Regulation Control Signal",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_HEAT_PUMP_STOPPING: {
         ATTR_LABEL: "Heat Pump Stopping",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_HEAT_PUMP_OK_TO_START: {
         ATTR_LABEL: "Heat Pump Ok To Start",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_TWC_SUPPLY_LINE_CIRCULATION_PUMP_CONTROL_SIGNAL: {
         ATTR_LABEL: "Twc Supply Line Circulation Pump Control Signal",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_WCS_REGULATION_CONTROL_SIGNAL: {
         ATTR_LABEL: "Wcs Regulation Control Signal",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_WCS_CIRCULATION_PUMP_CONTROL_SIGNAL: {
         ATTR_LABEL: "Wcs Circulation Pump Control Signal",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_TWC_END_TANK_HEATER_CONTROL_SIGNAL: {
         ATTR_LABEL: "Twc End Tank Heater Control Signal",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_POOL_DIRECTIONAL_VALVE_POSITION: {
         ATTR_LABEL: "Pool Directional Valve Position",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_COOLING_CIRCUIT_CIRCULATION_PUMP_CONTROL_SIGNAL: {
         ATTR_LABEL: "Cooling Circuit Circulation Pump Control Signal",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_POOL_CIRCULATION_PUMP_CONTROL_SIGNAL: {
         ATTR_LABEL: "Pool Circulation Pump Control Signal",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_SURPLUS_HEAT_DIRECTIONAL_VALVE_POSITION: {
         ATTR_LABEL: "Surplus Heat Directional Valve Position",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_SURPLUS_HEAT_CIRCULATION_PUMP_CONTROL_SIGNAL: {
         ATTR_LABEL: "Surplus Heat Circulation Pump Control Signal",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_COOLING_CIRCUIT_REGULATION_CONTROL_SIGNAL: {
         ATTR_LABEL: "Cooling Circuit Regulation Control Signal",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_SURPLUS_HEAT_REGULATION_CONTROL_SIGNAL: {
         ATTR_LABEL: "Surplus Heat Regulation Control Signal",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_ACTIVE_COOLING_DIRECTIONAL_VALVE_POSITION: {
         ATTR_LABEL: "Active Cooling Directional Valve Position",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_PASSIVE_ACTIVE_COOLING_DIRECTIONAL_VALVE_POSITION: {
         ATTR_LABEL: "Passive Active Cooling Directional Valve Position",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_POOL_REGULATION_CONTROL_SIGNAL: {
         ATTR_LABEL: "Pool Regulation Control Signal",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_INDICATION_WHEN_MIXING_VALVE_1_IS_PRODUCING_PASSIVE_COOLING: {
         ATTR_LABEL: "Indication When Mixing Valve 1 Is Producing Passive Cooling",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
     thermiaconst.ATTR_DINPUT_COMPRESSOR_IS_UNABLE_TO_SPEED_UP: {
         ATTR_LABEL: "Compressor Is Unable To Speed Up",
         ATTR_CLASS: CLASS_STATE,
-        ATTR_DEFAULT_ENABLED: False,
     },
 }
 
@@ -813,11 +706,9 @@ SENSOR_TYPES = {
     # Inputs 157/158; kW per the display's daily COP (homelab exploration-8 round 10).
     thermiaconst.ATTR_INPUT_CURRENT_POWER_OUTPUT: {
         ATTR_LABEL: "Current Power Output",
-        ATTR_DEFAULT_ENABLED: True,
     },
     thermiaconst.ATTR_INPUT_CURRENT_CONSUMED_POWER: {
         ATTR_LABEL: "Current Consumed Power",
-        ATTR_DEFAULT_ENABLED: True,
     },
     thermiaconst.ATTR_INPUT_ELECTRIC_METER_L1_POWER: {
         ATTR_LABEL: "Electric Meter L1 Power",
