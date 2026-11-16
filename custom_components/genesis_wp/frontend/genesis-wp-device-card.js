@@ -122,8 +122,19 @@ class GenesisWpDeviceCard extends HTMLElement {
     if (!config || !CATEGORIES.includes(config.device)) throw new Error(`device must be one of: ${CATEGORIES.join(', ')}`);
     this._config = {...config};
     for (const field of ['title','entry']) if (this._config[field] === '') delete this._config[field];
-    if (!this.shadowRoot) this.attachShadow({mode:'open'});
+    if (!this.shadowRoot) {
+      this.attachShadow({mode:'open'});
+      this.shadowRoot.addEventListener?.('click', e=>this._activate(e));
+      this.shadowRoot.addEventListener?.('keydown', e=>{ if (e.key==='Enter'||e.key===' ') this._activate(e); });
+    }
     this._render();
+  }
+  // DHF-REQ: genesis-wp-ha/requirement-22
+  _activate(event) {
+    const target=event.target?.closest?.('[data-entity]');
+    if (!target) return;
+    event.preventDefault?.();
+    this.dispatchEvent(new CustomEvent('hass-more-info', {detail:{entityId:target.dataset.entity}, bubbles:true, composed:true}));
   }
   set hass(value) { this._hass=value; this._render(); }
   getCardSize() { return 8; }
@@ -165,7 +176,7 @@ class GenesisWpDeviceCard extends HTMLElement {
     const {id,state,register}=entity;
     const cls = `${register==='dinput_251'&&state.state==='on'?'fault ':''}${context?'context':'own'}${calculated.has(register)?' calculated':''}${id.startsWith('binary_sensor.')?' chip':''}`;
     const title=state.attributes.friendly_name||id;
-    return `<g class="${cls}" data-register="${escapeText(register)}" data-entity="${escapeText(id)}" transform="translate(${x} ${y})"><title>${escapeText(title)}</title><rect width="${panel?260:150}" height="40" rx="4"/><text x="6" y="14">${escapeText(title)}</text><text class="value" x="6" y="32">${escapeText(this._value(state))}</text></g>`;
+    return `<g class="${cls}" role="button" tabindex="0" data-register="${escapeText(register)}" data-entity="${escapeText(id)}" transform="translate(${x} ${y})"><title>${escapeText(title)}</title><rect width="${panel?260:150}" height="40" rx="4"/><text x="6" y="14">${escapeText(title)}</text><text class="value" x="6" y="32">${escapeText(this._value(state))}</text></g>`;
   }
   _panel(category, entities) {
     const setting=e=>/^(holding|coil)_/.test(e.register)||e.diagnostic;
@@ -239,7 +250,7 @@ class GenesisWpDeviceCard extends HTMLElement {
       body+=this._panel(category,panel);
       if(activeAlarms.length) body+=`<div class="alarms" role="status">${activeAlarms.map(e=>escapeText(e.state.attributes.friendly_name||e.id)).join('<br>')}</div>`;
     }
-    this.shadowRoot.innerHTML=`<style>:host{display:block;color:var(--primary-text-color)}ha-card{padding:16px}h2{font-size:20px}.mode{color:var(--secondary-text-color)}svg{display:block;width:100%;height:auto}text{fill:currentColor;font-family:inherit;font-size:11px}.own rect,.context rect{fill:var(--card-background-color);stroke:var(--tag-color);stroke-width:1.5}.context{opacity:.65}.context rect{stroke-dasharray:2 3}.own.calculated rect{stroke-dasharray:6 3}.alarms{color:var(--error-color,#d46161);padding:8px}.value{font-size:13px;font-weight:bold}.chip rect{rx:10px}.fault{color:var(--error-color,#d46161)}.fault rect{stroke:var(--error-color,#d46161)}</style><ha-card style="--tag-color:${CATEGORY_COLORS[CATEGORIES.indexOf(category)%4]}"><h2>${escapeText(title)}</h2><div class="mode">${escapeText(mode)}</div>${body}</ha-card>`;
+    this.shadowRoot.innerHTML=`<style>[role=button]{cursor:pointer}[role=button]:focus-visible{outline:2px solid var(--primary-color)}:host{display:block;color:var(--primary-text-color)}ha-card{padding:16px}h2{font-size:20px}.mode{color:var(--secondary-text-color)}svg{display:block;width:100%;height:auto}text{fill:currentColor;font-family:inherit;font-size:11px}.own rect,.context rect{fill:var(--card-background-color);stroke:var(--tag-color);stroke-width:1.5}.context{opacity:.65}.context rect{stroke-dasharray:2 3}.own.calculated rect{stroke-dasharray:6 3}.alarms{color:var(--error-color,#d46161);padding:8px}.value{font-size:13px;font-weight:bold}.chip rect{rx:10px}.fault{color:var(--error-color,#d46161)}.fault rect{stroke:var(--error-color,#d46161)}</style><ha-card style="--tag-color:${CATEGORY_COLORS[CATEGORIES.indexOf(category)%4]}"><h2>${escapeText(title)}</h2><div class="mode">${escapeText(mode)}</div>${body}</ha-card>`;
   }
 }
 registerCard('genesis-wp-device-card', GenesisWpDeviceCard, {

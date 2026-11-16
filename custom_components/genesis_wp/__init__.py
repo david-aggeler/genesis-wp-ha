@@ -25,6 +25,8 @@ from genesis_wp.groups import ROLE_MEASUREMENT
 from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL
 from homeassistant.components.frontend import add_extra_js_url
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.components.panel_custom import async_register_panel
+from homeassistant.components.frontend import async_remove_panel
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST
 from homeassistant.const import CONF_PORT
@@ -130,7 +132,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     if hass.http is not None:
         await hass.http.async_register_static_paths([
             StaticPathConfig(url, str(Path(__file__).parent / "frontend" / Path(url).name), False)
-            for url in (*CARD_URLS, "/genesis_wp/register-card.js")
+            for url in (*CARD_URLS, "/genesis_wp/register-card.js", "/genesis_wp/genesis-wp-panel.js")
         ])
     if DATA_EXTRA_MODULE_URL in hass.data:
         for url in CARD_URLS:
@@ -210,6 +212,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
+    # DHF-REQ: genesis-wp-ha/requirement-21
+    if "genesis-wp" not in hass.data.get("frontend_panels", {}):
+        await async_register_panel(
+            hass, webcomponent_name="genesis-wp-panel", frontend_url_path="genesis-wp",
+            sidebar_title="Heat pump", sidebar_icon="mdi:heat-pump",
+            module_url="/genesis_wp/genesis-wp-panel.js", require_admin=False,
+        )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     # The entities subscribed their registers while being added; read them now
     # instead of one update interval later.
@@ -224,6 +233,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     if unload_ok:
         coordinator = hass.data[DOMAIN].pop(entry.entry_id)
         await coordinator.async_close()
+        if not hass.data[DOMAIN]:
+            async_remove_panel(hass, "genesis-wp")
 
     return unload_ok
 

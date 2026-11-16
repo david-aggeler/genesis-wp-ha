@@ -304,3 +304,21 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
   assert.deepEqual(Card.getStubConfig(empty),{device:'internal_heat_pump'});
 }
 process.exit(0);
+
+// DHF-TEST: genesis-wp-ha/requirement-22 genesis-wp-ha/ac-86
+{
+  const card = render('internal_heat_pump');
+  const ids = [...html(card).matchAll(/<g[^>]*data-entity="([^"]+)"[^>]*>/g)];
+  assert.ok(ids.length);
+  for (const [g] of ids) { assert.match(g, /role="button"/); assert.match(g, /tabindex="0"/); }
+  const events = [];
+  card.dispatchEvent = e => events.push(e);
+  const id = ids[0][1];
+  const target = {closest: sel => sel==='[data-entity]' ? {dataset:{entity:id}} : null};
+  card._activate({target});
+  card._activate({target:{closest:()=>null}});
+  assert.equal(events.length, 1);
+  assert.equal(events[0].type, 'hass-more-info');
+  assert.deepEqual(events[0].detail, {entityId:id});
+  assert.ok(events[0].bubbles && events[0].composed);
+}
