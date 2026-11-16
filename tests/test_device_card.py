@@ -72,3 +72,9 @@ async def test_register_anchors_and_render(hass, start_emulator):
         "devices": {d.id: {"identifiers": list(d.identifiers), "name": d.name} for d in [*dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id), *sub_devices(hass, entry).values()]},
     }
     run_render(fixture)
+    package = find_spec("nodejs_wheel")
+    node = shutil.which("node", path=str(Path(package.origin).parent / "bin")) if package else shutil.which("node")
+    result = subprocess.run([node, str(ROOT / "tests/frontend/panel.mjs"),
+                             str(CARD.parent / "genesis-wp-panel.js")],
+                            input=json.dumps(fixture), capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr

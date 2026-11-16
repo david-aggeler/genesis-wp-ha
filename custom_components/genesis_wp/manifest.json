@@ -3,7 +3,8 @@
   "name": "Genesis WP",
   "after_dependencies": [
     "frontend",
-    "http"
+    "http",
+    "panel_custom"
   ],
   "codeowners": [
     "@david-aggeler"
