@@ -260,4 +260,47 @@ for(const category of ['ksm','electric_meter_and_energy','controller']) {
 
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-71
 assert.equal(services,0); assert.equal(ws,0);
+// DHF-TEST: genesis-wp-ha/requirement-20 genesis-wp-ha/ac-77
+const form = Card.getConfigForm();
+assert.deepEqual(form.schema.map(s=>s.name), ['device','title','entry']);
+const [deviceField,titleField,entryField] = form.schema;
+assert.equal(deviceField.required,true);
+assert.equal(deviceField.selector.select.mode,'dropdown');
+assert.deepEqual(deviceField.selector.select.options.map(o=>o.value),categories);
+assert.deepEqual(deviceField.selector.select.options.map(o=>o.label),[
+  'Internal heat pump','Buffer tank','Heating system','Additional heating circuits',
+  'Hot water','Cooling','Pool','KSM','Electric meter and energy','Controller']);
+assert.deepEqual(titleField.selector,{text:{}});
+assert.deepEqual(entryField.selector,{config_entry:{integration:'genesis_wp'}});
+for(const field of [titleField,entryField]) assert.ok(!field.required);
+for(const field of form.schema) assert.ok(form.computeLabel(field).trim());
+const metadata=window.customCards.find(c=>c.type==='genesis-wp-device-card');
+assert.ok(metadata.name && metadata.description);
+assert.equal(metadata.preview,true);
+// DHF-TEST: genesis-wp-ha/requirement-20 genesis-wp-ha/ac-78
+for(const {value:device} of deviceField.selector.select.options) {
+  for(const optional of [{}, {title:'',entry:''}, {title:'Custom section'}, {entry:fixture.entry,title:'Custom section'}]) {
+    const generated=new Card();
+    assert.doesNotThrow(()=>generated.setConfig({type:'custom:genesis-wp-device-card',device,...optional}));
+    generated.hass=hass;
+    const manual=new Card();
+    manual.setConfig({device,...(optional.title?{title:optional.title}:{}),...(optional.entry?{entry:optional.entry}:{})});
+    manual.hass=hass;
+    assert.equal(html(generated),html(manual),device);
+    assert.doesNotMatch(html(generated),/Device not found/);
+  }
+}
+// DHF-TEST: genesis-wp-ha/requirement-20 genesis-wp-ha/ac-79
+const child=(domain,value)=>({identifiers:[[domain,value]]});
+assert.deepEqual(Card.getStubConfig({devices:{
+  pool:child('genesis_wp','entry_pool'),
+  buffer:child('genesis_wp','entry_buffer_tank'),
+  foreign:child('other','entry_internal_heat_pump'),
+}}),{device:'buffer_tank'});
+for(const category of categories) {
+  assert.deepEqual(Card.getStubConfig({devices:{only:child('genesis_wp',`entry_${category}`)}}),{device:category});
+}
+for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp','entry'),foreign:child('other','entry_pool')}}]) {
+  assert.deepEqual(Card.getStubConfig(empty),{device:'internal_heat_pump'});
+}
 process.exit(0);

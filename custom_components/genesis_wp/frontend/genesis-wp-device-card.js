@@ -4,6 +4,12 @@ import { registerCard } from './register-card.js';
 // Geometry redrawn from genesis-wp interface_spec-6, process control room editions.
 const CATEGORIES = ['internal_heat_pump', 'buffer_tank', 'heating_system', 'additional_heating_circuits',
   'hot_water', 'cooling', 'pool', 'ksm', 'electric_meter_and_energy', 'controller'];
+const LABELS = {
+  internal_heat_pump: 'Internal heat pump', buffer_tank: 'Buffer tank',
+  heating_system: 'Heating system', additional_heating_circuits: 'Additional heating circuits',
+  hot_water: 'Hot water', cooling: 'Cooling', pool: 'Pool', ksm: 'KSM',
+  electric_meter_and_energy: 'Electric meter and energy', controller: 'Controller',
+};
 const CATEGORY_COLORS = ['#8e6cc0', '#d4a14d', '#5fb88a', '#50a0cb'];
 const escapeText = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const key = address => `input_${address}`;
@@ -115,12 +121,31 @@ class GenesisWpDeviceCard extends HTMLElement {
   setConfig(config) {
     if (!config || !CATEGORIES.includes(config.device)) throw new Error(`device must be one of: ${CATEGORIES.join(', ')}`);
     this._config = {...config};
+    for (const field of ['title','entry']) if (this._config[field] === '') delete this._config[field];
     if (!this.shadowRoot) this.attachShadow({mode:'open'});
     this._render();
   }
   set hass(value) { this._hass=value; this._render(); }
   getCardSize() { return 8; }
-  static getStubConfig() { return {device:'internal_heat_pump'}; }
+  // DHF-REQ: genesis-wp-ha/requirement-20
+  static getConfigForm() {
+    return {
+      schema: [
+        {name:'device', required:true, selector:{select:{mode:'dropdown',
+          options:CATEGORIES.map(value=>({value,label:LABELS[value]}))}}},
+        {name:'title', selector:{text:{}}},
+        {name:'entry', selector:{config_entry:{integration:'genesis_wp'}}},
+      ],
+      computeLabel: ({name}) => ({device:'Plant section',title:'Title',entry:'Config entry'})[name],
+    };
+  }
+  // DHF-REQ: genesis-wp-ha/requirement-20
+  static getStubConfig(hass) {
+    const devices=Object.values(hass?.devices || {});
+    const device=CATEGORIES.find(category=>devices.some(d=>(d.identifiers || []).some(
+      ([domain,value])=>domain==='genesis_wp' && value.endsWith(`_${category}`))));
+    return {device:device || 'internal_heat_pump'};
+  }
   _resolve() {
     const {device,entry} = this._config;
     const devices=Object.entries(this._hass.devices||{});
@@ -218,6 +243,7 @@ class GenesisWpDeviceCard extends HTMLElement {
   }
 }
 registerCard('genesis-wp-device-card', GenesisWpDeviceCard, {
+  preview: true,
   name: 'Genesis WP device',
   description: 'Read-only process diagram for one plant sub-device.',
 });
