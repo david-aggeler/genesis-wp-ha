@@ -36,9 +36,9 @@ export function toCelsius(raw, unit) {
 }
 // [register, x, y] tag anchors in the source drawing's coordinate system.
 const POSITIONS = {
-  internal_heat_pump: [[44,210,150],[10,210,300],[11,200,602],[130,420,250],[127,420,296],[124,420,342],[125,420,388],
-    [5,470,40],[61,630,40],[319,470,88],[48,630,88],[413,470,136],[7,640,250],[128,640,296],
-    [122,640,470],[129,640,516],[126,640,562],[315,430,730],[9,960,120],[8,850,645],[39,1010,645],[67,960,214]],
+  internal_heat_pump: [[10,20,240],[44,20,300],[11,20,400],[130,425,218],[127,425,262],[124,425,306],[125,425,350],
+    [5,440,0],[61,600,0],[319,440,44],[48,600,44],[413,440,88],[7,640,218],[128,640,262],
+    [122,640,340],[129,640,384],[126,640,428],[315,430,525],[9,960,240],[67,960,300],[8,960,400],[39,960,444]],
   buffer_tank: [[12,1130,150],[18,1130,104],[41,1130,500],[68,1130,546]],
   heating_system: [[12,1130,150],[18,1130,104],[13,830,-120],[9,960,120]],
   hot_water: [[9,10,20],[47,180,20],[15,410,130],[16,410,330],[17,410,380],[45,10,200],[117,10,430],[118,220,430]],
@@ -51,9 +51,17 @@ const POSITIONS = {
   controller: [],
   additional_heating_circuits: [[43,1305,262],[40,1305,380],[147,1305,426],[41,1305,540],['holding_302',1305,0],['coil_33',1305,46]],
 };
-const VIEWS = {hot_water:'0 0 590 500',cooling:'0 0 590 450',pool:'0 0 590 400',ksm:'0 0 550 100',electric_meter_and_energy:'0 0 550 290',controller:'0 0 550 40',internal_heat_pump:'0 -165 1190 955', buffer_tank:'1080 70 240 620', heating_system:'810 -165 520 865', additional_heating_circuits:'1260 -165 370 865'};
+const VIEWS = {hot_water:'0 0 590 500',cooling:'0 0 590 450',pool:'0 0 590 400',ksm:'0 0 550 100',electric_meter_and_energy:'0 0 550 290',controller:'0 0 550 40',internal_heat_pump:'0 -10 1190 610', buffer_tank:'1080 70 240 620', heating_system:'810 -165 520 865', additional_heating_circuits:'1260 -165 370 865'};
 const rect = (x,y,w,h,label) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="currentColor" fill-opacity="0.04" stroke="currentColor"/><text x="${x+6}" y="${y+22}">${label}</text>`;
-const pump = (x,y,label) => `<circle cx="${x}" cy="${y}" r="13" fill="none" stroke="currentColor"/><path d="M${x-8},${y-6} l8,14 l8,-14 z" fill="currentColor"/><text x="${x+18}" y="${y+5}">${label}</text>`;
+// The triangle points along the pipe in the flow direction; the label sits right, left or above the symbol.
+const FLOW_ANGLE = {down:0, left:90, up:180, right:-90};
+const pump = (x,y,label,flow='down',place='right') => `<circle cx="${x}" cy="${y}" r="13" fill="none" stroke="currentColor"/><path data-flow-direction="${flow}" d="M${x-8},${y-6} l8,14 l8,-14 z" transform="rotate(${FLOW_ANGLE[flow]} ${x} ${y})" fill="currentColor"/>${
+  place==='above' ? `<text x="${x}" y="${y-20}" text-anchor="middle">${label}</text>`
+  : place==='left' ? `<text x="${x-18}" y="${y+5}" text-anchor="end">${label}</text>`
+  : `<text x="${x+18}" y="${y+5}">${label}</text>`}`;
+// Heat exchanger: label in a header band, zig-zags below it. Pipes attach at the zig-zag ends,
+// (x+10 | x+90, y+35 | y+135), through the side walls, so no pipe crosses the label.
+const exchanger = (x,y,label) => rect(x,y,100,155,label)+`<path d="M${x+10},${y+35} L${x+40},${y+60} L${x+10},${y+85} L${x+40},${y+110} L${x+10},${y+135} M${x+90},${y+135} L${x+60},${y+110} L${x+90},${y+85} L${x+60},${y+60} L${x+90},${y+35}" fill="none" stroke="currentColor"/><line x1="${x+50}" y1="${y+30}" x2="${x+50}" y2="${y+140}" stroke="currentColor" stroke-dasharray="3 3"/>`;
 const valve = (x,y,label) => `<path d="M${x-12},${y-8} l24,16 v-16 l-24,16 z" fill="none" stroke="currentColor"/><text x="${x+18}" y="${y-12}">${label}</text>`;
 // A part is omitted if none of its sensor entities exists. Disabled entities do not count.
 const PARTS = {
@@ -68,10 +76,11 @@ const PARTS = {
   controller: [[[1],'<text x="6" y="22">Controller</text>']],
 
   internal_heat_pump: [
-    [[10,11],rect(20,300,120,300,'Ground loop')+'<path d="M45,320 L115,346 L45,372 L115,398 L45,424 L115,450 L45,476 L115,502 L45,528 L115,554 L45,580" fill="none" stroke="currentColor"/>'],
-    [[10,130],rect(290,340,100,220,'Evaporator')+'<path d="M300,352 L330,385 L300,417 L330,450 L300,483 L330,515 L300,548 M352,548 L382,515 L352,483 L382,450 L352,417 L382,385 L352,352" fill="none" stroke="currentColor"/><line x1="341" y1="345" x2="341" y2="555" stroke="currentColor" stroke-dasharray="3 3"/>'], [[7,9],rect(830,340,100,220,'Condenser')+'<path d="M840,352 L870,385 L840,417 L870,450 L840,483 L870,515 L840,548 M892,548 L922,515 L892,483 L922,450 L892,417 L922,385 L892,352" fill="none" stroke="currentColor"/><line x1="881" y1="345" x2="881" y2="555" stroke="currentColor" stroke-dasharray="3 3"/>'],
-    [[5,61],'<circle cx="630" cy="220" r="38" fill="none" stroke="currentColor"/><text x="595" y="225">Compressor</text>'],
-    [[44],pump(195,200,'Brine pump')], [[39],pump(1040,620,'Condenser pump')], [[129,124],valve(630,700,'Expansion valve')]],
+    // The ground loop sits at the bottom; brine runs up to the evaporator and back down.
+    [[10,11],rect(30,480,120,110,'Ground loop')+'<path d="M50,512 L130,528 L50,544 L130,560 L50,576" fill="none" stroke="currentColor"/>'],
+    [[10,130],exchanger(290,255,'Evaporator')], [[7,9],exchanger(830,255,'Condenser')],
+    [[5,61],'<circle cx="630" cy="172" r="38" fill="none" stroke="currentColor"/><text x="630" y="177" text-anchor="middle">Compressor</text>'],
+    [[44],pump(200,360,'Brine pump','up','left')], [[39],pump(1140,390,'Condenser pump','left','above')], [[129,124],valve(630,510,'Expansion valve')]],
   buffer_tank: [[[41,68],rect(1120,240,150,400,'Buffer tank')]],
   heating_system: [[[12,18],'<circle cx="1160" cy="200" r="7" fill="currentColor"/><text x="960" y="250">Supply T-piece</text>']],
   additional_heating_circuits: [[[40,43],valve(1420,200,'TR9 A/B')+valve(1470,280,'TR12/13')+pump(1470,340,'FR2')+rect(1425,440,125,120,'Rooms / HC2')],
@@ -96,14 +105,15 @@ const PIPES = {
   ksm: [], electric_meter_and_energy: [], controller: [],
 
   internal_heat_pump: [
-    ['brine-in',10,'brine','M60,300 L60,-145 L195,-145 L195,360 L300,360'],
-    ['brine-out',11,'brine','M300,545 L140,545'],
-    ['suction',130,'compressor','M375,352 L375,220 L592,220','12 6'],
-    ['discharge',7,'compressor','M668,220 L845,220 L845,352','12 6'],
-    ['liquid',129,'compressor','M845,548 L845,700 L652,700'],
-    ['expansion',124,'compressor','M608,700 L375,700 L375,548','3 5'],
-    ['condenser-out',9,'compressor','M915,352 L915,200 L1060,200'],
-    ['condenser-in',8,'compressor','M1060,620 L915,620 L915,548']],
+    ['brine-in',10,'brine','M150,500 L200,500 L200,290 L300,290'],
+    ['brine-out',11,'brine','M300,390 L250,390 L250,570 L150,570'],
+    ['suction',130,'compressor','M380,290 L405,290 L405,172 L592,172','12 6'],
+    ['discharge',7,'compressor','M668,172 L805,172 L805,290 L840,290','12 6'],
+    ['liquid',129,'compressor','M840,390 L805,390 L805,510 L652,510'],
+    ['expansion',124,'compressor','M608,510 L405,510 L405,390 L380,390','3 5'],
+    // Water side: supply out and return in run straight and level through the condenser wall.
+    ['condenser-out',9,'compressor','M920,290 L1180,290'],
+    ['condenser-in',8,'compressor','M1180,390 L920,390']],
   buffer_tank: [['supply',12,'buffer','M1080,200 L1270,200 M1160,200 L1160,240'],['return',41,'buffer','M1270,600 L1270,620 L1120,620']],
   heating_system: [['condenser-out',9,'heating','M915,352 L915,200'],['supply',12,'heating','M915,200 L1270,200 M1160,200 L1160,240']],
   additional_heating_circuits: [['buffer-to-mixer',41,'hc2','M1260,200 L1408,200'],
@@ -262,7 +272,7 @@ export class GenesisWpDeviceCard extends HTMLElement {
       const legend=`<svg viewBox="0 0 460 65" aria-label="Temperature legend"><text x="0" y="12">pipe color = measured temperature [\u00b0C]</text>${Array.from({length:46},(_,i)=>`<rect x="${i*10}" y="18" width="10" height="12" fill="${temperatureColor(i)}"/>`).join('')}<text x="0" y="44">0</text><text x="440" y="44">45</text><text x="0" y="62">gray: idle; solid outline: own; dotted: context; dashed: calculated</text></svg>`;
       // layout 'diagram': tags are HTML chips over the drawing, so their text keeps the theme size.
       body=diagram
-        ? `<div class="stage" style="aspect-ratio:${vw}/${vh};min-width:${Math.round(vw*0.75)}px"><svg class="drawing" viewBox="${VIEWS[category]}" role="img" aria-label="${escapeText(title)}">${parts}${pipes}</svg>${tags}</div><div class="legend"><span>pipe color = measured temperature [\u00b0C]</span><span class="scale"><span>0</span><span class="bar" style="background:linear-gradient(90deg,${SCALE.map(([v,c])=>`${c} ${v/45*100}%`).join(',')})"></span><span>45</span></span><span>gray: idle; solid: own; dotted: context; dashed: calculated</span></div>`
+        ? `<div class="stage" style="aspect-ratio:${vw}/${vh};min-width:${Math.round(vw*0.82)}px"><svg class="drawing" viewBox="${VIEWS[category]}" role="img" aria-label="${escapeText(title)}">${parts}${pipes}</svg>${tags}</div><div class="legend"><span>pipe color = measured temperature [\u00b0C]</span><span class="scale"><span>0</span><span class="bar" style="background:linear-gradient(90deg,${SCALE.map(([v,c])=>`${c} ${v/45*100}%`).join(',')})"></span><span>45</span></span><span>gray: idle; solid: own; dotted: context; dashed: calculated</span></div>`
         : `<svg viewBox="${VIEWS[category]}" role="img" aria-label="${escapeText(title)}">${parts}${pipes}${tags}</svg>${legend}`;
       // layout 'diagram': the sidebar panel lists the values itself.
       if(this._config.layout!=='diagram') body+=this._panel(category,panel);
