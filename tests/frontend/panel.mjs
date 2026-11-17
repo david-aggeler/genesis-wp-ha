@@ -119,7 +119,7 @@ p.route={path:'/genesis-wp'}; assert.match(html(),/data-tile=/);
 // DHF-TEST: genesis-wp-ha/requirement-21 genesis-wp-ha/ac-89
 {
   p.route={path:'/genesis-wp'};
-  for(const [r,label] of [['input_54','Compressor'],['input_9','Condenser out'],['input_10','Brine in'],['input_12','Circuit 1 supply'],['input_13','Outdoor']]) {
+  for(const [r,label] of [['input_54','Compressor'],['input_9','Condenser out'],['input_10','From ground'],['input_12','Circuit 1 supply'],['input_13','Outdoor']]) {
     const id=entity(r); if(!id) continue;
     assert.match(html(),new RegExp(`data-entity="${id.replaceAll('.','\\.')}"[^>]*><span class="label"[^>]*>${label}</span>`),r);
   }
@@ -170,4 +170,8 @@ p.route={path:'/genesis-wp'}; assert.match(html(),/data-tile=/);
     assert.match(html(),new RegExp(`data-entity="${id.replaceAll('.','\\.')}"[^>]*><span class="label"[^>]*>${label}</span>`),r);
   }
   assert.match(html(),/<div class="hint">/);
+  assert.match(readFileSync(source,'utf8').split('const CSS=`')[1].split('`;')[0],/\.diagram\.overflow \.hint\{display:block\}/,'hint follows the diagram overflow, not the viewport');
+  assert.doesNotMatch(readFileSync(source,'utf8').split('const CSS=`')[1].split('`;')[0],/max-width:870px\)\{\.diagram \.hint/);
+  {const classes=new Set();const box={scrollWidth:976,clientWidth:710,classList:{toggle:(c,on)=>on?classes.add(c):classes.delete(c)}};
+   p._overflow(box);assert.ok(classes.has('overflow'));box.clientWidth=1200;p._overflow(box);assert.ok(!classes.has('overflow'));}
 }

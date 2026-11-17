@@ -5,7 +5,7 @@
 const LABELS = {
   en: {
     input_1: 'Mode', input_5: 'Compressor rpm', input_7: 'Discharge', input_8: 'Condenser in',
-    input_9: 'Condenser out', input_10: 'Brine in', input_11: 'Brine out', input_12: 'Supply',
+    input_9: 'Condenser out', input_10: 'From ground', input_11: 'To ground', input_12: 'Supply',
     input_13: 'Outdoor', input_15: 'Top', input_16: 'Lower', input_17: 'Weighted', input_18: 'Target',
     input_39: 'Condenser pump', input_40: 'Supply', input_41: 'Tank', input_43: 'Mix valve',
     input_44: 'Brine pump', input_45: 'Hot gas', input_47: 'Valve', input_48: 'Run hours',
@@ -22,7 +22,7 @@ const LABELS = {
   },
   de: {
     input_1: 'Betriebsart', input_5: 'Verdichter U/min', input_7: 'Heissgas', input_8: 'Kondensator ein',
-    input_9: 'Kondensator aus', input_10: 'Sole ein', input_11: 'Sole aus', input_12: 'Vorlauf',
+    input_9: 'Kondensator aus', input_10: 'Von Erdsonde', input_11: 'Zur Erdsonde', input_12: 'Vorlauf',
     input_13: 'Aussen', input_15: 'Oben', input_16: 'Unten', input_17: 'Gewichtet', input_18: 'Soll',
     input_39: 'Kondensatorpumpe', input_40: 'Vorlauf', input_41: 'Speicher', input_43: 'Mischventil',
     input_44: 'Solepumpe', input_45: 'Heissgas-Vorlauf', input_47: 'Umschaltventil', input_48: 'Betriebsstunden',

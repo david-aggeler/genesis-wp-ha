@@ -36,9 +36,9 @@ export function toCelsius(raw, unit) {
 }
 // [register, x, y] tag anchors in the source drawing's coordinate system.
 const POSITIONS = {
-  internal_heat_pump: [[10,20,240],[44,20,300],[11,20,400],[130,425,218],[127,425,262],[124,425,306],[125,425,350],
-    [5,440,0],[61,600,0],[319,440,44],[48,600,44],[413,440,88],[7,640,218],[128,640,262],
-    [122,640,340],[129,640,384],[126,640,428],[315,430,525],[9,960,240],[67,960,300],[8,960,400],[39,960,444]],
+  internal_heat_pump: [[10,30,420],[44,30,338],[11,262,540],[130,425,218],[127,425,262],[124,425,306],[125,425,350],
+    [5,250,0],[61,410,0],[319,250,44],[48,410,44],[413,250,88],[7,640,218],[128,640,262],
+    [122,640,340],[129,640,384],[126,640,428],[315,430,525],[9,960,240],[67,960,300],[8,960,412],[39,960,456]],
   buffer_tank: [[12,1130,150],[18,1130,104],[41,1130,500],[68,1130,546]],
   heating_system: [[12,1130,150],[18,1130,104],[13,830,-120],[9,960,120]],
   hot_water: [[9,10,20],[47,180,20],[15,410,130],[16,410,330],[17,410,380],[45,10,200],[117,10,430],[118,220,430]],
@@ -80,7 +80,7 @@ const PARTS = {
     [[10,11],rect(30,480,120,110,'Ground loop')+'<path d="M50,512 L130,528 L50,544 L130,560 L50,576" fill="none" stroke="currentColor"/>'],
     [[10,130],exchanger(290,255,'Evaporator')], [[7,9],exchanger(830,255,'Condenser')],
     [[5,61],'<circle cx="630" cy="172" r="38" fill="none" stroke="currentColor"/><text x="630" y="177" text-anchor="middle">Compressor</text>'],
-    [[44],pump(200,360,'Brine pump','up','left')], [[39],pump(1140,390,'Condenser pump','left','above')], [[129,124],valve(630,510,'Expansion valve')]],
+    [[44],pump(200,360,'Brine pump','up')], [[39],pump(1140,390,'Condenser pump','left','above')], [[129,124],valve(630,510,'Expansion valve')]],
   buffer_tank: [[[41,68],rect(1120,240,150,400,'Buffer tank')]],
   heating_system: [[[12,18],'<circle cx="1160" cy="200" r="7" fill="currentColor"/><text x="960" y="250">Supply T-piece</text>']],
   additional_heating_circuits: [[[40,43],valve(1420,200,'TR9 A/B')+valve(1470,280,'TR12/13')+pump(1470,340,'FR2')+rect(1425,440,125,120,'Rooms / HC2')],
