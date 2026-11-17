@@ -36,9 +36,15 @@ export function toCelsius(raw, unit) {
 }
 // [register, x, y] tag anchors in the source drawing's coordinate system.
 const POSITIONS = {
-  internal_heat_pump: [[10,30,420],[44,30,338],[11,262,540],[130,425,218],[127,425,262],[124,425,306],[125,425,350],
+  internal_heat_pump: [[10,30,420],[44,245,188],[11,262,540],['coil_33',30,140],['holding_302',30,184],[130,425,218],[127,425,262],[124,425,306],[125,425,350],
     [5,250,0],[61,410,0],[319,250,44],[48,410,44],[413,250,88],[7,640,218],[128,640,262],
-    [122,640,340],[129,640,384],[126,640,428],[315,430,525],[9,960,240],[67,960,300],[8,960,412],[39,960,456]],
+    [122,640,340],[129,640,384],[126,640,428],[315,430,525],[9,940,230],[67,965,306],[8,940,412],[39,940,456],
+    // Heating circuit 1: settings at the top of the circuit, T33 and its set point by the T-piece.
+    ['holding_5',940,60],['coil_9',1090,60],['holding_4',940,104],['holding_3',1090,104],[18,1095,186],[12,1095,230],
+    // Buffer tank: charge set point inside, T31 at the lowest port.
+    [68,1165,400],[41,1330,500],
+    // Heating circuit 2: settings at the top, mixer by TR12/13, set point and T32 after FR2.
+    ['holding_107',1430,60],['holding_108',1585,60],['coil_11',1430,104],[43,1430,230],[147,1585,186],[40,1585,230]],
   buffer_tank: [[12,1130,150],[18,1130,104],[41,1130,500],[68,1130,546]],
   heating_system: [[12,1130,150],[18,1130,104],[13,830,-120],[9,960,120]],
   hot_water: [[9,10,20],[47,180,20],[15,410,130],[16,410,330],[17,410,380],[45,10,200],[117,10,430],[118,220,430]],
@@ -51,18 +57,25 @@ const POSITIONS = {
   controller: [],
   additional_heating_circuits: [[43,1305,262],[40,1305,380],[147,1305,426],[41,1305,540],['holding_302',1305,0],['coil_33',1305,46]],
 };
-const VIEWS = {hot_water:'0 0 590 500',cooling:'0 0 590 450',pool:'0 0 590 400',ksm:'0 0 550 100',electric_meter_and_energy:'0 0 550 290',controller:'0 0 550 40',internal_heat_pump:'0 -10 1190 610', buffer_tank:'1080 70 240 620', heating_system:'810 -165 520 865', additional_heating_circuits:'1260 -165 370 865'};
+const VIEWS = {hot_water:'0 0 590 500',cooling:'0 0 590 450',pool:'0 0 590 400',ksm:'0 0 550 100',electric_meter_and_energy:'0 0 550 290',controller:'0 0 550 40',internal_heat_pump:'0 -40 1900 670', buffer_tank:'1080 70 240 620', heating_system:'810 -165 520 865', additional_heating_circuits:'1260 -165 370 865'};
 const rect = (x,y,w,h,label) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="currentColor" fill-opacity="0.04" stroke="currentColor"/><text x="${x+6}" y="${y+22}">${label}</text>`;
 // The triangle points along the pipe in the flow direction; the label sits right, left or above the symbol.
 const FLOW_ANGLE = {down:0, left:90, up:180, right:-90};
 // Pumps are drawn in front of the pipes (see _render), on a card-colored disc that hides the line.
 const pump = (x,y,label,flow='down',place='right') => `<circle class="pump" cx="${x}" cy="${y}" r="13" style="fill:var(--card-background-color)" stroke="currentColor"/><path data-flow-direction="${flow}" d="M${x-8},${y-6} l8,14 l8,-14 z" transform="rotate(${FLOW_ANGLE[flow]} ${x} ${y})" fill="currentColor"/>${
-  place==='above' ? `<text x="${x}" y="${y-20}" text-anchor="middle">${label}</text>`
+  !label ? ''
+  : place==='above' ? `<text x="${x}" y="${y-20}" text-anchor="middle">${label}</text>`
+  : place==='below' ? `<text x="${x}" y="${y+30}" text-anchor="middle">${label}</text>`
   : place==='left' ? `<text x="${x-18}" y="${y+5}" text-anchor="end">${label}</text>`
   : `<text x="${x+18}" y="${y+5}">${label}</text>`}`;
 // Heat exchanger: label in a header band, zig-zags below it. Pipes attach at the zig-zag ends,
 // (x+10 | x+90, y+35 | y+135), through the side walls, so no pipe crosses the label.
 const exchanger = (x,y,label) => rect(x,y,100,155,label)+`<path d="M${x+10},${y+35} L${x+40},${y+60} L${x+10},${y+85} L${x+40},${y+110} L${x+10},${y+135} M${x+90},${y+135} L${x+60},${y+110} L${x+90},${y+85} L${x+60},${y+60} L${x+90},${y+35}" fill="none" stroke="currentColor"/><line x1="${x+50}" y1="${y+30}" x2="${x+50}" y2="${y+140}" stroke="currentColor" stroke-dasharray="3 3"/>`;
+// Full-plant parts carry data-part and their anchor x, so tests can check the plant order.
+const part = (name,x,svg) => `<g data-part="${name}" data-x="${x}">${svg}</g>`;
+// Three-way valve: horizontal body plus the third port's triangle pointing up or down.
+const valve3 = (x,y,port) => `<path d="M${x-12},${y-8} l24,16 v-16 l-24,16 z" style="fill:var(--card-background-color)" stroke="currentColor"/><path d="M${x},${y} l-8,${port==='up'?-14:14} h16 z" style="fill:var(--card-background-color)" stroke="currentColor"/>`;
+const heater = (x,y) => `<g class="heater"><rect x="${x-18}" y="${y-10}" width="36" height="20" rx="3" style="fill:var(--card-background-color)" stroke="currentColor"/>${[-8,0,8].map(d=>`<line x1="${x+d}" y1="${y-6}" x2="${x+d}" y2="${y+6}" stroke="currentColor"/>`).join('')}</g>`;
 const valve = (x,y,label) => `<path d="M${x-12},${y-8} l24,16 v-16 l-24,16 z" fill="none" stroke="currentColor"/><text x="${x+18}" y="${y-12}">${label}</text>`;
 // A part is omitted if none of its sensor entities exists. Disabled entities do not count.
 const PARTS = {
@@ -81,7 +94,17 @@ const PARTS = {
     [[10,11],rect(30,480,120,110,'Ground loop')+'<path d="M50,512 L130,528 L50,544 L130,560 L50,576" fill="none" stroke="currentColor"/>'],
     [[10,130],exchanger(290,255,'Evaporator')], [[7,9],exchanger(830,255,'Condenser')],
     [[5,61],'<circle cx="630" cy="172" r="38" fill="none" stroke="currentColor"/><text x="630" y="177" text-anchor="middle">Compressor</text>'],
-    [[44],pump(200,360,'Brine pump','up')], [[39],pump(1140,390,'Condenser pump','left','above')], [[129,124],valve(630,510,'Expansion valve')]],
+    [[44],pump(225,200,'','down')], [[39],pump(1040,390,'Condenser pump','left','above')], [[129,124],valve(630,510,'Expansion valve')],
+    // Passive-cooling exchanger 24 on the brine up-leg; its water side feeds TR9 port A.
+    [['coil_33','holding_302'],part('passive_hx',185,rect(130,10,110,100,'Cooling HX')+'<path d="M200,60 C200,38 225,38 225,60" fill="none" stroke="currentColor"/><path d="M145,50 L175,62 L145,74 L175,86 L145,98" fill="none" stroke="currentColor" stroke-opacity="0.4"/>')],
+    // Heating circuit 1 -> buffer tank -> heating circuit 2, in plant order.
+    [[67],heater(1040,290)],
+    [[12,18],part('t33',1220,'<circle cx="1220" cy="290" r="6" fill="currentColor"/><text x="1228" y="318">either way</text>')+'<text x="940" y="48">Heating circuit 1</text>'],
+    [[41,68],part('buffer',1240,rect(1160,330,160,250,'Buffer tank'))],
+    [[40,43],part('tr9',1420,valve3(1420,290,'up')+'<text x="1412" y="320" text-anchor="end">TR9</text>')+'<text x="1430" y="48">Heating circuit 2</text>'],
+    [[43],part('mixer',1540,valve3(1540,290,'down')+'<text x="1528" y="320" text-anchor="end">TR12/13</text>')],
+    [[40],part('fr2',1660,pump(1660,290,'FR2','right','below'))],
+    [[40,147],part('rooms',1815,rect(1750,270,130,200,'Rooms (HC2)'))]],
   buffer_tank: [[[41,68],rect(1120,240,150,400,'Buffer tank')]],
   heating_system: [[[12,18],'<circle cx="1160" cy="200" r="7" fill="currentColor"/><text x="960" y="250">Supply T-piece</text>']],
   additional_heating_circuits: [[[40,43],valve(1420,200,'TR9 A/B')+valve(1470,280,'TR12/13')+pump(1470,340,'FR2')+rect(1425,440,125,120,'Rooms / HC2')],
@@ -106,15 +129,26 @@ const PIPES = {
   ksm: [], electric_meter_and_energy: [], controller: [],
 
   internal_heat_pump: [
-    ['brine-in',10,'brine','M150,500 L200,500 L200,290 L300,290'],
+    ['brine-in',10,'brine','M150,500 L200,500 L200,60'],
+    ['brine-hx',10,'brine','M225,60 L225,290 L300,290'],
     ['brine-out',11,'brine','M300,390 L250,390 L250,570 L150,570'],
     ['suction',130,'compressor','M380,290 L405,290 L405,172 L592,172','12 6'],
     ['discharge',7,'compressor','M668,172 L805,172 L805,290 L840,290','12 6'],
     ['liquid',129,'compressor','M840,390 L805,390 L805,510 L652,510'],
     ['expansion',124,'compressor','M608,510 L405,510 L405,390 L380,390','3 5'],
     // Water side: supply out and return in run straight and level through the condenser wall.
-    ['condenser-out',9,'compressor','M920,290 L1180,290'],
-    ['condenser-in',8,'compressor','M1180,390 L920,390']],
+    ['condenser-out',9,'compressor','M920,290 L1220,290'],
+    ['condenser-in',8,'compressor','M1100,390 L920,390'],
+    // Buffer: either-way leg at the T33 T-piece, return from the bottom to the condenser pump.
+    ['either-way',12,'buffer','M1220,290 L1220,330'],
+    ['buffer-return',8,'buffer','M1240,580 L1240,610 L1100,610 L1100,390'],
+    // Heating circuit 2 draws from the buffer top through TR9 port B; room return to the bypass and T31.
+    ['hc2-port-b',12,'hc2','M1220,290 L1408,290'],
+    ['tr9-mixer',12,'rooms','M1432,290 L1528,290'],
+    ['hc2-supply',40,'rooms','M1552,290 L1750,290'],
+    ['room-return',41,'rooms','M1815,470 L1815,560 L1320,560'],
+    ['bypass',41,'rooms','M1540,560 L1540,304'],
+    ['passive-port-a',40,'passive','M160,10 L160,-25 L1420,-25 L1420,276']],
   buffer_tank: [['supply',12,'buffer','M1080,200 L1270,200 M1160,200 L1160,240'],['return',41,'buffer','M1270,600 L1270,620 L1120,620']],
   heating_system: [['condenser-out',9,'heating','M915,352 L915,200'],['supply',12,'heating','M915,200 L1270,200 M1160,200 L1160,240']],
   additional_heating_circuits: [['buffer-to-mixer',41,'hc2','M1260,200 L1408,200'],
@@ -248,7 +282,7 @@ export class GenesisWpDeviceCard extends HTMLElement {
       const passiveEnabled=byRegister.get('coil_33')?.state.state==='on';
       const exists = r => byRegister.has(typeof r==='number'?key(r):r);
       const drawn=PARTS[category].filter(([sensors])=>sensors.some(exists)).map(([,svg])=>svg);
-      const front=svg=>svg.includes('class="pump"');
+      const front=svg=>svg.includes('class="pump"')||svg.includes('class="heater"');
       const parts=drawn.filter(svg=>!front(svg)).join(''), frontParts=drawn.filter(front).join('');
       const pipes=PIPES[category].filter(([,r])=>exists(r)).map(([id,r,group,d,dash])=>{
         const state=byRegister.get(key(r))?.state;
