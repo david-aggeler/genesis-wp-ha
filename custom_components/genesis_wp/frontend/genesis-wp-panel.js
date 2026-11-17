@@ -29,13 +29,13 @@ const TEXT={
  en:{title:'Heat pump',overview:'Overview',energy_flow:'Energy flow',ground:'Ground loop',heat_pump:'Heat pump',buffer_tank:'Buffer tank',house:'House',
   supply_hc1:'Circuit 1 supply',supply_hc2:'Circuit 2 supply',heating_curve:'Heating curve',
   measurements:'Measurements',status:'Status',alarms:'Alarms',settings:'Limits and settings',active:'{n} active',
-  alarms_ok:'{n} alarms ok',no_alarms:'No alarms',values:'{n} values',entry:'Plant',
+  alarms_ok:'No active alarms',not_active:'Not active',signals_on:'{n} on',scroll:'Scroll sideways for the full diagram',no_alarms:'No alarms',values:'{n} values',entry:'Plant',
   section:{internal_heat_pump:'Heat pump',heating_system:'Heating',additional_heating_circuits:'Circuit 2',buffer_tank:'Buffer tank',
    hot_water:'Hot water',cooling:'Cooling',pool:'Pool',ksm:'Safety module',electric_meter_and_energy:'Energy',controller:'Controller'}},
  de:{title:'W\u00e4rmepumpe',overview:'\u00dcbersicht',energy_flow:'Energiefluss',ground:'Erdsonde',heat_pump:'W\u00e4rmepumpe',buffer_tank:'Pufferspeicher',house:'Haus',
   supply_hc1:'Vorlauf Heizkreis 1',supply_hc2:'Vorlauf Heizkreis 2',heating_curve:'Heizkurve',
   measurements:'Messwerte',status:'Status',alarms:'Alarme',settings:'Grenzen und Einstellungen',active:'{n} aktiv',
-  alarms_ok:'{n} Alarme ok',no_alarms:'Keine Alarme',values:'{n} Werte',entry:'Anlage',
+  alarms_ok:'Keine aktiven Alarme',not_active:'Nicht aktiv',signals_on:'{n} ein',scroll:'Seitlich scrollen f\u00fcr das ganze Schema',no_alarms:'Keine Alarme',values:'{n} Werte',entry:'Anlage',
   section:{internal_heat_pump:'W\u00e4rmepumpe',heating_system:'Heizung',additional_heating_circuits:'Heizkreis 2',buffer_tank:'Pufferspeicher',
    hot_water:'Warmwasser',cooling:'K\u00fchlung',pool:'Pool',ksm:'Sicherheitsmodul',electric_meter_and_energy:'Energie',controller:'Regler'}},
 };
@@ -82,6 +82,7 @@ h2{margin:0 0 var(--ha-space-3);font-size:var(--ha-font-size-l);font-weight:var(
 .head.curve{grid-template-columns:minmax(0,720px) minmax(220px,1fr)}
 .head .readings{grid-template-columns:repeat(auto-fill,minmax(min(100%,130px),1fr))}
 .diagram{overflow-x:auto}
+.diagram .hint{display:none;font-size:var(--ha-font-size-s);color:var(--secondary-text-color);margin-bottom:var(--ha-space-2)}
 .diagram genesis-wp-device-card{display:block}
 .head .curves{margin:0}
 .groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:0 var(--ha-space-4);margin-top:var(--ha-space-4)}
@@ -89,7 +90,7 @@ h2{margin:0 0 var(--ha-space-3);font-size:var(--ha-font-size-l);font-weight:var(
 details summary{cursor:pointer;font-size:var(--ha-font-size-l);font-weight:var(--ha-font-weight-medium)}
 details[open] summary{margin-bottom:var(--ha-space-3)}
 [role=button]:focus-visible,button:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}
-@media (max-width:870px){.head,.head.curve{grid-template-columns:minmax(0,1fr)}.flow{flex-direction:column}.pipe{flex-basis:var(--ha-space-6,24px);width:var(--ha-space-2);height:auto}}
+@media (max-width:870px){.diagram .hint{display:block}.head,.head.curve{grid-template-columns:minmax(0,1fr)}.flow{flex-direction:column}.pipe{flex-basis:var(--ha-space-6,24px);width:var(--ha-space-2);height:auto}}
 `;
 export class GenesisWpPanel extends HTMLElement {
  constructor(){
@@ -142,8 +143,12 @@ export class GenesisWpPanel extends HTMLElement {
   const mode=entities.find(e=>e.register==='input_1');
   const flow=nodes?`<ha-card data-flow><h2>${esc(this._t('energy_flow'))}</h2>${mode?`<div class="readings">${this._row(mode)}</div>`:''}<div class="flow">${nodes}</div></ha-card>`:'';
   const inFlow=new Set(FLOW.flatMap(([,,k])=>k.map(([r])=>r)));
-  const tiles=sections.map(s=>{const own=entities.filter(e=>e.deviceId===s.id);const keys=this._keys((KEYS[s.category]||[]).filter(([r])=>!inFlow.has(r)),entities);
-   return `<ha-card data-tile="${s.category}"><button class="tile-head" data-section="${s.category}"><ha-icon icon="mdi:${s.icon}"></ha-icon><span>${esc(this._sectionName(s))}</span></button>${keys?`<div class="readings">${keys}</div>`:''}${this._state(own,s.category==='internal_heat_pump'?mode:null)}</ha-card>`;}).join('');
+  const tiles=sections.map(s=>{const own=entities.filter(e=>e.deviceId===s.id);let keys=this._keys((KEYS[s.category]||[]).filter(([r])=>!inFlow.has(r)),entities);
+   let state=this._state(own,s.category==='internal_heat_pump'?mode:null);
+   // Never an empty tile: fall back to the section's own key readings, then to its binary signals.
+   if(!keys&&!state)keys=this._keys(KEYS[s.category]||[],entities);
+   if(!keys&&!state){const bits=own.filter(e=>e.id.startsWith('binary_sensor.')),on=bits.filter(e=>e.state.state==='on').length;state=`<div class="state">${esc(on?this._t('signals_on',on):this._t('not_active'))}</div>`;}
+   return `<ha-card data-tile="${s.category}"><button class="tile-head" data-section="${s.category}"><ha-icon icon="mdi:${s.icon}"></ha-icon><span>${esc(this._sectionName(s))}</span></button>${keys?`<div class="readings">${keys}</div>`:''}${state}</ha-card>`;}).join('');
   return `${flow}<div class="tiles">${tiles}</div>`;
  }
  _detail(selected,entities,entry){
@@ -156,12 +161,12 @@ export class GenesisWpPanel extends HTMLElement {
    ['alarms',alarms.filter(e=>e.state.state!=='off')],
    ['settings',rows.filter(e=>!alarm(e)&&/^(holding|coil)_/.test(e.register))]];
   const keys=this._keys(KEYS[selected.category]||[],entities,true);
-  const diagram=DIAGRAMS.includes(selected.category)?`<ha-card class="diagram"><genesis-wp-device-card data-diagram="${selected.category}" data-entry="${esc(entry)}"></genesis-wp-device-card></ha-card>`:'';
+  const diagram=DIAGRAMS.includes(selected.category)?`<ha-card class="diagram"><div class="hint">${esc(this._t('scroll'))} \u2192</div><genesis-wp-device-card data-diagram="${selected.category}" data-entry="${esc(entry)}"></genesis-wp-device-card></ha-card>`:'';
   const head=`<ha-card class="keys"><h2>${esc(this._sectionName(selected))}</h2>${keys?`<div class="readings">${keys}</div>`:''}${this._state(own)}</ha-card>`;
   const curveHtml=curves.length?`<div class="curves">${curves.map(e=>`<genesis-wp-heating-curve-card data-curve="${esc(e.id)}"></genesis-wp-heating-curve-card>`).join('')}</div>`:'';
   const graphic=diagram||curveHtml;
   const groupHtml=groups.map(([name,items],i)=>{
-   const content=`<div class="readings">${items.map(e=>this._row(e)).join('')}</div>`+(name==='alarms'?`<div class="state">${esc(this._t('alarms_ok',alarms.filter(e=>e.state.state==='off').length))}</div>`:'');
+   const content=`<div class="readings">${items.map(e=>this._row(e)).join('')}</div>`+(name==='alarms'&&!items.length?`<div class="state">${esc(this._t('alarms_ok',alarms.filter(e=>e.state.state==='off').length))}</div>`:'');
    const title=esc(this._t(name));
    return name==='settings'?`<ha-card><details><summary>${title}</summary>${content}</details></ha-card>`:`<ha-card><h2>${title}</h2>${content}</ha-card>`;}).join('');
   const layout=diagram?' stacked':curveHtml?' curve':' single';
