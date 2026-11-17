@@ -326,7 +326,7 @@ process.exit(0);
 {
   const card = new Card(); card.setConfig({device:'internal_heat_pump',entry:fixture.entry,layout:'diagram'}); card.hass=hass;
   const out = html(card);
-  assert.match(out, /<div class="stage" style="aspect-ratio:1190\/955/);
+  assert.match(out, /<div class="stage" style="aspect-ratio:1190\/610/);
   assert.doesNotMatch(out, /<ha-card/, 'the panel wraps the diagram in its own card');
   assert.doesNotMatch(out, /<svg class="values"/, 'the panel lists the values itself');
   assert.doesNotMatch(out, /<g class="[^"]*" role="button"/, 'tags are HTML chips, not scaled SVG text');
@@ -340,4 +340,21 @@ process.exit(0);
     assert.ok(!label.startsWith(device.name + ' '), label);
   }
   assert.match(out, /<div class="legend">/);
+}
+// DHF-TEST: genesis-wp-ha/requirement-21 genesis-wp-ha/ac-90 (round 5: diagram geometry)
+{
+  const card = new Card(); card.setConfig({device:'internal_heat_pump',entry:fixture.entry,layout:'diagram'}); card.hass=hass;
+  const out = html(card);
+  const path = id => out.match(new RegExp(`data-path="${id}"[^>]* d="([^"]+)"`))[1];
+  const points = d => [...d.matchAll(/(-?\d+),(-?\d+)/g)].map(([,x,y])=>[Number(x),Number(y)]);
+  // The ground loop sits at the bottom: no brine pipe runs above the exchangers.
+  for (const id of ['brine-in','brine-out']) assert.ok(points(path(id)).every(([,y])=>y>=255), id);
+  // Condenser supply out and return in are single straight horizontal runs.
+  for (const id of ['condenser-out','condenser-in']) {
+    const p = points(path(id));
+    assert.equal(p.length, 2, id); assert.equal(p[0][1], p[1][1], id);
+  }
+  // Pumps point along their pipe in the flow direction.
+  assert.deepEqual([...out.matchAll(/data-flow-direction="(\w+)"/g)].map(m=>m[1]), ['up','left']);
+  assert.doesNotMatch(out, /min-width:892px/);
 }
