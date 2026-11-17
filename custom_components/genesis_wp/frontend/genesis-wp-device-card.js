@@ -55,7 +55,8 @@ const VIEWS = {hot_water:'0 0 590 500',cooling:'0 0 590 450',pool:'0 0 590 400',
 const rect = (x,y,w,h,label) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="currentColor" fill-opacity="0.04" stroke="currentColor"/><text x="${x+6}" y="${y+22}">${label}</text>`;
 // The triangle points along the pipe in the flow direction; the label sits right, left or above the symbol.
 const FLOW_ANGLE = {down:0, left:90, up:180, right:-90};
-const pump = (x,y,label,flow='down',place='right') => `<circle cx="${x}" cy="${y}" r="13" fill="none" stroke="currentColor"/><path data-flow-direction="${flow}" d="M${x-8},${y-6} l8,14 l8,-14 z" transform="rotate(${FLOW_ANGLE[flow]} ${x} ${y})" fill="currentColor"/>${
+// Pumps are drawn in front of the pipes (see _render), on a card-colored disc that hides the line.
+const pump = (x,y,label,flow='down',place='right') => `<circle class="pump" cx="${x}" cy="${y}" r="13" style="fill:var(--card-background-color)" stroke="currentColor"/><path data-flow-direction="${flow}" d="M${x-8},${y-6} l8,14 l8,-14 z" transform="rotate(${FLOW_ANGLE[flow]} ${x} ${y})" fill="currentColor"/>${
   place==='above' ? `<text x="${x}" y="${y-20}" text-anchor="middle">${label}</text>`
   : place==='left' ? `<text x="${x-18}" y="${y+5}" text-anchor="end">${label}</text>`
   : `<text x="${x+18}" y="${y+5}">${label}</text>`}`;
@@ -246,7 +247,9 @@ export class GenesisWpDeviceCard extends HTMLElement {
       mode=byRegister.get('input_1')?.state.state||'unavailable';
       const passiveEnabled=byRegister.get('coil_33')?.state.state==='on';
       const exists = r => byRegister.has(typeof r==='number'?key(r):r);
-      const parts=PARTS[category].filter(([sensors])=>sensors.some(exists)).map(([,svg])=>svg).join('');
+      const drawn=PARTS[category].filter(([sensors])=>sensors.some(exists)).map(([,svg])=>svg);
+      const front=svg=>svg.includes('class="pump"');
+      const parts=drawn.filter(svg=>!front(svg)).join(''), frontParts=drawn.filter(front).join('');
       const pipes=PIPES[category].filter(([,r])=>exists(r)).map(([id,r,group,d,dash])=>{
         const state=byRegister.get(key(r))?.state;
         const celsius=state ? toCelsius(state.state, state.attributes.unit_of_measurement) : null;
@@ -272,8 +275,8 @@ export class GenesisWpDeviceCard extends HTMLElement {
       const legend=`<svg viewBox="0 0 460 65" aria-label="Temperature legend"><text x="0" y="12">pipe color = measured temperature [\u00b0C]</text>${Array.from({length:46},(_,i)=>`<rect x="${i*10}" y="18" width="10" height="12" fill="${temperatureColor(i)}"/>`).join('')}<text x="0" y="44">0</text><text x="440" y="44">45</text><text x="0" y="62">gray: idle; solid outline: own; dotted: context; dashed: calculated</text></svg>`;
       // layout 'diagram': tags are HTML chips over the drawing, so their text keeps the theme size.
       body=diagram
-        ? `<div class="stage" style="aspect-ratio:${vw}/${vh};min-width:${Math.round(vw*0.82)}px"><svg class="drawing" viewBox="${VIEWS[category]}" role="img" aria-label="${escapeText(title)}">${parts}${pipes}</svg>${tags}</div><div class="legend"><span>pipe color = measured temperature [\u00b0C]</span><span class="scale"><span>0</span><span class="bar" style="background:linear-gradient(90deg,${SCALE.map(([v,c])=>`${c} ${v/45*100}%`).join(',')})"></span><span>45</span></span><span>gray: idle; solid: own; dotted: context; dashed: calculated</span></div>`
-        : `<svg viewBox="${VIEWS[category]}" role="img" aria-label="${escapeText(title)}">${parts}${pipes}${tags}</svg>${legend}`;
+        ? `<div class="stage" style="aspect-ratio:${vw}/${vh};min-width:${Math.round(vw*0.82)}px"><svg class="drawing" viewBox="${VIEWS[category]}" role="img" aria-label="${escapeText(title)}">${parts}${pipes}${frontParts}</svg>${tags}</div><div class="legend"><span>pipe color = measured temperature [\u00b0C]</span><span class="scale"><span>0</span><span class="bar" style="background:linear-gradient(90deg,${SCALE.map(([v,c])=>`${c} ${v/45*100}%`).join(',')})"></span><span>45</span></span><span>gray: idle; solid: own; dotted: context; dashed: calculated</span></div>`
+        : `<svg viewBox="${VIEWS[category]}" role="img" aria-label="${escapeText(title)}">${parts}${pipes}${frontParts}${tags}</svg>${legend}`;
       // layout 'diagram': the sidebar panel lists the values itself.
       if(this._config.layout!=='diagram') body+=this._panel(category,panel);
       if(activeAlarms.length) body+=`<div class="alarms" role="status">${activeAlarms.map(e=>escapeText(e.state.attributes.friendly_name||e.id)).join('<br>')}</div>`;

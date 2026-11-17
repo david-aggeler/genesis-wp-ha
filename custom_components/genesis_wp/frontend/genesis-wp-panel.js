@@ -109,8 +109,15 @@ export class GenesisWpPanel extends HTMLElement {
   const s=pick(TEXT[lang]||TEXT[lang?.split('-')[0]]||{})??pick(TEXT.en);return n===undefined?s:String(s).replace('{n}',n);}
  _activate(event){const target=event.target?.closest?.('[data-entity],[data-section],[data-tab]');if(!target)return;
   if(target.dataset.entity){event.preventDefault?.();this.dispatchEvent(new CustomEvent('hass-more-info',{detail:{entityId:target.dataset.entity},bubbles:true,composed:true}));}
-  else {this._section=target.dataset.section??target.dataset.tab??undefined;if(this._section==='')this._section=undefined;this._render();}
+  else {this._section=target.dataset.section??target.dataset.tab??undefined;if(this._section==='')this._section=undefined;this._navigate();this._render();}
  }
+ // The URL is the source of truth for the selected tab: HA sets route again after load and on
+ // location updates, and route would otherwise reset a tab chosen only in memory.
+ _navigate(){try{const url=new URL(globalThis.location.href);
+  url.pathname='/'+(this._panel?.url_path||'genesis-wp')+(this._section?'/'+this._section:'');
+  if(url.href===globalThis.location.href)return;
+  globalThis.history.pushState(null,'',url);
+  globalThis.dispatchEvent(new CustomEvent('location-changed',{detail:{replace:false}}));}catch{}}
  _selectEntry(entry){this._entry=entry||undefined;
   try{const url=new URL(globalThis.location.href);url.searchParams.set('entry',entry);globalThis.history.replaceState(globalThis.history.state,'',url);}catch{}
   this._render();}
@@ -193,6 +200,6 @@ export class GenesisWpPanel extends HTMLElement {
  }
  // The scroll hint shows whenever the diagram is wider than its card, whatever the viewport.
  // patch() resets the class to the template's; _render calls this again right after it.
- _overflow(box){box.classList.toggle('overflow',box.scrollWidth>box.clientWidth+1);}
+ _overflow(box){const on=box.scrollWidth>box.clientWidth+1;if(box.classList.contains?.('overflow')!==on)box.classList.toggle('overflow',on);}
 }
 if(!customElements.get('genesis-wp-panel'))customElements.define('genesis-wp-panel',GenesisWpPanel);

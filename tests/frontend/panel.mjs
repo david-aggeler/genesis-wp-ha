@@ -170,6 +170,16 @@ p.route={path:'/genesis-wp'}; assert.match(html(),/data-tile=/);
     assert.match(html(),new RegExp(`data-entity="${id.replaceAll('.','\\.')}"[^>]*><span class="label"[^>]*>${label}</span>`),r);
   }
   assert.match(html(),/<div class="hint">/);
+  // A tab click navigates, so a later route set from HA keeps the tab (round 6 regression).
+  {const saved={location:globalThis.location,history:globalThis.history,dispatchEvent:globalThis.dispatchEvent};
+   const pushed=[],fired=[];globalThis.location={href:'http://ha.local/genesis-wp?entry=x'};
+   globalThis.history={pushState:(s,t,url)=>{pushed.push(String(url));globalThis.location={href:String(url)};}};
+   globalThis.dispatchEvent=e=>fired.push(e.type);
+   p._activate({target:{closest:()=>({dataset:{tab:'internal_heat_pump'}})}});
+   assert.deepEqual(pushed,['http://ha.local/genesis-wp/internal_heat_pump?entry=x']);assert.deepEqual(fired,['location-changed']);
+   p.route={prefix:'/genesis-wp',path:'/internal_heat_pump'};assert.match(html(),/data-diagram="internal_heat_pump"/);
+   p._activate({target:{closest:()=>({dataset:{tab:'internal_heat_pump'}})}});assert.equal(pushed.length,1,'no push for the current tab');
+   Object.assign(globalThis,saved);}
   assert.match(readFileSync(source,'utf8').split('const CSS=`')[1].split('`;')[0],/\.diagram\.overflow \.hint\{display:block\}/,'hint follows the diagram overflow, not the viewport');
   assert.doesNotMatch(readFileSync(source,'utf8').split('const CSS=`')[1].split('`;')[0],/max-width:870px\)\{\.diagram \.hint/);
   {const classes=new Set();const box={scrollWidth:976,clientWidth:710,classList:{toggle:(c,on)=>on?classes.add(c):classes.delete(c)}};
