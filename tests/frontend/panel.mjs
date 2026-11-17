@@ -18,12 +18,20 @@ const keyRegs={internal_heat_pump:['input_54','input_9','input_10','input_11'],h
 const entity=r=>Object.keys(hass.states).find(id=>hass.states[id].attributes.register===r);
 // DHF-TEST: genesis-wp-ha/requirement-21 genesis-wp-ha/ac-82
 assert.deepEqual([...html().matchAll(/data-section="([^"]+)"/g)].map(m=>m[1]),order.filter(device));
-for(const [c,keys] of Object.entries({internal_heat_pump:[54,9,10,11],heating_system:[12,18],additional_heating_circuits:[40,147],buffer_tank:[41],hot_water:[15,17],cooling:[106],pool:[119,120],controller:[13,157,158]})) {
+// Tiles carry only key readings the energy flow does not already show.
+for(const [c,keys] of Object.entries({internal_heat_pump:[9],heating_system:[18],additional_heating_circuits:[147],hot_water:[15,17],cooling:[106],pool:[119,120]})) {
  const tile=html().split(`data-tile="${c}"`)[1]?.split('</ha-card>')[0]; assert.ok(tile,c);
  for(const k of keys){const id=entity('input_'+k); if(id) assert.ok(tile.includes(`data-entity="${id}"`),c+': '+k);}
 }
 // DHF-TEST: genesis-wp-ha/requirement-21 genesis-wp-ha/ac-91
-for(const c of order.filter(device)) assert.match(html().split(`data-tile="${c}"`)[1].split('</ha-card>')[0],/<div class="state">/,c);
+for(const c of order.filter(device)) {
+ const tile=html().split(`data-tile="${c}"`)[1].split('</ha-card>')[0];
+ const [did]=device(c);
+ const hasAlarms=Object.entries(hass.entities).some(([id,e])=>e.device_id===did&&!e.disabled_by&&id.startsWith('binary_sensor.')&&hass.states[id]?.attributes.device_class==='problem');
+ if(hasAlarms||c==='internal_heat_pump') assert.match(tile,/<div class="state">/,c);
+ assert.doesNotMatch(tile,/\d+ values/,c);
+ for(const r of ['input_10','input_11','input_54','input_157','input_158','input_41','input_12','input_40','input_13']) { const id=entity(r); if(id) assert.ok(!tile.includes(`data-entity="${id}"`),c+': '+r); }
+}
 assert.doesNotMatch(html(),/No key readings/);
 const speed=entity('input_54'); hass.states[speed].state='unavailable'; p.hass=hass;
 assert.match(html().split(`data-entity="${speed}"`)[1],/unavailable/);
@@ -110,7 +118,7 @@ p.route={path:'/genesis-wp'}; assert.match(html(),/data-tile=/);
 // DHF-TEST: genesis-wp-ha/requirement-21 genesis-wp-ha/ac-89
 {
   p.route={path:'/genesis-wp'};
-  for(const [r,label] of [['input_54','Compressor'],['input_9','Condenser out'],['input_10','Brine in'],['input_12','Supply'],['input_13','Outdoor']]) {
+  for(const [r,label] of [['input_54','Compressor'],['input_9','Condenser out'],['input_10','Brine in'],['input_12','Circuit 1 supply'],['input_13','Outdoor']]) {
     const id=entity(r); if(!id) continue;
     assert.match(html(),new RegExp(`data-entity="${id.replaceAll('.','\\.')}"[^>]*><span class="label"[^>]*>${label}</span>`),r);
   }
