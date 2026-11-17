@@ -18,7 +18,7 @@ const calculated = new Set([17,18,68,122,124,125,126,147].map(key));
 // Temperature legend, 0..45 C. Intermediate colors are linear RGB interpolations.
 // The source legend samples these stops at each half degree (0.5..44.5).
 const SCALE = [[0,'#2c7bb6'],[10,'#64b5d6'],[20,'#e6c84f'],[30,'#f08a3c'],[45,'#d7301f']];
-function temperatureColor(value) {
+export function temperatureColor(value) {
   const t = Math.max(0, Math.min(45, value));
   const i = Math.max(1, SCALE.findIndex(([v]) => v >= t));
   const [a, ca] = SCALE[i-1], [b, cb] = SCALE[i];
@@ -28,7 +28,7 @@ function temperatureColor(value) {
 // HA may convert a temperature entity to the user's display unit; the scale is in Celsius.
 // Returns null for a non-numeric state or a non-temperature unit, so the pipe stays neutral.
 const TO_CELSIUS = {'\u00b0C': v => v, '\u00b0F': v => (v-32)*5/9, 'K': v => v-273.15};
-function toCelsius(raw, unit) {
+export function toCelsius(raw, unit) {
   const convert = TO_CELSIUS[unit], value = Number(raw);
   if (!convert || String(raw ?? '').trim()==='' || !Number.isFinite(value)) return null;
   return convert(value);
@@ -179,6 +179,18 @@ export class GenesisWpDeviceCard extends HTMLElement {
     const title=state.attributes.friendly_name||id;
     return `<g class="${cls}" role="button" tabindex="0" data-register="${escapeText(register)}" data-entity="${escapeText(id)}" transform="translate(${x} ${y})"><title>${escapeText(title)}</title><rect width="${panel?260:150}" height="40" rx="4"/><text x="6" y="14">${escapeText(title)}</text><text class="value" x="6" y="32">${escapeText(this._value(state))}</text></g>`;
   }
+  // Short tag label: the name without its device's prefix and without a trailing "Temperature".
+  _short(entity) {
+    const d=this._hass.devices?.[entity.deviceId];
+    let name=entity.state.attributes.friendly_name||entity.id;
+    for(const prefix of [d?.name_by_user,d?.name]) if(prefix&&name.startsWith(prefix+' ')){name=name.slice(prefix.length+1);break;}
+    return name.replace(/ Temperature$/,'');
+  }
+  _chip(entity, left, top, width, context) {
+    const {id,state,register}=entity;
+    const cls=`chip ${context?'context':'own'}${calculated.has(register)?' calculated':''}${register==='dinput_251'&&state.state==='on'?' fault':''}`;
+    return `<div class="${cls}" role="button" tabindex="0" data-register="${escapeText(register)}" data-entity="${escapeText(id)}" style="left:${left.toFixed(2)}%;top:${top.toFixed(2)}%;width:${width.toFixed(2)}%" title="${escapeText(state.attributes.friendly_name||id)}"><span class="label">${escapeText(this._short(entity))}</span><span class="value">${escapeText(this._value(state))}</span></div>`;
+  }
   _panel(category, entities) {
     const setting=e=>/^(holding|coil)_/.test(e.register)||e.diagnostic;
     const controllerGroups=[
@@ -218,7 +230,7 @@ export class GenesisWpDeviceCard extends HTMLElement {
         if(e.disabled_by || !state?.attributes.register) continue;
         const sameEntry=(devices[e.device_id]?.identifiers||[]).some(([domain,value])=>domain==='genesis_wp'&&(value===resolved.entry||CATEGORIES.some(c=>value===`${resolved.entry}_${c}`)));
         if(!sameEntry) continue;
-        const entity={id,state,register:state.attributes.register,diagnostic:e.entity_category==='diagnostic'};
+        const entity={id,state,register:state.attributes.register,deviceId:e.device_id,diagnostic:e.entity_category==='diagnostic'};
         byRegister.set(entity.register,entity);
         if(e.device_id===resolved.id) own.push(entity);
       }
@@ -234,11 +246,13 @@ export class GenesisWpDeviceCard extends HTMLElement {
         return `<path data-path="${id}" data-flow="${flow?'active':'idle'}" d="${d}" fill="none" stroke="${color}" stroke-opacity="${flow?1:0.22}" stroke-width="5"${dash?` stroke-dasharray="${dash}"`:''}/>`;
       }).join('');
       const positioned=new Set();
+      const diagram=this._config.layout==='diagram';
+      const [vx,vy,vw,vh]=VIEWS[category].split(' ').map(Number);
       const tags=POSITIONS[category].map(([r,x,y])=>{
         const register=typeof r==='number'?key(r):r, entity=byRegister.get(register);
         if(!entity) return '';
         positioned.add(register);
-        return this._tag(entity,x,y,!own.includes(entity));
+        return diagram?this._chip(entity,(x-vx)/vw*100,(y-vy)/vh*100,150/vw*100,!own.includes(entity)):this._tag(entity,x,y,!own.includes(entity));
       }).join('');
       const alarms=category==='ksm'?[]:own.filter(e=>e.id.startsWith('binary_sensor.')&&e.state.attributes.device_class==='problem');
       const panel=own.filter(e=>!positioned.has(e.register)).sort((a,b)=>{
@@ -247,13 +261,16 @@ export class GenesisWpDeviceCard extends HTMLElement {
       });
       const activeAlarms=alarms.filter(e=>e.state.state==='on');
       const legend=`<svg viewBox="0 0 460 65" aria-label="Temperature legend"><text x="0" y="12">pipe color = measured temperature [\u00b0C]</text>${Array.from({length:46},(_,i)=>`<rect x="${i*10}" y="18" width="10" height="12" fill="${temperatureColor(i)}"/>`).join('')}<text x="0" y="44">0</text><text x="440" y="44">45</text><text x="0" y="62">gray: idle; solid outline: own; dotted: context; dashed: calculated</text></svg>`;
-      body=`<svg viewBox="${VIEWS[category]}" role="img" aria-label="${escapeText(title)}">${parts}${pipes}${tags}</svg>${legend}`;
+      // layout 'diagram': tags are HTML chips over the drawing, so their text keeps the theme size.
+      body=diagram
+        ? `<div class="stage" style="aspect-ratio:${vw}/${vh};min-width:${Math.round(vw*0.75)}px"><svg class="drawing" viewBox="${VIEWS[category]}" role="img" aria-label="${escapeText(title)}">${parts}${pipes}</svg>${tags}</div><div class="legend"><span>pipe color = measured temperature [\u00b0C]</span><span class="scale"><span>0</span><span class="bar" style="background:linear-gradient(90deg,${SCALE.map(([v,c])=>`${c} ${v/45*100}%`).join(',')})"></span><span>45</span></span><span>gray: idle; solid: own; dotted: context; dashed: calculated</span></div>`
+        : `<svg viewBox="${VIEWS[category]}" role="img" aria-label="${escapeText(title)}">${parts}${pipes}${tags}</svg>${legend}`;
       // layout 'diagram': the sidebar panel lists the values itself.
       if(this._config.layout!=='diagram') body+=this._panel(category,panel);
       if(activeAlarms.length) body+=`<div class="alarms" role="status">${activeAlarms.map(e=>escapeText(e.state.attributes.friendly_name||e.id)).join('<br>')}</div>`;
     }
     const diagram=this._config.layout==='diagram';
-    patch(this.shadowRoot, `<style>[role=button]{cursor:pointer}[role=button]:focus-visible{outline:2px solid var(--primary-color)}:host{display:block;color:var(--primary-text-color)}ha-card{padding:16px}h2{font-size:var(--ha-font-size-xl);font-weight:var(--ha-font-weight-normal)}.mode{color:var(--secondary-text-color)}svg{display:block;width:100%;height:auto}text{fill:currentColor;font-family:inherit;font-size:11px}.own rect,.context rect{fill:var(--card-background-color);stroke:var(--tag-color);stroke-width:1.5}.context{opacity:.65}.context rect{stroke-dasharray:2 3}.own.calculated rect{stroke-dasharray:6 3}.alarms{color:var(--error-color,#d46161);padding:8px}.value{font-size:13px;font-weight:bold}.chip rect{rx:10px}.fault{color:var(--error-color,#d46161)}.fault rect{stroke:var(--error-color,#d46161)}</style>${diagram?'<div class="diagram"':'<ha-card'} style="--tag-color:${CATEGORY_COLORS[CATEGORIES.indexOf(category)%4]}">${diagram?'':`<h2>${escapeText(title)}</h2><div class="mode">${escapeText(mode)}</div>`}${body}${diagram?'</div>':'</ha-card>'}`);
+    patch(this.shadowRoot, `<style>[role=button]{cursor:pointer}[role=button]:focus-visible{outline:2px solid var(--primary-color)}:host{display:block;color:var(--primary-text-color)}ha-card{padding:16px}h2{font-size:var(--ha-font-size-xl);font-weight:var(--ha-font-weight-normal)}.mode{color:var(--secondary-text-color)}svg{display:block;width:100%;height:auto}text{fill:currentColor;font-family:inherit;font-size:11px}.own rect,.context rect{fill:var(--card-background-color);stroke:var(--tag-color);stroke-width:1.5}.context{opacity:.65}.context rect{stroke-dasharray:2 3}.own.calculated rect{stroke-dasharray:6 3}.alarms{color:var(--error-color,#d46161);padding:8px}.value{font-size:13px;font-weight:bold}.chip rect{rx:10px}.stage{position:relative}.stage .drawing{position:absolute;inset:0;width:100%;height:100%}.stage .drawing text{font-size:12px}div.chip{position:absolute;box-sizing:border-box;display:flex;flex-direction:column;padding:0 var(--ha-space-1);border:1.5px solid var(--tag-color);border-radius:var(--ha-border-radius-sm,4px);background:var(--card-background-color);overflow:hidden;cursor:pointer;line-height:1.25}div.chip.context{border-style:dotted;opacity:.8}div.chip.calculated{border-style:dashed}div.chip .label{font-size:var(--ha-font-size-xs);color:var(--secondary-text-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}div.chip .value{font-size:var(--ha-font-size-s);font-weight:var(--ha-font-weight-medium);white-space:nowrap}.legend{display:flex;flex-wrap:wrap;gap:var(--ha-space-1) var(--ha-space-4);margin-top:var(--ha-space-2);font-size:var(--ha-font-size-s);color:var(--secondary-text-color)}.scale{display:inline-flex;align-items:center;gap:var(--ha-space-1)}.bar{display:inline-block;width:160px;height:8px;border-radius:4px}.fault{color:var(--error-color,#d46161)}.fault rect{stroke:var(--error-color,#d46161)}</style>${diagram?'<div class="diagram"':'<ha-card'} style="--tag-color:${CATEGORY_COLORS[CATEGORIES.indexOf(category)%4]}">${diagram?'':`<h2>${escapeText(title)}</h2><div class="mode">${escapeText(mode)}</div>`}${body}${diagram?'</div>':'</ha-card>'}`);
   }
 }
 registerCard('genesis-wp-device-card', GenesisWpDeviceCard, {
