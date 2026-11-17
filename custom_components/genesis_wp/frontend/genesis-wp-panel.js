@@ -2,7 +2,7 @@
 // Presentation only: register attributes identify entities; no transport or decoding.
 // Styling follows the Home Assistant design guidelines: type, spacing and color come from
 // theme tokens (--ha-font-size-*, --ha-space-*, theme color variables), never fixed values.
-import { patch } from './patch.js';
+import { patch, debug } from './patch.js';
 import { shortLabel } from './labels.js';
 import { GenesisWpDeviceCard, temperatureColor, toCelsius } from './genesis-wp-device-card.js';
 import { GenesisWpHeatingCurveCard } from './genesis-wp-heating-curve-card.js';
@@ -103,12 +103,14 @@ export class GenesisWpPanel extends HTMLElement {
   try{this._entry=new URLSearchParams(globalThis.location?.search||'').get('entry')||undefined;}catch{this._entry=undefined;}
  }
  set hass(v){this._hass=v;this._loadTitles();this._render();}
- set route(v){this._section=v?.path?.split('/').filter(Boolean).filter(p=>p!=='genesis-wp')[0];this._render();}
+ set route(v){this._section=v?.path?.split('/').filter(Boolean).filter(p=>p!=='genesis-wp')[0];debug('route',v?.prefix,v?.path,'->',this._section||'overview');this._render();}
  set panel(v){this._panel=v;}
  set narrow(v){this._narrow=Boolean(v);this.toggleAttribute?.('narrow',this._narrow);this._render();}
  _t(key,n){const lang=this._hass?.locale?.language||this._hass?.language||'en';const pick=t=>key.split('.').reduce((o,k)=>o?.[k],t);
   const s=pick(TEXT[lang]||TEXT[lang?.split('-')[0]]||{})??pick(TEXT.en);return n===undefined?s:String(s).replace('{n}',n);}
- _activate(event){const target=event.target?.closest?.('[data-entity],[data-section],[data-tab]');if(!target)return;
+ _activate(event){const target=event.target?.closest?.('[data-entity],[data-section],[data-tab]');
+  if(!target){if(event.type==='click')debug('click without target',event.target?.nodeName,event.target?.className);return;}
+  debug('activate',event.type,{...target.dataset});
   if(target.dataset.entity){event.preventDefault?.();this.dispatchEvent(new CustomEvent('hass-more-info',{detail:{entityId:target.dataset.entity},bubbles:true,composed:true}));}
   else {this._section=target.dataset.section??target.dataset.tab??undefined;if(this._section==='')this._section=undefined;this._navigate();this._render();}
  }
@@ -190,7 +192,8 @@ export class GenesisWpPanel extends HTMLElement {
   const toolbar=`<div class="toolbar"><ha-menu-button></ha-menu-button><div class="name">${esc(this._t('title'))}</div>${select}</div>`;
   const tabs=`<nav class="tabs" role="tablist"><button role="tab" data-tab="" aria-selected="${!selected}">${esc(this._t('overview'))}</button>${sections.map(s=>{const n=badge(s);return `<button role="tab" data-tab="${s.category}" aria-selected="${selected?.category===s.category}">${esc(this._sectionName(s))}${n?` <span class="badge">${n}</span>`:''}</button>`;}).join('')}</nav>`;
   const body=selected?this._detail(selected,entities,entry):this._overview(sections,entities);
-  patch(this.shadowRoot,`<style>${CSS}</style>${toolbar}${tabs}<main${selected&&DIAGRAMS.includes(selected.category)?' class="wide"':''}>${body}</main>`);
+  const result=patch(this.shadowRoot,`<style>${CSS}</style>${toolbar}${tabs}<main${selected&&DIAGRAMS.includes(selected.category)?' class="wide"':''}>${body}</main>`);
+  if(result!=='unchanged')debug('render',this._section||'overview',result);
   const menu=this.shadowRoot.querySelector?.('ha-menu-button');if(menu){menu.hass=this._hass;menu.narrow=this._narrow;}
   for(const card of this.shadowRoot.querySelectorAll('[data-curve]')){const key=card.dataset.curve;
    if(card.__config!==key){card.__config=key;card.setConfig?.({entity:key,title:this._t('heating_curve')});}card.hass=this._hass;}
