@@ -1,4 +1,5 @@
 import { registerCard } from './register-card.js';
+import { patch } from './patch.js';
 // DHF-REQ: genesis-wp-ha/requirement-18
 // Read-only entity presentation. Register keys are anchors, never wire reads or decoding.
 // Geometry redrawn from genesis-wp interface_spec-6, process control room editions.
@@ -117,7 +118,7 @@ function active(group, mode, passiveEnabled) {
     hot_water:['Hot water','Anti legionella'].includes(mode), cooling:mode==='Cool', pool:mode==='Pool',
     buffer:['Heat','Defrost'].includes(mode), hc2:!passive, passive, rooms:true})[group];
 }
-class GenesisWpDeviceCard extends HTMLElement {
+export class GenesisWpDeviceCard extends HTMLElement {
   setConfig(config) {
     if (!config || !CATEGORIES.includes(config.device)) throw new Error(`device must be one of: ${CATEGORIES.join(', ')}`);
     this._config = {...config};
@@ -247,10 +248,12 @@ class GenesisWpDeviceCard extends HTMLElement {
       const activeAlarms=alarms.filter(e=>e.state.state==='on');
       const legend=`<svg viewBox="0 0 460 65" aria-label="Temperature legend"><text x="0" y="12">pipe color = measured temperature [\u00b0C]</text>${Array.from({length:46},(_,i)=>`<rect x="${i*10}" y="18" width="10" height="12" fill="${temperatureColor(i)}"/>`).join('')}<text x="0" y="44">0</text><text x="440" y="44">45</text><text x="0" y="62">gray: idle; solid outline: own; dotted: context; dashed: calculated</text></svg>`;
       body=`<svg viewBox="${VIEWS[category]}" role="img" aria-label="${escapeText(title)}">${parts}${pipes}${tags}</svg>${legend}`;
-      body+=this._panel(category,panel);
+      // layout 'diagram': the sidebar panel lists the values itself.
+      if(this._config.layout!=='diagram') body+=this._panel(category,panel);
       if(activeAlarms.length) body+=`<div class="alarms" role="status">${activeAlarms.map(e=>escapeText(e.state.attributes.friendly_name||e.id)).join('<br>')}</div>`;
     }
-    this.shadowRoot.innerHTML=`<style>[role=button]{cursor:pointer}[role=button]:focus-visible{outline:2px solid var(--primary-color)}:host{display:block;color:var(--primary-text-color)}ha-card{padding:16px}h2{font-size:20px}.mode{color:var(--secondary-text-color)}svg{display:block;width:100%;height:auto}text{fill:currentColor;font-family:inherit;font-size:11px}.own rect,.context rect{fill:var(--card-background-color);stroke:var(--tag-color);stroke-width:1.5}.context{opacity:.65}.context rect{stroke-dasharray:2 3}.own.calculated rect{stroke-dasharray:6 3}.alarms{color:var(--error-color,#d46161);padding:8px}.value{font-size:13px;font-weight:bold}.chip rect{rx:10px}.fault{color:var(--error-color,#d46161)}.fault rect{stroke:var(--error-color,#d46161)}</style><ha-card style="--tag-color:${CATEGORY_COLORS[CATEGORIES.indexOf(category)%4]}"><h2>${escapeText(title)}</h2><div class="mode">${escapeText(mode)}</div>${body}</ha-card>`;
+    const diagram=this._config.layout==='diagram';
+    patch(this.shadowRoot, `<style>[role=button]{cursor:pointer}[role=button]:focus-visible{outline:2px solid var(--primary-color)}:host{display:block;color:var(--primary-text-color)}ha-card{padding:16px}h2{font-size:var(--ha-font-size-xl);font-weight:var(--ha-font-weight-normal)}.mode{color:var(--secondary-text-color)}svg{display:block;width:100%;height:auto}text{fill:currentColor;font-family:inherit;font-size:11px}.own rect,.context rect{fill:var(--card-background-color);stroke:var(--tag-color);stroke-width:1.5}.context{opacity:.65}.context rect{stroke-dasharray:2 3}.own.calculated rect{stroke-dasharray:6 3}.alarms{color:var(--error-color,#d46161);padding:8px}.value{font-size:13px;font-weight:bold}.chip rect{rx:10px}.fault{color:var(--error-color,#d46161)}.fault rect{stroke:var(--error-color,#d46161)}</style>${diagram?'<div class="diagram"':'<ha-card'} style="--tag-color:${CATEGORY_COLORS[CATEGORIES.indexOf(category)%4]}">${diagram?'':`<h2>${escapeText(title)}</h2><div class="mode">${escapeText(mode)}</div>`}${body}${diagram?'</div>':'</ha-card>'}`);
   }
 }
 registerCard('genesis-wp-device-card', GenesisWpDeviceCard, {

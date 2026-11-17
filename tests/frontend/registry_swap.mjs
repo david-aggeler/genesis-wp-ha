@@ -110,7 +110,8 @@ late.define("hui-view", class {});
 globalThis.customElements = late;
 const copy = join(mkdtempSync(join(tmpdir(), "card-")), "late.js"); // a second, uncached module instance
 copyFileSync(process.argv[2], copy);
-copyFileSync(join(dirname(process.argv[2]), 'register-card.js'), join(dirname(copy), 'register-card.js'));
+for (const helper of ['register-card.js', 'patch.js'])
+  copyFileSync(join(dirname(process.argv[2]), helper), join(dirname(copy), helper));
 await import(pathToFileURL(copy).href);
 result.late_defined_immediately = Boolean(late.get(TAG));
 console.log(JSON.stringify(result));

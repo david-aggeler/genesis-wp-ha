@@ -1,11 +1,14 @@
 import { registerCard } from './register-card.js';
+import { patch } from './patch.js';
 // Heating curve card for genesis_wp (requirement-11): the heating curves of one or more heating
 // circuits in one chart as supply temperature over outdoor temperature, each with its current
 // operating point. Read-only, no dependencies.
 // Config: { type: custom:genesis-wp-heating-curve-card, entities: [<set temperature sensor>, ...] | entity: <one>, title?: str }
 
-const W = 400;
-const H = 260;
+// The chart is drawn at its rendered pixel width, so text keeps its theme size at any card
+// width. The height follows the width up to MAX_H.
+const DEFAULT_W = 400;
+const MAX_H = 320;
 const PAD = { left: 48, right: 14, top: 14, bottom: 42 };
 // Circuit 1 keeps the theme color; further circuits get distinct theme colors with fallbacks.
 const COLORS = ["var(--primary-color)", "var(--info-color, #039be5)", "var(--success-color, #43a047)", "var(--warning-color, #ffa600)"];
@@ -34,7 +37,7 @@ function ticks({ low, high, step }) {
   return out;
 }
 
-class GenesisWpHeatingCurveCard extends HTMLElement {
+export class GenesisWpHeatingCurveCard extends HTMLElement {
   setConfig(config) {
     const entities = config && (config.entities || (config.entity ? [config.entity] : []));
     if (!Array.isArray(entities) || entities.length === 0 || !entities.every((e) => typeof e === "string" && e)) {
@@ -42,7 +45,18 @@ class GenesisWpHeatingCurveCard extends HTMLElement {
     }
     this._config = config;
     this._entities = entities;
-    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    if (!this.shadowRoot) {
+      this.attachShadow({ mode: "open" });
+      if (typeof ResizeObserver !== "undefined") {
+        new ResizeObserver((entries) => {
+          const width = Math.round(entries[0].contentRect.width) - 24;
+          if (width > 0 && width !== this._width) {
+            this._width = width;
+            this._render();
+          }
+        }).observe(this);
+      }
+    }
   }
 
   set hass(hass) {
@@ -103,16 +117,17 @@ class GenesisWpHeatingCurveCard extends HTMLElement {
             return `<span class="legend-item"><span class="swatch" style="background:${s.color}"></span>${escapeText(s.name)}: ${value}</span>`;
           })
           .join("")}</div>`;
-    this.shadowRoot.innerHTML = `
+    patch(this.shadowRoot, `
       <style>
         ha-card { padding: 12px 12px 4px; }
-        .title { font-size: 1.1em; margin: 0 0 6px 4px; color: var(--primary-text-color); }
-        .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 4px 4px; color: var(--secondary-text-color); font-size: 0.9em; }
+        .title { font-size: var(--ha-font-size-l); margin: 0 0 6px 4px; color: var(--primary-text-color); }
+        .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 4px 4px; color: var(--secondary-text-color); font-size: var(--ha-font-size-s); }
         .legend-item { display: inline-flex; align-items: center; gap: 6px; }
         .swatch { width: 14px; height: 3px; border-radius: 2px; }
         svg { width: 100%; height: auto; display: block; }
         .grid { stroke: var(--divider-color, currentColor); stroke-opacity: 0.6; }
-        .label { fill: var(--secondary-text-color); font-size: 11px; }
+        .label { fill: var(--secondary-text-color); font-size: var(--ha-font-size-s); }
+        .axis { fill: var(--secondary-text-color); font-size: var(--ha-font-size-m); }
         .curve { fill: none; stroke-width: 2.5; }
         .now { stroke: var(--card-background-color, #fff); stroke-width: 2; }
         .single .now { fill: var(--accent-color, #ff9800); }
@@ -122,10 +137,12 @@ class GenesisWpHeatingCurveCard extends HTMLElement {
         <div class="title">${escapeText(title)}</div>
         ${legend}
         ${body}
-      </ha-card>`;
+      </ha-card>`);
   }
 
   _svg(series, single) {
+    const W = Math.max(240, this._width || DEFAULT_W);
+    const H = Math.min(MAX_H, Math.max(180, Math.round(W * 0.65)));
     const xs = series.flatMap((s) => s.curve.map((p) => p[0]).concat(s.now ? [s.now[0]] : []));
     const ys = series.flatMap((s) => s.curve.map((p) => p[1]).concat(s.now ? [s.now[1]] : []));
     const ax = axis(xs);
@@ -163,8 +180,8 @@ class GenesisWpHeatingCurveCard extends HTMLElement {
     return `<svg class="${single ? "single" : "overlay"}" viewBox="0 0 ${W} ${H}" role="img" aria-label="heating curves">
       ${xGrid}${yGrid}
       ${curves}${markers}
-      <text class="label" x="${(PAD.left + W - PAD.right) / 2}" y="${H - 6}" text-anchor="middle">outdoor temperature [\u00b0C]</text>
-      <text class="label" transform="translate(12 ${(PAD.top + H - PAD.bottom) / 2}) rotate(-90)" text-anchor="middle">supply temperature [\u00b0C]</text>
+      <text class="axis" x="${(PAD.left + W - PAD.right) / 2}" y="${H - 6}" text-anchor="middle">outdoor temperature [\u00b0C]</text>
+      <text class="axis" transform="translate(12 ${(PAD.top + H - PAD.bottom) / 2}) rotate(-90)" text-anchor="middle">supply temperature [\u00b0C]</text>
     </svg>`;
   }
 }
