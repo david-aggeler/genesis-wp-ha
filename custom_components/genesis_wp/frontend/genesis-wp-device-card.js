@@ -1,5 +1,6 @@
 import { registerCard } from './register-card.js';
 import { patch } from './patch.js';
+import { shortLabel } from './labels.js';
 // DHF-REQ: genesis-wp-ha/requirement-18
 // Read-only entity presentation. Register keys are anchors, never wire reads or decoding.
 // Geometry redrawn from genesis-wp interface_spec-6, process control room editions.
@@ -182,9 +183,7 @@ export class GenesisWpDeviceCard extends HTMLElement {
   // Short tag label: the name without its device's prefix and without a trailing "Temperature".
   _short(entity) {
     const d=this._hass.devices?.[entity.deviceId];
-    let name=entity.state.attributes.friendly_name||entity.id;
-    for(const prefix of [d?.name_by_user,d?.name]) if(prefix&&name.startsWith(prefix+' ')){name=name.slice(prefix.length+1);break;}
-    return name.replace(/ Temperature$/,'');
+    return shortLabel(this._hass, entity.register, entity.state.attributes.friendly_name||entity.id, d?.name_by_user||d?.name);
   }
   _chip(entity, left, top, width, context) {
     const {id,state,register}=entity;

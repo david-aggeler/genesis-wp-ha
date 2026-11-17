@@ -132,7 +132,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
     if hass.http is not None:
         await hass.http.async_register_static_paths([
             StaticPathConfig(url, str(Path(__file__).parent / "frontend" / Path(url).name), False)
-            for url in (*CARD_URLS, "/genesis_wp/register-card.js", "/genesis_wp/patch.js",
+            for url in (*CARD_URLS, "/genesis_wp/register-card.js", "/genesis_wp/patch.js", "/genesis_wp/labels.js",
                         "/genesis_wp/genesis-wp-panel.js")
         ])
     if DATA_EXTRA_MODULE_URL in hass.data:
