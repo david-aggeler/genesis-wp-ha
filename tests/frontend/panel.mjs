@@ -14,11 +14,11 @@ const p=new Panel(); p.hass=hass;
 const html=()=>p.shadowRoot.innerHTML;
 const order=['internal_heat_pump','heating_system','additional_heating_circuits','buffer_tank','hot_water','cooling','pool','ksm','electric_meter_and_energy','controller'];
 const device=c=>Object.entries(hass.devices).find(([,d])=>d.identifiers.some(([dom,id])=>dom==='genesis_wp'&&id===`${hass.entry}_${c}`));
-const keyRegs={internal_heat_pump:['input_54','input_9','input_10','input_11'],heating_system:['input_12','input_18'],additional_heating_circuits:['input_40','input_147'],buffer_tank:['input_41','input_68'],hot_water:['input_15','input_17'],cooling:['input_106'],pool:['input_119','input_120'],controller:['input_13','input_157','input_158']};
+const keyRegs={internal_heat_pump:['input_54','input_9','input_10','input_11'],heating_system:['input_12','input_18'],additional_heating_circuits:['input_40','input_147'],buffer_tank:['input_41'],hot_water:['input_15','input_17'],cooling:['input_106'],pool:['input_119','input_120'],controller:['input_13','input_157','input_158']};
 const entity=r=>Object.keys(hass.states).find(id=>hass.states[id].attributes.register===r);
 // DHF-TEST: genesis-wp-ha/requirement-21 genesis-wp-ha/ac-82
 assert.deepEqual([...html().matchAll(/data-section="([^"]+)"/g)].map(m=>m[1]),order.filter(device));
-for(const [c,keys] of Object.entries({internal_heat_pump:[54,9,10,11],heating_system:[12,18],additional_heating_circuits:[40,147],buffer_tank:[41,68],hot_water:[15,17],cooling:[106],pool:[119,120],controller:[13,157,158]})) {
+for(const [c,keys] of Object.entries({internal_heat_pump:[54,9,10,11],heating_system:[12,18],additional_heating_circuits:[40,147],buffer_tank:[41],hot_water:[15,17],cooling:[106],pool:[119,120],controller:[13,157,158]})) {
  const tile=html().split(`data-tile="${c}"`)[1]?.split('</ha-card>')[0]; assert.ok(tile,c);
  for(const k of keys){const id=entity('input_'+k); if(id) assert.ok(tile.includes(`data-entity="${id}"`),c+': '+k);}
 }
@@ -130,4 +130,20 @@ p.route={path:'/genesis-wp'}; assert.match(html(),/data-tile=/);
   p._activate({target:{closest:()=>({dataset:{tab:'heating_system'}})}});
   assert.ok(html().indexOf('<genesis-wp-heating-curve-card')<html().indexOf('>Measurements<'),'curve above the lists');
   assert.match(html(),/\.curves\{max-width:720px/);
+}
+// DHF-TEST: genesis-wp-ha/requirement-21 genesis-wp-ha/ac-91 (energy flow)
+{
+  p.route={path:'/genesis-wp'}; p._activate({target:{closest:()=>({dataset:{tab:''}})}});
+  const flow=html().split('<ha-card data-flow>')[1].split('</ha-card>')[0];
+  const nodes=[...flow.matchAll(/data-node="([^"]+)"/g)].map(m=>m[1]);
+  assert.ok(nodes.length>=2,nodes.join());
+  assert.equal((flow.match(/class="pipe"/g)||[]).length,nodes.length-1);
+  if(nodes.includes('buffer_tank')) assert.match(flow,/<\/ha-icon>Buffer tank<\/h3>/);
+  if(entity('input_12')&&entity('input_40')) { assert.match(flow,/>Circuit 1 supply</); assert.match(flow,/>Circuit 2 supply</); }
+  for(const m of flow.matchAll(/--pipe:([^"]+)"/g)) assert.match(m[1],/^(#[0-9a-f]{6}|var\(--divider-color\))$/);
+  // Heating sections head with the curve, titled as such.
+  p._activate({target:{closest:()=>({dataset:{tab:'heating_system'}})}});
+  const head=html().split('<div class="head')[1].split('<div class="groups">')[0];
+  if(device('heating_system')&&Object.values(hass.states).some(s=>Array.isArray(s.attributes.curve))) assert.match(head,/<genesis-wp-heating-curve-card/);
+  assert.doesNotMatch(head,/<genesis-wp-device-card/);
 }

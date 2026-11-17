@@ -119,6 +119,7 @@ export class GenesisWpHeatingCurveCard extends HTMLElement {
           .join("")}</div>`;
     patch(this.shadowRoot, `
       <style>
+        :host { display: block; }
         ha-card { padding: 12px 12px 4px; }
         .title { font-size: var(--ha-font-size-l); margin: 0 0 6px 4px; color: var(--primary-text-color); }
         .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 0 0 4px 4px; color: var(--secondary-text-color); font-size: var(--ha-font-size-s); }

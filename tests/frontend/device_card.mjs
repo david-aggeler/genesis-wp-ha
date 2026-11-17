@@ -322,3 +322,22 @@ process.exit(0);
   assert.deepEqual(events[0].detail, {entityId:id});
   assert.ok(events[0].bubbles && events[0].composed);
 }
+// DHF-TEST: genesis-wp-ha/requirement-21 genesis-wp-ha/ac-90 (diagram layout for the panel)
+{
+  const card = new Card(); card.setConfig({device:'internal_heat_pump',entry:fixture.entry,layout:'diagram'}); card.hass=hass;
+  const out = html(card);
+  assert.match(out, /<div class="stage" style="aspect-ratio:1190\/955/);
+  assert.doesNotMatch(out, /<ha-card/, 'the panel wraps the diagram in its own card');
+  assert.doesNotMatch(out, /<svg class="values"/, 'the panel lists the values itself');
+  assert.doesNotMatch(out, /<g class="[^"]*" role="button"/, 'tags are HTML chips, not scaled SVG text');
+  const chips = [...out.matchAll(/<div class="chip [^"]*"[^>]*data-entity="([^"]+)" style="left:([\d.]+)%;top:([\d.]+)%;width:([\d.]+)%"[^>]*><span class="label">([^<]*)<\/span>/g)];
+  assert.ok(chips.length > 5, String(chips.length));
+  for (const [, id, left, top, width, label] of chips) {
+    for (const v of [left, top]) assert.ok(Number(v) >= -1 && Number(v) <= 100, `${id}: ${v}`);
+    assert.ok(Math.abs(Number(width) - 150/1190*100) < 0.01);
+    assert.doesNotMatch(label, / Temperature$/, label);
+    const device = hass.devices[hass.entities[id].device_id];
+    assert.ok(!label.startsWith(device.name + ' '), label);
+  }
+  assert.match(out, /<div class="legend">/);
+}

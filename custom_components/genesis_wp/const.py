@@ -43,7 +43,8 @@ ICON_INPUT = "mdi-gauge"
 ICON_HOLDING = "mdi-gauge"
 CLASS_RELAY = "opening"
 CLASS_ALARM = "problem"
-CLASS_STATE = "plug"
+# No device class: control and status bits read On/Off, not "Plugged in".
+CLASS_STATE = None
 CLASS_ENERGY = "energy"
 
 ATTR_STATUS = thermiaconst.ATTR_INPUT_FIRST_PRIORITISED_DEMAND
