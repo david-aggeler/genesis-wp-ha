@@ -98,10 +98,19 @@ p.route={path:'/genesis-wp'}; assert.match(html(),/data-tile=/);
   const text=v=>({nodeType:3,nodeName:'#text',nodeValue:v,childNodes:[]});
   const live={childNodes:[el('DIV',{'data-entity':'sensor.a'},[text('1 C')]),el('DETAILS',{open:''},[])]};
   const target=live.childNodes[0];
-  assert.ok(morph(live,{childNodes:[el('DIV',{'data-entity':'sensor.a',class:'x'},[text('2 C')]),el('DETAILS',{},[])]}));
+  const parent=kids=>({childNodes:kids,appendChild(n){this.childNodes.push(n);},
+   replaceChild(n,o){this.childNodes[this.childNodes.indexOf(o)]=n;},removeChild(o){this.childNodes.splice(this.childNodes.indexOf(o),1);}});
+  Object.assign(live,parent(live.childNodes));
+  assert.equal(morph(live,{childNodes:[el('DIV',{'data-entity':'sensor.a',class:'x'},[text('2 C')]),el('DETAILS',{},[])]}),0);
   assert.equal(live.childNodes[0],target); assert.equal(target.childNodes[0].nodeValue,'2 C'); assert.equal(target.attrs.class,'x');
   assert.ok('open' in live.childNodes[1].attrs,'user-opened details stay open');
-  assert.ok(!morph(live,{childNodes:[el('SPAN')]}));
+  // A structural change elsewhere replaces only that node: the clicked value stays the same node.
+  const details=live.childNodes[1];
+  assert.equal(morph(live,{childNodes:[el('DIV',{'data-entity':'sensor.a',class:'x'},[text('2 C')]),el('SPAN'),el('P')]}),2);
+  assert.equal(live.childNodes[0],target,'unchanged sibling kept'); assert.notEqual(live.childNodes[1],details);
+  assert.equal(live.childNodes[1].nodeName,'SPAN'); assert.equal(live.childNodes[2].nodeName,'P');
+  assert.equal(morph(live,{childNodes:[el('DIV',{'data-entity':'sensor.a',class:'x'},[text('2 C')])]}),2,'surplus nodes removed');
+  assert.equal(live.childNodes.length,1); assert.equal(live.childNodes[0],target);
 }
 // DHF-TEST: genesis-wp-ha/requirement-21 genesis-wp-ha/ac-88
 {
