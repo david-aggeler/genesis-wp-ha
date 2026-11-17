@@ -18,6 +18,12 @@ async def test_panel_lifecycle(hass, hass_client, start_emulator):
     response = await (await hass_client()).get(url)
     assert response.status == 200
     assert await response.read() == Path("custom_components/genesis_wp/frontend/genesis-wp-panel.js").read_bytes()
+    # Every module the panel imports is served next to it.
+    frontend = Path("custom_components/genesis_wp/frontend")
+    for name in ("patch.js", "genesis-wp-device-card.js", "genesis-wp-heating-curve-card.js", "register-card.js"):
+        module = await (await hass_client()).get(url.rsplit("/", 1)[0] + "/" + name)
+        assert module.status == 200, name
+        assert await module.read() == (frontend / name).read_bytes(), name
     second = await setup_entry(hass, await start_emulator(PROFILE_615))
     assert await hass.config_entries.async_unload(first.entry_id)
     assert "genesis-wp" in hass.data["frontend_panels"]
