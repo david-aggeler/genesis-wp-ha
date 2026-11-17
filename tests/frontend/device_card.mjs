@@ -357,4 +357,8 @@ process.exit(0);
   // Pumps point along their pipe in the flow direction.
   assert.deepEqual([...out.matchAll(/data-flow-direction="(\w+)"/g)].map(m=>m[1]), ['up','left']);
   assert.doesNotMatch(out, /min-width:892px/);
+  // Pumps sit in front of their pipe on a card-colored disc.
+  const drawing = out.match(/<svg class="drawing"[\s\S]*?<\/svg>/)[0];
+  assert.ok(drawing.lastIndexOf('data-path=') < drawing.indexOf('class="pump"'), 'pumps after pipes');
+  assert.match(drawing, /class="pump"[^>]*style="fill:var\(--card-background-color\)"/);
 }
