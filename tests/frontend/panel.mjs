@@ -30,7 +30,8 @@ for(const c of order.filter(device)) {
  const hasAlarms=Object.entries(hass.entities).some(([id,e])=>e.device_id===did&&!e.disabled_by&&id.startsWith('binary_sensor.')&&hass.states[id]?.attributes.device_class==='problem');
  if(hasAlarms||c==='internal_heat_pump') assert.match(tile,/<div class="state">/,c);
  assert.doesNotMatch(tile,/\d+ values/,c);
- for(const r of ['input_10','input_11','input_54','input_157','input_158','input_41','input_12','input_40','input_13']) { const id=entity(r); if(id) assert.ok(!tile.includes(`data-entity="${id}"`),c+': '+r); }
+ // A tile repeats flow readings only as the fallback for an otherwise empty tile.
+ if(tile.includes('<div class="state">')||!(keyRegs[c]||[]).every(r=>['input_10','input_11','input_54','input_157','input_158','input_41','input_12','input_40','input_13'].includes(r))) for(const r of ['input_10','input_11','input_54','input_157','input_158','input_41','input_12','input_40','input_13']) { const id=entity(r); if(id) assert.ok(!tile.includes(`data-entity="${id}"`),c+': '+r); }
 }
 assert.doesNotMatch(html(),/No key readings/);
 const speed=entity('input_54'); hass.states[speed].state='unavailable'; p.hass=hass;
@@ -154,4 +155,19 @@ p.route={path:'/genesis-wp'}; assert.match(html(),/data-tile=/);
   const head=html().split('<div class="head')[1].split('<div class="groups">')[0];
   if(device('heating_system')&&Object.values(hass.states).some(s=>Array.isArray(s.attributes.curve))) assert.match(head,/<genesis-wp-heating-curve-card/);
   assert.doesNotMatch(head,/<genesis-wp-device-card/);
+}
+// DHF-TEST: genesis-wp-ha/requirement-21 genesis-wp-ha/ac-91 (tiles are never empty)
+{
+  p.route={path:'/genesis-wp'}; p._activate({target:{closest:()=>({dataset:{tab:''}})}});
+  for(const c of order.filter(device)) {
+    const tile=html().split(`data-tile="${c}"`)[1].split('</ha-card>')[0];
+    assert.match(tile,/<div class="reading|<div class="state">/,c);
+  }
+  assert.doesNotMatch(html(),/\d+ alarms ok/);
+  p._activate({target:{closest:()=>({dataset:{tab:'internal_heat_pump'}})}});
+  for(const [r,label] of [['input_4','Gears available'],['input_60','Blocked'],['dinput_218','Brine pump on'],['dinput_225','OK to start']]) {
+    const id=entity(r); if(!id) continue;
+    assert.match(html(),new RegExp(`data-entity="${id.replaceAll('.','\\.')}"[^>]*><span class="label"[^>]*>${label}</span>`),r);
+  }
+  assert.match(html(),/<div class="hint">/);
 }

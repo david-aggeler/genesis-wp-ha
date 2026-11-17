@@ -16,6 +16,9 @@ const LABELS = {
     input_125: 'Superheat', input_126: 'Subcooling', input_127: 'Low pressure', input_128: 'High pressure',
     input_129: 'Liquid line', input_130: 'Suction gas', input_147: 'Target', input_157: 'Heat output',
     input_158: 'Power in', input_315: 'Expansion valve', input_319: 'Inverter', input_413: 'KSM fan test',
+    input_4: 'Gears available', input_30: 'Heating demand', input_60: 'Blocked',
+    dinput_86: 'Oil boost', dinput_199: 'Compressor on', dinput_210: 'Condenser pump on', dinput_218: 'Brine pump on',
+    dinput_224: 'Stopping', dinput_225: 'OK to start', dinput_246: "Can't speed up",
   },
   de: {
     input_1: 'Betriebsart', input_5: 'Verdichter U/min', input_7: 'Heissgas', input_8: 'Kondensator ein',
@@ -30,6 +33,9 @@ const LABELS = {
     input_125: '\u00dcberhitzung', input_126: 'Unterk\u00fchlung', input_127: 'Niederdruck', input_128: 'Hochdruck',
     input_129: 'Fl\u00fcssigkeitsleitung', input_130: 'Sauggas', input_147: 'Soll', input_157: 'Heizleistung',
     input_158: 'Leistungsaufnahme', input_315: 'Expansionsventil', input_319: 'Inverter', input_413: 'KSM-L\u00fcftertest',
+    input_4: 'Verf\u00fcgbare Stufen', input_30: 'W\u00e4rmebedarf', input_60: 'Gesperrt',
+    dinput_86: '\u00d6lanhebung', dinput_199: 'Verdichter ein', dinput_210: 'Kondensatorpumpe ein', dinput_218: 'Solepumpe ein',
+    dinput_224: 'Stoppt', dinput_225: 'Startbereit', dinput_246: 'Kann nicht hochfahren',
   },
 };
 
