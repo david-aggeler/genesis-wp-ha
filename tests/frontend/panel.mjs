@@ -179,6 +179,7 @@ p.route={path:'/genesis-wp'}; assert.match(html(),/data-tile=/);
     assert.match(html(),new RegExp(`data-entity="${id.replaceAll('.','\\.')}"[^>]*><span class="label"[^>]*>${label}</span>`),r);
   }
   assert.match(html(),/<div class="hint">/);
+  assert.match(html(),/<main class="wide">/,'a diagram tab uses the full panel width');
   // A tab click navigates, so a later route set from HA keeps the tab (round 6 regression).
   {const saved={location:globalThis.location,history:globalThis.history,dispatchEvent:globalThis.dispatchEvent};
    const pushed=[],fired=[];globalThis.location={href:'http://ha.local/genesis-wp?entry=x'};

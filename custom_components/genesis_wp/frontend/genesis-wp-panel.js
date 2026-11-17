@@ -53,6 +53,7 @@ const CSS=`
 .tabs button{padding:var(--ha-space-3) var(--ha-space-3);border-bottom:2px solid transparent;font-size:var(--ha-font-size-m);opacity:.8}
 .tabs [aria-selected=true]{opacity:1;border-bottom-color:currentColor;font-weight:var(--ha-font-weight-medium)}
 main{max-width:1280px;margin:0 auto;padding:var(--ha-space-4)}
+main.wide{max-width:none}
 button{color:inherit;background:transparent;border:0;padding:0;cursor:pointer;font:inherit}
 ha-card{display:block;padding:var(--ha-space-4);margin-bottom:var(--ha-space-4)}
 h2{margin:0 0 var(--ha-space-3);font-size:var(--ha-font-size-l);font-weight:var(--ha-font-weight-medium)}
@@ -191,7 +192,7 @@ export class GenesisWpPanel extends HTMLElement {
   const toolbar=`<div class="toolbar"><ha-menu-button></ha-menu-button><div class="name">${esc(this._t('title'))}</div>${select}</div>`;
   const tabs=`<nav class="tabs" role="tablist"><button role="tab" data-tab="" aria-selected="${!selected}">${esc(this._t('overview'))}</button>${sections.map(s=>{const n=badge(s);return `<button role="tab" data-tab="${s.category}" aria-selected="${selected?.category===s.category}">${esc(this._sectionName(s))}${n?` <span class="badge">${n}</span>`:''}</button>`;}).join('')}</nav>`;
   const body=selected?this._detail(selected,entities,entry):this._overview(sections,entities);
-  const result=patch(this.shadowRoot,`<style>${CSS}</style>${toolbar}${tabs}<main>${body}</main>`);
+  const result=patch(this.shadowRoot,`<style>${CSS}</style>${toolbar}${tabs}<main${selected&&DIAGRAMS.includes(selected.category)?' class="wide"':''}>${body}</main>`);
   if(result!=='unchanged')debug('render',this._section||'overview',result);
   const menu=this.shadowRoot.querySelector?.('ha-menu-button');if(menu){menu.hass=this._hass;menu.narrow=this._narrow;}
   for(const card of this.shadowRoot.querySelectorAll('[data-curve]')){const key=card.dataset.curve;
