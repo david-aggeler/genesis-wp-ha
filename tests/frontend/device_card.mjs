@@ -357,6 +357,12 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
   // Pumps point along their pipe in the flow direction.
   assert.deepEqual([...out.matchAll(/data-flow-direction="(\w+)"/g)].map(m=>m[1]), ['down','left','right'], 'brine pump down from the passive-cooling HX, condenser pump left, FR2 right');
   assert.doesNotMatch(out, /min-width:892px/);
+  // Part labels are HTML at the theme's small size, not SVG text that shrinks with the stage.
+  assert.doesNotMatch(out.match(/<svg class="drawing"[\s\S]*?<\/svg>/)[0], /<text/);
+  for (const label of ['Evaporator','Condenser','Compressor','Heating circuit 1','Heating circuit 2','Buffer tank','TR9','TR12/13','FR2','Rooms (HC2)','either way'])
+    assert.match(out, new RegExp(`<span class="part-label" style="left:[\\d.]+%;top:[\\d.]+%;transform:translate\\((0|-50|-100)%,-80%\\)">${label.replace(/[()]/g,'\\$&')}</span>`), label);
+  assert.match(out, /\.part-label\{[^}]*font-size:var\(--ha-font-size-s\)/);
+  assert.match(out, /min-width:1273px/, 'the full plant fits from 0.67 px per unit');
   // Pumps sit in front of their pipe on a card-colored disc.
   const drawing = out.match(/<svg class="drawing"[\s\S]*?<\/svg>/)[0];
   assert.ok(drawing.lastIndexOf('data-path=') < drawing.indexOf('class="pump"'), 'pumps after pipes');
