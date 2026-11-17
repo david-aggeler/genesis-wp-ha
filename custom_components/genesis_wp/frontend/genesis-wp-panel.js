@@ -84,13 +84,14 @@ h2{margin:0 0 var(--ha-space-3);font-size:var(--ha-font-size-l);font-weight:var(
 .diagram{overflow-x:auto}
 .diagram .hint{display:none;font-size:var(--ha-font-size-s);color:var(--secondary-text-color);margin-bottom:var(--ha-space-2)}
 .diagram genesis-wp-device-card{display:block}
+.diagram.overflow .hint{display:block}
 .head .curves{margin:0}
 .groups{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:0 var(--ha-space-4);margin-top:var(--ha-space-4)}
 .curves{max-width:720px;margin-top:var(--ha-space-4)}
 details summary{cursor:pointer;font-size:var(--ha-font-size-l);font-weight:var(--ha-font-weight-medium)}
 details[open] summary{margin-bottom:var(--ha-space-3)}
 [role=button]:focus-visible,button:focus-visible{outline:2px solid var(--primary-color);outline-offset:2px}
-@media (max-width:870px){.diagram .hint{display:block}.head,.head.curve{grid-template-columns:minmax(0,1fr)}.flow{flex-direction:column}.pipe{flex-basis:var(--ha-space-6,24px);width:var(--ha-space-2);height:auto}}
+@media (max-width:870px){.head,.head.curve{grid-template-columns:minmax(0,1fr)}.flow{flex-direction:column}.pipe{flex-basis:var(--ha-space-6,24px);width:var(--ha-space-2);height:auto}}
 `;
 export class GenesisWpPanel extends HTMLElement {
  constructor(){
@@ -186,7 +187,12 @@ export class GenesisWpPanel extends HTMLElement {
   for(const card of this.shadowRoot.querySelectorAll('[data-curve]')){const key=card.dataset.curve;
    if(card.__config!==key){card.__config=key;card.setConfig?.({entity:key,title:this._t('heating_curve')});}card.hass=this._hass;}
   for(const card of this.shadowRoot.querySelectorAll('[data-diagram]')){const key=card.dataset.diagram+'|'+card.dataset.entry;
-   if(card.__config!==key){card.__config=key;card.setConfig?.({device:card.dataset.diagram,entry:card.dataset.entry,layout:'diagram'});}card.hass=this._hass;}
+   if(card.__config!==key){card.__config=key;card.setConfig?.({device:card.dataset.diagram,entry:card.dataset.entry,layout:'diagram'});}card.hass=this._hass;
+   const box=card.parentNode;if(box?.classList){this._overflow(box);
+    if(!box.__observed&&typeof ResizeObserver!=='undefined'){box.__observed=new ResizeObserver(()=>this._overflow(box));box.__observed.observe(box);}}}
  }
+ // The scroll hint shows whenever the diagram is wider than its card, whatever the viewport.
+ // patch() resets the class to the template's; _render calls this again right after it.
+ _overflow(box){box.classList.toggle('overflow',box.scrollWidth>box.clientWidth+1);}
 }
 if(!customElements.get('genesis-wp-panel'))customElements.define('genesis-wp-panel',GenesisWpPanel);
