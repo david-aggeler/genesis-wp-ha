@@ -6,11 +6,12 @@ class Registry { constructor() { this.items = new Map(); } get(k) { return this.
 globalThis.window = globalThis;
 globalThis.HTMLElement = class { attachShadow() { this.shadowRoot = {innerHTML:''}; } };
 globalThis.customElements = new Registry();
-const { temperatureColor } = await import(pathToFileURL(process.argv[2]));
+const { temperatureColor, toCelsius } = await import(pathToFileURL(process.argv[2]));
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-65
 assert.equal(customElements.get('genesis-wp-device-card'), undefined);
 globalThis.customElements = new Registry();
 customElements.define('hui-view', class {});
+const toC = st => st ? toCelsius(st.state, st.attributes.unit_of_measurement) : null;
 await new Promise(r=>setTimeout(r,600));
 const Card = customElements.get('genesis-wp-device-card');
 assert.ok(Card);
@@ -444,11 +445,71 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
   }
   // issue-21: a pipe without a sensor draws neutral even while active, never a guessed color; the
   // return into the condenser is colored by condenser in (input 8).
-  for (const name of ['room-return', 'bypass']) {
-    const tag = out.match(new RegExp(`<path data-path="${name}"[^>]*>`))?.[0];
-    assert.ok(tag, name);
-    assert.match(tag, /data-flow="active"/, name);
-    assert.match(tag, /stroke="currentColor" stroke-opacity="1"/, name);
+  {
+    const tag = out.match(/<path data-path="bypass"[^>]*>/)?.[0];
+    assert.ok(tag, 'bypass');
+    assert.match(tag, /data-flow="active"/);
+    assert.match(tag, /stroke="currentColor" stroke-opacity="1"/);
+    assert.doesNotMatch(tag, /data-estimated/);
+  }
+  // change_request-50: the owner chose T31's color as a labeled estimate for the room return.
+  {
+    const m = out.match(/<path data-path="room-return"([^>]*)>(.*?)<\/path>/);
+    assert.ok(m, 'room-return');
+    assert.match(m[1], /data-flow="active"/);
+    const c41 = toC(heat.states[idOf(41)]);
+    if (c41 !== null) {
+      assert.match(m[1], new RegExp(`data-estimated="input_41"[^>]* stroke="${temperatureColor(c41)}" stroke-opacity="1"`));
+      assert.equal(m[2], '<title>estimated from T31</title>');
+    }
+    // Without a T31 value the room return is neutral and claims no estimate.
+    const gone = {...heat, states:structuredClone(heat.states)};
+    gone.states[idOf(41)].state = 'unavailable';
+    const g = new Card(); g.setConfig({device:'internal_heat_pump',entry:fixture.entry,layout:'diagram'}); g.hass = gone;
+    const tag = html(g).match(/<path data-path="room-return"([^>]*)>(.*?)<\/path>/);
+    assert.match(tag[1], /stroke="currentColor" stroke-opacity="1"/);
+    assert.doesNotMatch(tag[1], /data-estimated/); assert.equal(tag[2], '');
+    // Only the room return is an estimate.
+    assert.deepEqual([...out.matchAll(/data-path="([^"]+)"[^>]*data-estimated=/g)].map(x => x[1]), ['room-return']);
+  }
+  // change_request-50 (owner): the buffer tank's two cold ports are level on opposite walls, the
+  // heat-pump return on the left wall (x 1160), the room return on the right wall (x 1320).
+  {
+    const pts = name => [...out.match(new RegExp(`data-path="${name}"[^>]* d="([^"]+)"`))[1].matchAll(/(-?\d+),(-?\d+)/g)].map(([, x, y]) => [Number(x), Number(y)]);
+    const hp = pts('buffer-return')[0], room = pts('room-return').at(-1);
+    assert.deepEqual(hp, [1160, 560], `heat-pump return port ${hp}`);
+    assert.deepEqual(room, [1320, 560], `room return port ${room}`);
+    // No pipe reaches the tank bottom (y 580) any more.
+    for (const s of segments) assert.ok(!(s.box[1] <= 580 && s.box[3] >= 580 && s.box[0] < 1320 && s.box[2] > 1160), `${s.name} on the tank bottom`);
+  }
+  // issue-22: the T33 junction dot takes the style of the first active pipe it joins.
+  {
+    const style = (o, id) => { const t = o.match(new RegExp(`<path data-path="${id}" data-flow="(\\w+)"[^>]* stroke="([^"]+)" stroke-opacity="([\\d.]+)"`)); return t && {flow:t[1], color:t[2], opacity:t[3]}; };
+    const dot = o => { const t = o.match(/<circle class="junction" data-junction="either-way" data-flow="(\w+)"[^>]* fill="([^"]+)" fill-opacity="([\d.]+)"/); return t && {flow:t[1], color:t[2], opacity:t[3]}; };
+    assert.equal((out.match(/class="junction"/g) || []).length, 1, 'one junction dot');
+    const first = ['either-way','hc2-port-b','condenser-out'].map(id => style(out, id)).find(s => s && s.flow === 'active');
+    assert.ok(first, 'a joined pipe is active while heating');
+    assert.deepEqual(dot(out), first);
+    assert.equal(first.opacity, '1');
+    // Passive cooling: compressor, buffer and HC2 port B all idle, so the dot is idle-styled.
+    assert.ok(idOf('coil_33'), 'passive cooling switch in the fixture');
+    const off = {...heat, states:structuredClone(heat.states)};
+    off.states[idOf(1)].state = 'Passive cooling'; off.states[idOf('coil_33')].state = 'on';
+    const o = new Card(); o.setConfig({device:'internal_heat_pump',entry:fixture.entry,layout:'diagram'}); o.hass = off;
+    const oh = html(o);
+    const joined = ['either-way','hc2-port-b','condenser-out'].map(id => style(oh, id)).filter(Boolean);
+    assert.ok(joined.length && joined.every(s => s.flow === 'idle'), JSON.stringify(joined));
+    assert.deepEqual(dot(oh), {flow:'idle', color:'currentColor', opacity:'0.22'});
+    // The heating system card's supply T-piece follows its supply pipe the same way.
+    const hs = new Card(); hs.setConfig({device:'heating_system',entry:fixture.entry}); hs.hass = heat;
+    const hsSupply = style(html(hs), 'supply');
+    if (hsSupply) {
+      const d = html(hs).match(/<circle class="junction" data-junction="supply" data-flow="(\w+)"[^>]* fill="([^"]+)" fill-opacity="([\d.]+)"/);
+      assert.ok(d, 'heating system junction');
+      assert.deepEqual({flow:d[1], color:d[2], opacity:d[3]}, hsSupply.flow === 'active' ? hsSupply : {flow:'idle', color:'currentColor', opacity:'0.22'});
+    }
+    // No static text-colored dot remains in the drawing.
+    assert.doesNotMatch(out, /<circle cx="1220" cy="290"[^>]*fill="currentColor"/);
   }
   {
     const t8 = heat.states[idOf(8)], c8 = Number(t8?.state);
