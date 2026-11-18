@@ -29,7 +29,7 @@ def flow_entities(hass, entry) -> dict[str, str]:
     return {key: registry.async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_derived_{key}") for key in KEYS}
 
 
-# DHF-REQ: genesis-wp-ha/requirement-26  DHF-TEST: genesis-wp-ha/ac-106
+# DHF-REQ: genesis-wp-ha/requirement-26  DHF-TEST: genesis-wp-ha/ac-106 genesis-wp-ha/issue-23
 async def test_flow_sensors_report_the_estimate_in_liters_per_minute(hass, start_emulator):
     entry = await setup_entry(hass, await start_emulator(PROFILE_615))
     coordinator = hass.data[DOMAIN][entry.entry_id]
@@ -39,6 +39,9 @@ async def test_flow_sensors_report_the_estimate_in_liters_per_minute(hass, start
         state = hass.states.get(entity_id)
         assert state.attributes["unit_of_measurement"] == "L/min"
         assert state.attributes["register"] == f"derived_{key}"
+        # issue-23: the entity name states the value is an estimate.
+        expected = {"condenser_flow": "Estimated condenser flow", "brine_flow": "Estimated brine flow"}[key]
+        assert state.attributes["friendly_name"].endswith(f" {expected}"), state.attributes["friendly_name"]
         estimate = coordinator.flows[key]
         # One captured update: no window yet and no calibration, so no value; unknown, never 0.
         assert estimate.value is None

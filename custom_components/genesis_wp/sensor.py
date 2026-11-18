@@ -259,7 +259,8 @@ class ThermiaSettingSensor(RegisterSensor):
 
 
 # DHF-REQ: genesis-wp-ha/requirement-26
-FLOW_NAMES = {"condenser_flow": "Condenser flow", "brine_flow": "Brine flow"}
+# The names say the value is an estimate (issue-23); the chips keep their short labels.
+FLOW_NAMES = {"condenser_flow": "Estimated condenser flow", "brine_flow": "Estimated brine flow"}
 
 
 class FlowSensor(SensorEntity):
