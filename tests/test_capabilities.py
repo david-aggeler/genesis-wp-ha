@@ -63,6 +63,8 @@ async def test_present_unknown_and_ungated_registers_keep_entities(hass, start_e
     assert kept & gates("heating_circuit_2", "buffer_tank", "ksm")  # present
     assert kept & gates("additional_heater", "smart_grid")  # unknown
     expected = {unique_id(entry, r) for r in kept} | {f"{entry.entry_id}_heatpump"}
+    # The derived flow sensors are not register entities and no capability gates them (requirement-26).
+    expected |= {f"{entry.entry_id}_derived_{key}" for key in ("condenser_flow", "brine_flow")}
     assert registered(hass, entry) == expected
 
 

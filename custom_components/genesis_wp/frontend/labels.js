@@ -22,6 +22,7 @@ const LABELS = {
     holding_3: 'Max supply', holding_4: 'Min supply', holding_5: 'Room target', coil_9: 'Heating on',
     holding_107: 'Min supply', holding_108: 'Max supply', coil_11: 'Circuit 2 on',
     coil_33: 'Passive cooling', holding_302: 'Passive target',
+    derived_condenser_flow: 'Cond. flow', derived_brine_flow: 'Brine flow',
   },
   de: {
     input_1: 'Betriebsart', input_5: 'Drehzahl', input_7: 'Heissgas', input_8: 'Kondensator ein',
@@ -42,6 +43,7 @@ const LABELS = {
     holding_3: 'Max. Vorlauf', holding_4: 'Min. Vorlauf', holding_5: 'Raum-Soll', coil_9: 'Heizen ein',
     holding_107: 'Min. Vorlauf', holding_108: 'Max. Vorlauf', coil_11: 'Kreis 2 ein',
     coil_33: 'Passivk\u00fchlung', holding_302: 'Passiv-Soll',
+    derived_condenser_flow: 'Kond.-Fluss', derived_brine_flow: 'Sole-Fluss',
   },
 };
 
