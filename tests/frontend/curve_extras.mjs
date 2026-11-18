@@ -88,5 +88,52 @@ const close = (a, b, label) => assert.ok(Math.abs(a - b) < 1e-6, `${label}: ${a}
     for (const v of [m[2], m[3]]) assert.ok(Number(v) >= 0 && Number(v) <= w, m[0]);
   assert.ok(h >= 180);
 }
+// DHF-TEST: genesis-wp-ha/issue-21 (finding 1)
+// Label boxes: limit and stop labels never overlap each other, the stop line never runs through
+// a label, and every label stays inside the chart. Box estimate: 7 px per character of the
+// theme's small font, 14 px line height, baseline 3 px above the box bottom.
+{
+  const box = (t) => {
+    const [x, y] = [num(t, "x"), num(t, "y")];
+    const anchor = t.match(/text-anchor="(\w+)"/)[1];
+    const w = t.match(/>([^<]*)<\/text>/)[1].length * 7;
+    const x0 = anchor === "end" ? x - w : anchor === "middle" ? x - w / 2 : x;
+    return [x0, y - 11, x0 + w, y + 3];
+  };
+  const hit = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+  let cases = 0;
+  for (const width of [400, 296]) {
+    for (const stopAt of [-28, -20, -10, 0, 5, 10, 17]) {
+      for (const max of ["45.0", "40.0"]) {
+        const card = new Card(); card.setConfig(config); card._width = width;
+        card.hass = { states: states({ "number.stop": { state: String(stopAt), attributes: {} }, "number.max": { state: max, attributes: {} } }) };
+        const html = card.shadowRoot.innerHTML;
+        const [, w, h] = html.match(/viewBox="0 0 (\d+) (\d+)"/).map(Number);
+        const labels = [...html.matchAll(/<text class="label" data-label="(\w+)"[^>]*>[^<]*<\/text>/g)].map((m) => [m[1], box(m[0])]);
+        assert.deepEqual(labels.map((l) => l[0]).sort(), ["max", "min", "stop"], `${width}/${stopAt}`);
+        const sx = num(html.match(/<line class="stop"[^>]*>/)[0], "x1");
+        for (const [name, b] of labels) {
+          assert.ok(b[0] >= 0 && b[2] <= w && b[1] >= 0 && b[3] <= h, `${name} inside at ${width}/${stopAt}: ${b}`);
+          if (name !== "stop") assert.ok(sx < b[0] || sx > b[2], `stop line crosses ${name} at ${width}/${stopAt}`);
+        }
+        for (let i = 0; i < labels.length; i++)
+          for (let j = i + 1; j < labels.length; j++)
+            assert.ok(!hit(labels[i][1], labels[j][1]), `${labels[i][0]} overlaps ${labels[j][0]} at ${width}/${stopAt}/${max}`);
+        cases++;
+      }
+    }
+  }
+  assert.equal(cases, 28);
+  // The reported case (issue-21): max at the top, stop 17 C near the right end. Stop label at the
+  // plot bottom, limit labels at the left end.
+  const html = render(config, states());
+  const stopLabel = html.match(/<text class="label" data-label="stop"[^>]*>/)[0];
+  close(num(stopLabel, "y"), 214, "stop label at the plot bottom");
+  for (const key of ["min", "max"]) {
+    const t = html.match(new RegExp(`<text class="label" data-label="${key}"[^>]*>`))[0];
+    close(num(t, "x"), 52, `${key} label at the left end`);
+    assert.match(t, /text-anchor="start"/);
+  }
+}
 console.log("ok");
 process.exit(0);

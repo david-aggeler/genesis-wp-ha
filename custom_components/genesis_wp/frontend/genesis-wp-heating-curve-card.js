@@ -22,6 +22,27 @@ function escapeText(value) {
   return String(value).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
 }
 
+// Estimated label extent for placement: the theme's small font is about 12 px, so a character
+// is at most about 7 px wide and a line about 14 px high. Generous on purpose: an estimate that
+// is too wide only moves a label, one that is too narrow lets labels collide.
+const CHAR_W = 7;
+const LINE_H = 14;
+
+function textWidth(text) {
+  return text.length * CHAR_W;
+}
+
+// The box of a label { text, x, y (baseline), anchor } as [x0, y0, x1, y1].
+function labelBox({ text, x, y, anchor }) {
+  const w = textWidth(text);
+  const x0 = anchor === "end" ? x - w : anchor === "middle" ? x - w / 2 : x;
+  return [x0, y - LINE_H + 3, x0 + w, y + 3];
+}
+
+function overlaps(a, b) {
+  return a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+}
+
 function niceStep(span) {
   for (const step of [1, 2, 5, 10, 20]) {
     if (span / step <= 6) return step;
@@ -212,13 +233,33 @@ export class GenesisWpHeatingCurveCard extends HTMLElement {
       })
       .join("");
     // Limits and the stop line lie under the curves; the measured tick sits with the markers.
-    const limits = ["min", "max"]
+    // Label placement (issue-21): limit labels at the left end of their line, the stop label at the
+    // bottom of the plot on the side of the stop line with more room. When the stop line runs
+    // through the left-anchored limit labels, those move to the right end; a stop label that would
+    // overlap a limit label moves up one line at a time.
+    const stopX = extra.stop === null ? null : px(extra.stop);
+    const limitLabels = ["min", "max"]
       .filter((key) => extra[key] !== null)
-      .map((key) => `<line class="limit" data-limit="${key}" x1="${PAD.left}" x2="${W - PAD.right}" y1="${py(extra[key])}" y2="${py(extra[key])}"><title>${key} supply: ${extra[key]} \u00b0C</title></line>
-        <text class="label" x="${W - PAD.right - 4}" y="${py(extra[key]) + (key === "max" ? 14 : -4)}" text-anchor="end">${key} ${extra[key]} \u00b0C</text>`)
+      .map((key) => ({ key, text: `${key} ${extra[key]} \u00b0C`, y: py(extra[key]) + (key === "max" ? 14 : -4) }));
+    const left = PAD.left + 4;
+    const crossed = stopX !== null && limitLabels.some((l) => stopX >= left - 2 && stopX <= left + textWidth(l.text) + 2);
+    for (const l of limitLabels) {
+      l.anchor = crossed ? "end" : "start";
+      l.x = crossed ? W - PAD.right - 4 : left;
+    }
+    const limits = limitLabels
+      .map((l) => `<line class="limit" data-limit="${l.key}" x1="${PAD.left}" x2="${W - PAD.right}" y1="${py(extra[l.key])}" y2="${py(extra[l.key])}"><title>${l.key} supply: ${extra[l.key]} \u00b0C</title></line>
+        <text class="label" data-label="${l.key}" x="${l.x}" y="${l.y}" text-anchor="${l.anchor}">${l.text}</text>`)
       .join("");
-    const stop = extra.stop === null ? "" : `<line class="stop" x1="${px(extra.stop)}" x2="${px(extra.stop)}" y1="${PAD.top}" y2="${H - PAD.bottom}"><title>heating stops above ${extra.stop} \u00b0C outdoor</title></line>
-        <text class="label" x="${px(extra.stop) - 4}" y="${PAD.top + 12}" text-anchor="end">stop ${extra.stop} \u00b0C</text>`;
+    let stop = "";
+    if (stopX !== null) {
+      const text = `stop ${extra.stop} \u00b0C`;
+      const onLeft = stopX - PAD.left > W - PAD.right - stopX;
+      const label = { text, anchor: onLeft ? "end" : "start", x: onLeft ? stopX - 4 : stopX + 4, y: H - PAD.bottom - 4 };
+      for (let i = 0; i < 4 && limitLabels.some((l) => overlaps(labelBox(l), labelBox(label))); i++) label.y -= LINE_H;
+      stop = `<line class="stop" x1="${stopX}" x2="${stopX}" y1="${PAD.top}" y2="${H - PAD.bottom}"><title>heating stops above ${extra.stop} \u00b0C outdoor</title></line>
+        <text class="label" data-label="stop" x="${label.x}" y="${label.y}" text-anchor="${label.anchor}">${text}</text>`;
+    }
     const tick = extra.tick ? `<line class="measured" x1="${px(extra.tick[0]) - 9}" x2="${px(extra.tick[0]) + 9}" y1="${py(extra.tick[1])}" y2="${py(extra.tick[1])}"><title>measured supply: ${extra.tick[1]} \u00b0C</title></line>` : "";
 
     return `<svg class="${single ? "single" : "overlay"}" viewBox="0 0 ${W} ${H}" role="img" aria-label="heating curves">

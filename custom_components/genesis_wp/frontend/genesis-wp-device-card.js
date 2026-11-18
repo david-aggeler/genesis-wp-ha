@@ -47,10 +47,11 @@ const POSITIONS = {
     // Expansion valve opening centered right below the valve symbol at (630, 510) (ac-109).
     [315,555,530],[9,940,230],[67,965,306],[8,940,412],[39,940,458],
     // Heating circuit 1: settings at the top of the circuit, T33 and its set point by the T-piece.
-    ['holding_5',940,60],['coil_9',1090,60],['holding_4',940,106],['holding_3',1090,106],[18,1095,186],[12,1095,232],
-    // Buffer tank: T31 at the lowest port, right of the cooling return riser. Input 68 (charge
-    // target) has no chip: the owner dropped it from the drawing (ac-93).
-    [41,1360,500],
+    // Side-by-side columns keep a 4-unit gap, rows a 2-unit gap (issue-21).
+    ['holding_5',940,60],['coil_9',1094,60],['holding_4',940,106],['holding_3',1094,106],[18,1095,186],[12,1095,232],
+    // Buffer tank: T31 reads the tank-bottom water, so its chip sits on the tank (issue-21).
+    // Input 68 (charge target) has no chip: the owner dropped it from the drawing (ac-93).
+    [41,1165,500],
     // Heating circuit 2: right of TR12/13, above FR2 and the rooms (ac-105).
     ['holding_107',1565,56],['holding_108',1735,56],['coil_11',1565,102],[43,1565,216],[147,1735,170],[40,1735,216]],
   buffer_tank: [[12,1130,150],[18,1130,104],[41,1130,500],[68,1130,546]],
@@ -119,6 +120,8 @@ const PARTS = {
     [['coil_33','holding_302'],rect(1280,-126,100,98,'HX 24')]],
 };
 // [path id, temperature register, flow group, path geometry, phase dash]
+// The register may be [shown when, colored by]: a pipe without a sensor on it is drawn while its
+// part exists, colored by null, so it stays neutral (issue-21, never a guessed temperature).
 const PIPES = {
   hot_water: [['charging',9,'hot_water','M10,80 L390,80 L390,160'],
     ['tank-top',15,'hot_water','M390,160 L570,160'],
@@ -150,16 +153,18 @@ const PIPES = {
     // Buffer: either-way leg at the T33 T-piece, return from the bottom to the condenser pump.
     ['either-way',12,'buffer','M1220,290 L1220,330'],
     ['buffer-return',8,'buffer','M1240,580 L1240,610 L1100,610 L1100,390'],
-    // Heating circuit 2 draws from the buffer top through TR9 port B; room return to the bypass and T31.
+    // Heating circuit 2 draws from the buffer top through TR9 port B. The room return, its bypass to
+    // TR12/13 and its branch to the passive-cooling exchanger carry no sensor: T31 (input 41) sits in
+    // a tank wall sleeve and reads the tank-bottom water, not the return (issue-21).
     ['hc2-port-b',12,'hc2','M1220,290 L1408,290'],
     ['tr9-mixer',12,'rooms','M1432,290 L1528,290'],
     ['hc2-supply',40,'rooms','M1552,290 L1750,290'],
-    ['room-return',41,'rooms','M1815,470 L1815,560 L1320,560'],
-    ['bypass',41,'rooms','M1540,560 L1540,304'],
+    ['room-return',[41,null],'rooms','M1815,470 L1815,560 L1320,560'],
+    ['bypass',[41,null],'rooms','M1540,560 L1540,304'],
     ['passive-port-a',40,'passive','M160,10 L160,-25 L1420,-25 L1420,276'],
     // Passive cooling: the room return leaves at the T31 port, rises over the plant and enters
     // the cooling exchanger from the top (interface_spec-6, "room return to passive-cooling HX").
-    ['cooling-return',41,'passive','M1345,560 L1345,-10 L230,-10 L230,10']],
+    ['cooling-return',[41,null],'passive','M1345,560 L1345,-10 L230,-10 L230,10']],
   buffer_tank: [['supply',12,'buffer','M1080,200 L1270,200 M1160,200 L1160,240'],['return',41,'buffer','M1270,600 L1270,620 L1120,620']],
   heating_system: [['condenser-out',9,'heating','M915,352 L915,200'],['supply',12,'heating','M915,200 L1270,200 M1160,200 L1160,240']],
   additional_heating_circuits: [['buffer-to-mixer',41,'hc2','M1260,200 L1408,200'],
@@ -225,9 +230,14 @@ export class GenesisWpDeviceCard extends HTMLElement {
     }
     return null;
   }
+  // Home Assistant's formatter applies the entity's display precision and unit (issue-21: a derived
+  // flow shows 9.8 L/min, not its raw state); without it, the raw state and unit.
   _value(state) {
     const value=state?.state || 'unavailable';
     if(['unknown','unavailable'].includes(value)) return this._hass.localize?.(`state.default.${value}`)||value;
+    if(typeof this._hass.formatEntityState==='function') {
+      try { const text=this._hass.formatEntityState(state); if(typeof text==='string' && text) return text; } catch { /* raw fallback */ }
+    }
     return `${value}${state.attributes.unit_of_measurement ? ' '+state.attributes.unit_of_measurement : ''}`;
   }
   _tag(entity, x, y, context=false, panel=false) {
@@ -295,8 +305,9 @@ export class GenesisWpDeviceCard extends HTMLElement {
       const drawn=PARTS[category].filter(([sensors])=>sensors.some(exists)).map(([,svg])=>svg);
       const front=svg=>svg.includes('class="pump"')||svg.includes('class="heater"');
       const parts=drawn.filter(svg=>!front(svg)).join(''), frontParts=drawn.filter(front).join('');
-      const pipes=PIPES[category].filter(([,r])=>exists(r)).map(([id,r,group,d,dash])=>{
-        const state=byRegister.get(key(r))?.state;
+      const pipes=PIPES[category].filter(([,r])=>exists(Array.isArray(r)?r[0]:r)).map(([id,r,group,d,dash])=>{
+        const sensor=Array.isArray(r)?r[1]:r;
+        const state=sensor===null?null:byRegister.get(key(sensor))?.state;
         const celsius=state ? toCelsius(state.state, state.attributes.unit_of_measurement) : null;
         const flow=active(group,mode,passiveEnabled);
         const color=flow&&celsius!==null?temperatureColor(celsius):'currentColor';
