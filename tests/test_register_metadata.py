@@ -60,7 +60,9 @@ async def test_register_metadata_and_coverage(hass, start_emulator, profile):
     assert meter.native_unit_of_measurement == 'kWh'
     assert (meter.device_class, meter.state_class) == ('energy', 'total_increasing')
     for entity in sensors:
-        if getattr(entity, 'coordinator', None) is not coordinator or entity.unique_id.endswith('_heatpump'):
+        # The derived flow sensors map no register, so register metadata does not apply (requirement-26).
+        if (getattr(entity, 'coordinator', None) is not coordinator or entity.unique_id.endswith('_heatpump')
+                or '_derived_' in entity.unique_id):
             continue
         name = entity.kind
         spec = c.REGISTERS[name]

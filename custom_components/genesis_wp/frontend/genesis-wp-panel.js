@@ -171,7 +171,8 @@ export class GenesisWpPanel extends HTMLElement {
   const own=entities.filter(e=>e.deviceId===selected.id);
   const curves=['heating_system','additional_heating_circuits'].includes(selected.category)?own.filter(e=>Array.isArray(e.state.attributes.curve)):[];
   const rows=own.filter(e=>!curves.length||!curvePoint(e));const alarms=rows.filter(alarm);
-  const measured=e=>e.register.startsWith('input_')&&e.state.attributes.unit_of_measurement;
+  // Derived values (requirement-26) are measurements too: estimated from input registers.
+  const measured=e=>/^(input|derived)_/.test(e.register)&&e.state.attributes.unit_of_measurement;
   const groups=[['measurements',rows.filter(e=>!alarm(e)&&measured(e))],
    ['status',rows.filter(e=>!alarm(e)&&(e.register.startsWith('dinput_')||(e.register.startsWith('input_')&&!measured(e))))],
    ['alarms',alarms.filter(e=>e.state.state!=='off')],

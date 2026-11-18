@@ -15,7 +15,8 @@ const LABELS = {
 const CATEGORY_COLORS = ['#8e6cc0', '#d4a14d', '#5fb88a', '#50a0cb'];
 const escapeText = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const key = address => `input_${address}`;
-const calculated = new Set([17,18,68,122,124,125,126,147].map(key));
+// Derived flows (requirement-26) are estimates, drawn like the controller's calculated values.
+const calculated = new Set([...[17,18,68,122,124,125,126,147].map(key), 'derived_condenser_flow', 'derived_brine_flow']);
 // Temperature legend, 0..45 C. Intermediate colors are linear RGB interpolations.
 // The source legend samples these stops at each half degree (0.5..44.5).
 const SCALE = [[0,'#2c7bb6'],[10,'#64b5d6'],[20,'#e6c84f'],[30,'#f08a3c'],[45,'#d7301f']];
@@ -37,7 +38,10 @@ export function toCelsius(raw, unit) {
 // [register, x, y] tag anchors in the source drawing's coordinate system.
 // Diagram rows are 46 units apart: a 44-unit chip plus a 2-unit gap (requirement-24, ac-102).
 const POSITIONS = {
-  internal_heat_pump: [[10,30,420],[44,245,188],[11,262,540],['coil_33',30,140],['holding_302',30,186],[130,425,218],[127,425,264],[124,425,310],[125,425,356],
+  internal_heat_pump: [[10,30,420],[44,245,188],
+    // Estimated flows beside their circulation pumps (ac-108): brine above the brine pump speed,
+    // condenser below the condenser pump speed.
+    ['derived_brine_flow',245,142],['derived_condenser_flow',940,504],[11,262,540],['coil_33',30,140],['holding_302',30,186],[130,425,218],[127,425,264],[124,425,310],[125,425,356],
     [5,250,0],[61,410,0],[319,250,46],[48,410,46],[413,250,92],[7,640,218],[128,640,264],
     [122,640,340],[129,640,386],[126,640,432],
     // Expansion valve opening centered right below the valve symbol at (630, 510) (ac-109).

@@ -13,6 +13,11 @@ from genesis_wp.capabilities import ABSENT
 from genesis_wp.capabilities import CAPABILITY_NAMES
 from genesis_wp.capabilities import CAPABILITY_RULES
 from genesis_wp.capabilities import PRESENT
+from genesis_wp.const import ATTR_INPUT_COMPRESSOR_SPEED_RPM
+from genesis_wp.derived import BRINE
+from genesis_wp.derived import CONDENSER
+from genesis_wp.derived import FlowEstimate
+from genesis_wp.derived import FlowEstimator
 from genesis_wp.const import GENESIS_17_MODELS
 from genesis_wp.const import KEY_ADDRESS
 from genesis_wp.const import KEY_REG_TYPE
@@ -240,6 +245,17 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     return unload_ok
 
 
+# DHF-REQ: genesis-wp-ha/requirement-26
+# Derived flow sensors by entity key; the library's derived module owns the estimate.
+FLOW_LOOPS = {"condenser_flow": CONDENSER, "brine_flow": BRINE}
+
+
+def flow_registers(loop) -> list[str]:
+    """The registers a loop's flow estimator reads."""
+    return [r for r in (loop.heat_in, loop.heat_out, loop.warm, loop.cold, loop.pump,
+                        ATTR_INPUT_COMPRESSOR_SPEED_RPM) if r]
+
+
 class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
     """Fetches the registers the entities of one heat pump subscribed to."""
 
@@ -268,6 +284,17 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         )
         self.evidence = capability_evidence(self.kind)
         self.registerAttribute(self.evidence)
+        # DHF-REQ: genesis-wp-ha/requirement-26
+        # One flow estimator per loop for the entry's lifetime: it learns its pump-speed
+        # calibration across windows. Only loops whose registers this model has get one.
+        self.flow_clock = time.monotonic
+        self.flow_estimators = {
+            key: FlowEstimator(loop) for key, loop in FLOW_LOOPS.items()
+            if all(REGISTERS[r][self.kind] for r in flow_registers(loop))
+        }
+        self.flows: dict[str, FlowEstimate] = {}
+        # Read the estimators' inputs every update, whether or not their own entities are enabled.
+        self.registerAttribute(sorted({r for e in self.flow_estimators.values() for r in flow_registers(e.loop)}))
 
         super().__init__(
             hass,
@@ -297,7 +324,21 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         )
         self._check_capabilities()
         self._store_seen()
+        self._estimate_flows(data)
         return data
+
+    def _estimate_flows(self, data):
+        """Feed each loop's estimator; registers not read this update count as missing, never as 0."""
+        if not self.flow_estimators:
+            return
+        now = self.flow_clock()
+        unread = self.thermia.unread
+        read = {r: v for r, v in data.items() if r not in unread}
+        for key, estimator in self.flow_estimators.items():
+            estimate = estimator.add(now, read)
+            self.flows[key] = estimate
+            _LOGGER.debug("%s: %s L/min (%s, calibration %s L/min per %%)", key, estimate.value,
+                          estimate.source, estimate.calibration)
 
     def freeze_capabilities(self):
         """Fix the capability states the entities are created for; absent ones gate theirs out."""

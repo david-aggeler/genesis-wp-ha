@@ -12,6 +12,7 @@ from genesis_wp.const import REGISTERS
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.sensor import SensorStateClass
+from homeassistant.const import UnitOfVolumeFlowRate
 
 from .register_entity import RegisterAnchor
 
@@ -68,6 +69,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             sensors.append(ThermiaGenericSensor(coordinator, register))
         elif spec[KEY_REG_TYPE] == REG_HOLDING:
             sensors.append(ThermiaSettingSensor(coordinator, register))
+    sensors.extend(FlowSensor(coordinator, key) for key in coordinator.flow_estimators)
     async_add_entities(sensors, False)
 
 
@@ -254,3 +256,62 @@ class ThermiaSettingSensor(RegisterSensor):
     def native_value(self):
         """Return the state."""
         return self.coordinator.data.get(self.kind)
+
+
+# DHF-REQ: genesis-wp-ha/requirement-26
+FLOW_NAMES = {"condenser_flow": "Condenser flow", "brine_flow": "Brine flow"}
+
+
+class FlowSensor(SensorEntity):
+    """A loop's estimated flow from the library's FlowEstimator held by the coordinator.
+
+    Unknown while the estimator has no value (no calculated window and no calibration yet),
+    never 0. The frontend anchor is ``derived_<key>``, alongside the register entities.
+    """
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_device_class = SensorDeviceClass.VOLUME_FLOW_RATE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = UnitOfVolumeFlowRate.LITERS_PER_MINUTE
+    _attr_suggested_display_precision = 1
+    _attr_entity_registry_enabled_default = True
+    _unrecorded_attributes = frozenset({"register", "calibration"})
+
+    def __init__(self, coordinator, key):
+        """Initialize; the sensor sits on the heat pump's internal device with the loop's pump."""
+        self.coordinator = coordinator
+        self.key = key
+        self._attr_name = FLOW_NAMES[key]
+        self._attr_unique_id = f"{coordinator.entry_id}_derived_{key}"
+        loop = coordinator.flow_estimators[key].loop
+        self._attr_device_info = coordinator.device_info_for(loop.pump)
+
+    @property
+    def capability_attributes(self):
+        """Frontend anchor, present even while the state is unknown."""
+        return {**(super().capability_attributes or {}), "register": f"derived_{self.key}"}
+
+    @property
+    def available(self):
+        """Unavailable only when the last update failed; no estimate yet is unknown, not unavailable."""
+        return self.coordinator.last_update_success
+
+    @property
+    def native_value(self):
+        """The estimated flow [L/min], or None."""
+        estimate = self.coordinator.flows.get(self.key)
+        return None if estimate is None else estimate.value
+
+    @property
+    def extra_state_attributes(self):
+        """How the value was obtained and the learned calibration [L/min per %]."""
+        estimate = self.coordinator.flows.get(self.key)
+        if estimate is None:
+            return {"source": "unknown", "calibration": None}
+        return {"source": estimate.source, "calibration": estimate.calibration}
+
+    async def async_added_to_hass(self):
+        """Follow coordinator updates."""
+        await super().async_added_to_hass()
+        self.async_on_remove(self.coordinator.async_add_listener(self.async_write_ha_state))

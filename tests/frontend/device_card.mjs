@@ -370,6 +370,7 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
 }
 // DHF-TEST: genesis-wp-ha/requirement-24 genesis-wp-ha/ac-92 genesis-wp-ha/ac-93 genesis-wp-ha/ac-94 genesis-wp-ha/ac-95 genesis-wp-ha/ac-96
 // DHF-TEST: genesis-wp-ha/ac-102 genesis-wp-ha/ac-103 genesis-wp-ha/ac-104 genesis-wp-ha/ac-105 genesis-wp-ha/ac-109
+// DHF-TEST: genesis-wp-ha/requirement-26 genesis-wp-ha/ac-108
 {
   const reg = r => typeof r === 'number' ? `input_${r}` : r;
   const idOf = r => Object.keys(hass.states).find(id => hass.states[id].attributes.register === reg(r));
@@ -457,6 +458,16 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     const t31 = cool.states[idOf(41)];
     const celsius = Number(t31.state);
     if (Number.isFinite(celsius)) assert.match(tag, /stroke="#[0-9a-f]{6}" stroke-opacity="1"/);
+  }
+  // ac-108: one estimated-flow chip beside each circulation pump; unknown shows the placeholder, not 0.
+  for (const [register, [px, py]] of Object.entries({derived_condenser_flow:[1040, 390], derived_brine_flow:[225, 200]})) {
+    const mine = chips.filter(c => c.register === register);
+    assert.equal(mine.length, 1, register);
+    const [x0, y0, x1, y1] = mine[0].box;
+    const dx = Math.max(x0 - px, 0, px - x1), dy = Math.max(y0 - py, 0, py - y1);
+    assert.ok(Math.hypot(dx, dy) <= 120, `${register} ${Math.hypot(dx, dy).toFixed(1)} units from its pump`);
+    const value = out.match(new RegExp(`data-register="${register}"[^>]*>[^]*?<span class="value">([^<]*)<`))[1];
+    if (['unknown','unavailable'].includes(heat.states[mine[0].id].state)) assert.doesNotMatch(value, /^0/, register);
   }
   // ac-109: the expansion valve opening sits directly under the valve symbol at (630, 510).
   {
