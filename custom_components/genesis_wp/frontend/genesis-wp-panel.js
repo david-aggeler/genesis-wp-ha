@@ -14,9 +14,14 @@ const KEYS={internal_heat_pump:[['input_54'],['input_9','heat'],['input_10','coo
  heating_system:[['input_12','heat'],['input_18']],additional_heating_circuits:[['input_40','heat'],['input_147']],
  buffer_tank:[['input_41','heat']],hot_water:[['input_15','heat'],['input_17']],cooling:[['input_106','cool']],
  pool:[['input_119','heat'],['input_120']],controller:[['input_13','cool'],['input_157'],['input_158']]};
-// Sections whose device card draws a process diagram.
-// Heating sections head with their heating curve instead; their drawings are sparse.
-const DIAGRAMS=['internal_heat_pump','hot_water','cooling','pool'];
+// DHF-REQ: genesis-wp-ha/requirement-25
+// Only the Heat pump tab draws: its one full-plant drawing (requirement-24). The heating tabs
+// head with their circuit's heating curve; every other tab is a plain parameter list.
+const DIAGRAMS=['internal_heat_pump'];
+// Per heating tab, the registers behind the curve's extra elements (genesis-wp interface_spec-6,
+// "Heating circuits HC1 and HC2"): supply limits, heating-season stop, measured supply.
+const CURVE_EXTRAS={heating_system:{min:'holding_4',max:'holding_3',stop:'holding_16',measured:'input_12'},
+ additional_heating_circuits:{min:'holding_107',max:'holding_108',stop:'holding_16',measured:'input_40'}};
 // Energy flow on the overview: ground -> heat pump -> buffer -> house. Each node is
 // [name, icon, readings as [register, tone, label key]]; each pipe after a node is colored by
 // the measured temperature of its register on the shared 0..45 C scale.
@@ -174,7 +179,9 @@ export class GenesisWpPanel extends HTMLElement {
   const keys=this._keys(KEYS[selected.category]||[],entities,true);
   const diagram=DIAGRAMS.includes(selected.category)?`<ha-card class="diagram"><div class="hint">${esc(this._t('scroll'))} \u2192</div><genesis-wp-device-card data-diagram="${selected.category}" data-entry="${esc(entry)}"></genesis-wp-device-card></ha-card>`:'';
   const head=`<ha-card class="keys"><h2>${esc(this._sectionName(selected))}</h2>${keys?`<div class="readings">${keys}</div>`:''}${this._state(own)}</ha-card>`;
-  const curveHtml=curves.length?`<div class="curves">${curves.map(e=>`<genesis-wp-heating-curve-card data-curve="${esc(e.id)}"></genesis-wp-heating-curve-card>`).join('')}</div>`:'';
+  // An extra whose entity does not exist (not fitted, disabled) gets no attribute and is not drawn.
+  const extras=Object.entries(CURVE_EXTRAS[selected.category]||{}).flatMap(([k,r])=>{const e=entities.find(e=>e.register===r);return e?[` data-${k}="${esc(e.id)}"`]:[];}).join('');
+  const curveHtml=curves.length?`<div class="curves">${curves.map(e=>`<genesis-wp-heating-curve-card data-curve="${esc(e.id)}"${extras}></genesis-wp-heating-curve-card>`).join('')}</div>`:'';
   const graphic=diagram||curveHtml;
   const groupHtml=groups.map(([name,items],i)=>{
    const content=`<div class="readings">${items.map(e=>this._row(e)).join('')}</div>`+(name==='alarms'&&!items.length?`<div class="state">${esc(this._t('alarms_ok',alarms.filter(e=>e.state.state==='off').length))}</div>`:'');
@@ -195,13 +202,17 @@ export class GenesisWpPanel extends HTMLElement {
   const result=patch(this.shadowRoot,`<style>${CSS}</style>${toolbar}${tabs}<main${selected&&DIAGRAMS.includes(selected.category)?' class="wide"':''}>${body}</main>`);
   if(result!=='unchanged')debug('render',this._section||'overview',result);
   const menu=this.shadowRoot.querySelector?.('ha-menu-button');if(menu){menu.hass=this._hass;menu.narrow=this._narrow;}
-  for(const card of this.shadowRoot.querySelectorAll('[data-curve]')){const key=card.dataset.curve;
-   if(card.__config!==key){card.__config=key;card.setConfig?.({entity:key,title:this._t('heating_curve')});}card.hass=this._hass;}
+  for(const card of this.shadowRoot.querySelectorAll('[data-curve]')){const config=this._curveConfig(card.dataset);const key=JSON.stringify(config);
+   if(card.__config!==key){card.__config=key;card.setConfig?.(config);}card.hass=this._hass;}
   for(const card of this.shadowRoot.querySelectorAll('[data-diagram]')){const key=card.dataset.diagram+'|'+card.dataset.entry;
    if(card.__config!==key){card.__config=key;card.setConfig?.({device:card.dataset.diagram,entry:card.dataset.entry,layout:'diagram'});}card.hass=this._hass;
    const box=card.parentNode;if(box?.classList){this._overflow(box);
     if(!box.__observed&&typeof ResizeObserver!=='undefined'){box.__observed=new ResizeObserver(()=>this._overflow(box));box.__observed.observe(box);}}}
  }
+ // DHF-REQ: genesis-wp-ha/requirement-25
+ // Curve card config from the element's data attributes: the curve entity plus the extras present.
+ _curveConfig(data){const config={entity:data.curve,title:this._t('heating_curve')};
+  for(const k of Object.keys(CURVE_EXTRAS.heating_system))if(data[k])config[k]=data[k];return config;}
  // The scroll hint shows whenever the diagram is wider than its card, whatever the viewport.
  // patch() resets the class to the template's; _render calls this again right after it.
  _overflow(box){const on=box.scrollWidth>box.clientWidth+1;if(box.classList.contains?.('overflow')!==on)box.classList.toggle('overflow',on);}

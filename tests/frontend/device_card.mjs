@@ -369,6 +369,7 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
   assert.match(drawing, /class="pump"[^>]*style="fill:var\(--card-background-color\)"/);
 }
 // DHF-TEST: genesis-wp-ha/requirement-24 genesis-wp-ha/ac-92 genesis-wp-ha/ac-93 genesis-wp-ha/ac-94 genesis-wp-ha/ac-95 genesis-wp-ha/ac-96
+// DHF-TEST: genesis-wp-ha/ac-102 genesis-wp-ha/ac-103 genesis-wp-ha/ac-104 genesis-wp-ha/ac-105 genesis-wp-ha/ac-109
 {
   const reg = r => typeof r === 'number' ? `input_${r}` : r;
   const idOf = r => Object.keys(hass.states).find(id => hass.states[id].attributes.register === reg(r));
@@ -394,7 +395,9 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
   // Half a unit of tolerance: positions round-trip through 2-decimal percentages.
   const hit = (a, b) => a[0] < b[2] - 0.5 && b[0] < a[2] - 0.5 && a[1] < b[3] - 0.5 && b[1] < a[3] - 0.5;
   // ac-93: one chip per value, beside its part, never on a pipe or another chip.
-  const near = {input_12:'t33', input_18:'t33', input_67:'t33', input_41:'buffer', input_68:'buffer', input_43:'mixer', input_40:'fr2', input_147:'fr2'};
+  const near = {input_12:'t33', input_18:'t33', input_67:'t33', input_41:'buffer', input_43:'mixer', input_40:'fr2', input_147:'fr2'};
+  // The charge target (input 68) is no longer drawn; its entity stays listed by the panel.
+  assert.equal(chips.filter(c => c.register === 'input_68').length, 0, 'no input_68 chip');
   for (const [register, partName] of Object.entries(near)) {
     const mine = chips.filter(c => c.register === register);
     assert.equal(mine.length, 1, register);
@@ -409,7 +412,8 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
   // ac-94: settings chips sit in their circuit's region.
   const between = (register, lo, hi) => { const c = chips.find(c => c.register === register); assert.ok(c, register); assert.ok(c.box[0] >= lo && c.box[2] <= hi, `${register} ${c.box}`); };
   for (const r of ['holding_5','holding_4','holding_3','coil_9']) between(r, 930, xs.t33 + 30);
-  for (const r of ['holding_107','holding_108','coil_11']) between(r, xs.tr9, xs.rooms - 60);
+  // HC2 settings run from TR9 to the end of the circuit, the rooms, at the right edge (ac-105).
+  for (const r of ['holding_107','holding_108','coil_11']) between(r, xs.tr9, vx + vw);
   // ac-95: passive cooling and TR9 port A idle while heating; HC2 from the buffer through port B active.
   const flow = name => out.match(new RegExp(`data-path="${name}" data-flow="(\\w+)"`))[1];
   assert.equal(flow('passive-port-a'), 'idle');
@@ -420,5 +424,54 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
   const t32 = idOf(40);
   card._activate({target:{closest:() => ({dataset:{entity:t32}})}, preventDefault(){}});
   assert.equal(events.length, 1); assert.equal(events[0].type, 'hass-more-info'); assert.deepEqual(events[0].detail, {entityId:t32});
+  // ac-102: chips stacked in one column keep at least 2 units between them.
+  chips.forEach((a, i) => { for (const b of chips.slice(i + 1)) {
+    if (!(a.box[0] < b.box[2] - 0.5 && b.box[0] < a.box[2] - 0.5)) continue;
+    const gap = Math.max(a.box[1], b.box[1]) - Math.min(a.box[3], b.box[3]);
+    assert.ok(gap >= 1.9, `${a.register} and ${b.register}: ${gap.toFixed(2)} units apart`);
+  } });
+  // ac-103 (gate proxy; the browser check at 1600 px is the system rung): the two labels that
+  // were cut off are now no longer than 11 characters in every language.
+  for (const register of ['input_5','input_39']) {
+    const label = out.match(new RegExp(`data-register="${register}"[^>]*><span class="label">([^<]*)<`))?.[1];
+    assert.ok(label && label.length <= 11, `${register}: ${label}`);
+    const de = html((() => { const c = new Card(); c.setConfig({device:'internal_heat_pump',entry:fixture.entry,layout:'diagram'}); c.hass = {...heat, language:'de'}; return c; })())
+      .match(new RegExp(`data-register="${register}"[^>]*><span class="label">([^<]*)<`))?.[1];
+    assert.ok(de && de.length <= 11, `${register} (de): ${de}`);
+  }
+  // ac-104: the room return to the passive-cooling exchanger, idle while heating.
+  const ret = out.match(/data-path="cooling-return"[^>]* d="([^"]+)"/)?.[1];
+  assert.ok(ret, 'cooling-return drawn');
+  const rp = [...ret.matchAll(/(-?\d+),(-?\d+)/g)].map(([, x, y]) => [Number(x), Number(y)]);
+  assert.ok(rp[0][0] >= 1320 && rp[0][0] <= 1360 && rp[0][1] === 560, `starts at the T31 port: ${rp[0]}`);
+  assert.ok(rp.at(-1)[0] >= 130 && rp.at(-1)[0] <= 240 && rp.at(-1)[1] === 10, `enters the cooling HX from the top: ${rp.at(-1)}`);
+  assert.ok(Math.min(...rp.map(([, y]) => y)) < 10, 'runs over the top of the plant');
+  assert.equal(flow('cooling-return'), 'idle');
+  assert.match(out.match(/<path data-path="cooling-return"[^>]*>/)[0], /stroke="currentColor" stroke-opacity="0.22"/);
+  if (idOf('coil_33')) {
+    const cool = {...hass, states:structuredClone(hass.states)};
+    cool.states[idOf(1)].state = 'Passive cooling'; cool.states[idOf('coil_33')].state = 'on';
+    const c = new Card(); c.setConfig({device:'internal_heat_pump',entry:fixture.entry,layout:'diagram'}); c.hass = cool;
+    const tag = html(c).match(/<path data-path="cooling-return"[^>]*>/)[0];
+    assert.match(tag, /data-flow="active"/);
+    const t31 = cool.states[idOf(41)];
+    const celsius = Number(t31.state);
+    if (Number.isFinite(celsius)) assert.match(tag, /stroke="#[0-9a-f]{6}" stroke-opacity="1"/);
+  }
+  // ac-109: the expansion valve opening sits directly under the valve symbol at (630, 510).
+  {
+    const c = chips.find(c => c.register === 'input_315');
+    if (c) {
+      assert.ok(Math.abs((c.box[0] + c.box[2]) / 2 - 630) <= 10, `input_315 center ${(c.box[0] + c.box[2]) / 2}`);
+      assert.ok(c.box[1] > 518 && c.box[1] - 518 <= 30, `input_315 top ${c.box[1]}`);
+    }
+  }
+  // ac-105: HC2 chips right of the TR12/13 mixer, inside the view, clear of the Rooms (HC2) box.
+  const rooms = [1750, 270, 1880, 470];
+  for (const r of ['holding_107','holding_108','coil_11','input_147','input_43','input_40']) {
+    const c = chips.find(c => c.register === r); if (!c) continue;
+    assert.ok(c.box[0] > xs.mixer, `${r} left edge ${c.box[0]} right of TR12/13 at ${xs.mixer}`);
+    assert.ok(!hit(c.box, rooms), `${r} on the Rooms box`);
+  }
 }
 process.exit(0);

@@ -18,6 +18,7 @@ from homeassistant.setup import async_setup_component
 from .helpers import setup_entry
 
 SWAP_CHECK = Path(__file__).parent / "frontend" / "registry_swap.mjs"
+EXTRAS_CHECK = Path(__file__).parent / "frontend" / "curve_extras.mjs"
 CARD = Path(__file__).parents[1] / "custom_components" / "genesis_wp" / "frontend" / "genesis-wp-heating-curve-card.js"
 
 
@@ -61,6 +62,22 @@ def test_card_is_defined_in_the_registry_home_assistant_swaps_in():
         "overlay": {"svgs": 1, "curves": 2, "dots": 14, "markers": 2, "legend": 2, "in_plot": True},
         "late_defined_immediately": True,
     }
+
+
+# DHF-REQ: genesis-wp-ha/requirement-25
+# DHF-TEST: genesis-wp-ha/requirement-25 genesis-wp-ha/ac-98 genesis-wp-ha/ac-99 genesis-wp-ha/ac-100
+def test_curve_limits_stop_and_measured_tick():
+    package = find_spec("nodejs_wheel")
+    node = None
+    if package is not None and package.origin is not None:
+        node = shutil.which("node", path=str(Path(package.origin).parent / "bin"))
+    if node is None:
+        node = shutil.which("node")
+    if node is None:
+        pytest.fail("Node.js is required; install requirements_test.txt")
+    out = subprocess.run([node, str(EXTRAS_CHECK), str(CARD)], capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert out.stdout.strip() == "ok", out.stdout
 
 
 def test_card_module_is_ascii():
