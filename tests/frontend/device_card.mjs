@@ -6,7 +6,7 @@ class Registry { constructor() { this.items = new Map(); } get(k) { return this.
 globalThis.window = globalThis;
 globalThis.HTMLElement = class { attachShadow() { this.shadowRoot = {innerHTML:''}; } };
 globalThis.customElements = new Registry();
-await import(pathToFileURL(process.argv[2]));
+const { temperatureColor } = await import(pathToFileURL(process.argv[2]));
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-65
 assert.equal(customElements.get('genesis-wp-device-card'), undefined);
 globalThis.customElements = new Registry();
@@ -431,6 +431,30 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     const gap = Math.max(a.box[1], b.box[1]) - Math.min(a.box[3], b.box[3]);
     assert.ok(gap >= 1.9, `${a.register} and ${b.register}: ${gap.toFixed(2)} units apart`);
   } });
+  // issue-21 finding 2: chips side by side keep at least 2 units between them too.
+  chips.forEach((a, i) => { for (const b of chips.slice(i + 1)) {
+    if (!(a.box[1] < b.box[3] - 0.5 && b.box[1] < a.box[3] - 0.5)) continue;
+    const gap = Math.max(a.box[0], b.box[0]) - Math.min(a.box[2], b.box[2]);
+    assert.ok(gap >= 1.9, `${a.register} and ${b.register}: ${gap.toFixed(2)} units apart side by side`);
+  } });
+  // issue-21: T31 reads the tank-bottom water, so its chip sits on the buffer tank (1160..1320, 330..580).
+  {
+    const t31 = chips.find(c => c.register === 'input_41');
+    assert.ok(t31 && t31.box[0] >= 1160 && t31.box[2] <= 1320 && t31.box[1] >= 330 && t31.box[3] <= 580, `T31 chip on the tank: ${t31?.box}`);
+  }
+  // issue-21: a pipe without a sensor draws neutral even while active, never a guessed color; the
+  // return into the condenser is colored by condenser in (input 8).
+  for (const name of ['room-return', 'bypass']) {
+    const tag = out.match(new RegExp(`<path data-path="${name}"[^>]*>`))?.[0];
+    assert.ok(tag, name);
+    assert.match(tag, /data-flow="active"/, name);
+    assert.match(tag, /stroke="currentColor" stroke-opacity="1"/, name);
+  }
+  {
+    const t8 = heat.states[idOf(8)], c8 = Number(t8?.state);
+    const tag = out.match(/<path data-path="buffer-return"[^>]*>/)[0];
+    if (Number.isFinite(c8)) assert.match(tag, new RegExp(`stroke="${temperatureColor(c8)}"`));
+  }
   // ac-103 (gate proxy; the browser check at 1600 px is the system rung): the two labels that
   // were cut off are now no longer than 11 characters in every language.
   for (const register of ['input_5','input_39']) {
@@ -455,9 +479,8 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     const c = new Card(); c.setConfig({device:'internal_heat_pump',entry:fixture.entry,layout:'diagram'}); c.hass = cool;
     const tag = html(c).match(/<path data-path="cooling-return"[^>]*>/)[0];
     assert.match(tag, /data-flow="active"/);
-    const t31 = cool.states[idOf(41)];
-    const celsius = Number(t31.state);
-    if (Number.isFinite(celsius)) assert.match(tag, /stroke="#[0-9a-f]{6}" stroke-opacity="1"/);
+    // No sensor on the room return (issue-21): active, but neutral rather than T31's color.
+    assert.match(tag, /stroke="currentColor" stroke-opacity="1"/);
   }
   // ac-108: one estimated-flow chip beside each circulation pump; unknown shows the placeholder, not 0.
   for (const [register, [px, py]] of Object.entries({derived_condenser_flow:[1040, 390], derived_brine_flow:[225, 200]})) {
@@ -483,6 +506,29 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     const c = chips.find(c => c.register === r); if (!c) continue;
     assert.ok(c.box[0] > xs.mixer, `${r} left edge ${c.box[0]} right of TR12/13 at ${xs.mixer}`);
     assert.ok(!hit(c.box, rooms), `${r} on the Rooms box`);
+  }
+  // issue-21 finding 4: chip values go through Home Assistant's formatter, which applies the
+  // entity's display precision. Independent oracle: the formatter below rounds to the registry's
+  // display_precision; the raw 15-decimal state must not reach the chip.
+  {
+    const id = idOf('derived_condenser_flow');
+    assert.ok(id, 'derived_condenser_flow entity');
+    const st = {...hass, states:structuredClone(heat.states), entities:{...hass.entities, [id]:{...hass.entities[id], display_precision:1}}};
+    st.states[id].state = '9.829977359887123';
+    st.formatEntityState = s => {
+      const e = Object.entries(st.states).find(([, v]) => v === s)?.[0];
+      const p = st.entities[e]?.display_precision;
+      const n = Number(s.state);
+      return `${p === undefined || !Number.isFinite(n) ? s.state : n.toFixed(p)} ${s.attributes.unit_of_measurement || ''}`.trim();
+    };
+    const c = new Card(); c.setConfig({device:'internal_heat_pump',entry:fixture.entry,layout:'diagram'}); c.hass = st;
+    const value = html(c).match(new RegExp(`data-register="derived_condenser_flow"[^>]*>[^]*?<span class="value">([^<]*)<`))[1];
+    assert.equal(value, '9.8 L/min');
+    // Unknown keeps the localized placeholder; a formatter that throws falls back to the raw state.
+    st.states[id].state = 'unknown'; c.hass = st;
+    assert.equal(html(c).match(new RegExp(`data-register="derived_condenser_flow"[^>]*>[^]*?<span class="value">([^<]*)<`))[1], 'Unknown');
+    st.states[id].state = '9.5'; st.formatEntityState = () => { throw new Error('x'); }; c.hass = st;
+    assert.equal(html(c).match(new RegExp(`data-register="derived_condenser_flow"[^>]*>[^]*?<span class="value">([^<]*)<`))[1], '9.5 L/min');
   }
 }
 process.exit(0);
