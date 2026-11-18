@@ -108,20 +108,22 @@ const PARTS = {
     [['coil_33','holding_302'],part('passive_hx',185,rect(130,10,110,100,'Cooling HX')+'<path d="M200,60 C200,38 225,38 225,60" fill="none" stroke="currentColor"/><path d="M145,50 L175,62 L145,74 L175,86 L145,98" fill="none" stroke="currentColor" stroke-opacity="0.4"/>')],
     // Heating circuit 1 -> buffer tank -> heating circuit 2, in plant order.
     [[67],heater(1040,290)],
-    [[12,18],part('t33',1220,'<circle cx="1220" cy="290" r="6" fill="currentColor"/><text x="1228" y="318">either way</text>')+'<text x="940" y="48">Heating circuit 1</text>'],
+    [[12,18],part('t33',1220,'<text x="1228" y="318">either way</text>')+'<text x="940" y="48">Heating circuit 1</text>'],
     [[41,68],part('buffer',1240,rect(1160,330,160,250,'Buffer tank'))],
     [[40,43],part('tr9',1420,valve3(1420,290,'up')+'<text x="1412" y="320" text-anchor="end">TR9</text>')+'<text x="1565" y="44">Heating circuit 2</text>'],
     [[43],part('mixer',1540,valve3(1540,290,'down')+'<text x="1528" y="320" text-anchor="end">TR12/13</text>')],
     [[40],part('fr2',1660,pump(1660,290,'FR2','right','below'))],
     [[40,147],part('rooms',1815,rect(1750,270,130,200,'Rooms (HC2)'))]],
   buffer_tank: [[[41,68],rect(1120,240,150,400,'Buffer tank')]],
-  heating_system: [[[12,18],'<circle cx="1160" cy="200" r="7" fill="currentColor"/><text x="960" y="250">Supply T-piece</text>']],
+  heating_system: [[[12,18],'<text x="960" y="250">Supply T-piece</text>']],
   additional_heating_circuits: [[[40,43],valve(1420,200,'TR9 A/B')+valve(1470,280,'TR12/13')+pump(1470,340,'FR2')+rect(1425,440,125,120,'Rooms / HC2')],
     [['coil_33','holding_302'],rect(1280,-126,100,98,'HX 24')]],
 };
 // [path id, temperature register, flow group, path geometry, phase dash]
 // The register may be [shown when, colored by]: a pipe without a sensor on it is drawn while its
 // part exists, colored by null, so it stays neutral (issue-21, never a guessed temperature).
+// A third element, a label, marks an owner-chosen estimate: the pipe takes that sensor's color,
+// carries data-estimated and says "estimated from <label>" on hover (change_request-50).
 const PIPES = {
   hot_water: [['charging',9,'hot_water','M10,80 L390,80 L390,160'],
     ['tank-top',15,'hot_water','M390,160 L570,160'],
@@ -150,16 +152,19 @@ const PIPES = {
     // Water side: supply out and return in run straight and level through the condenser wall.
     ['condenser-out',9,'compressor','M920,290 L1220,290'],
     ['condenser-in',8,'compressor','M1100,390 L920,390'],
-    // Buffer: either-way leg at the T33 T-piece, return from the bottom to the condenser pump.
+    // Buffer: either-way leg at the T33 T-piece. The two cold ports sit at the same height on
+    // opposite walls (owner, change_request-50): the return to the condenser pump leaves the left
+    // wall level with the room return entering the right wall.
     ['either-way',12,'buffer','M1220,290 L1220,330'],
-    ['buffer-return',8,'buffer','M1240,580 L1240,610 L1100,610 L1100,390'],
+    ['buffer-return',8,'buffer','M1160,560 L1100,560 L1100,390'],
     // Heating circuit 2 draws from the buffer top through TR9 port B. The room return, its bypass to
     // TR12/13 and its branch to the passive-cooling exchanger carry no sensor: T31 (input 41) sits in
-    // a tank wall sleeve and reads the tank-bottom water, not the return (issue-21).
+    // a tank wall sleeve and reads the tank-bottom water, not the return (issue-21). The owner chose
+    // T31's color as an estimate for the room return only (change_request-50).
     ['hc2-port-b',12,'hc2','M1220,290 L1408,290'],
     ['tr9-mixer',12,'rooms','M1432,290 L1528,290'],
     ['hc2-supply',40,'rooms','M1552,290 L1750,290'],
-    ['room-return',[41,null],'rooms','M1815,470 L1815,560 L1320,560'],
+    ['room-return',[41,41,'T31'],'rooms','M1815,470 L1815,560 L1320,560'],
     ['bypass',[41,null],'rooms','M1540,560 L1540,304'],
     ['passive-port-a',40,'passive','M160,10 L160,-25 L1420,-25 L1420,276'],
     // Passive cooling: the room return leaves at the T31 port, rises over the plant and enters
@@ -172,6 +177,12 @@ const PIPES = {
     ['passive-return',41,'passive','M1535,600 L1290,600 L1290,-10 L1347,-10 L1347,-28'],
     ['hc2-supply',40,'rooms','M1432,200 L1470,200 L1470,440'],
     ['hc2-return',41,'rooms','M1535,560 L1535,600 L1270,600 M1535,600 L1575,600 L1575,280 L1484,280']],
+};
+// Junction dots [x, y, r, [path ids]]: a dot takes the style of the first active path it joins,
+// the idle style when none is active, and is omitted when none of its paths is drawn (issue-22).
+const JUNCTIONS = {
+  internal_heat_pump: [[1220,290,6,['either-way','hc2-port-b','condenser-out']]],
+  heating_system: [[1160,200,7,['supply']]],
 };
 function active(group, mode, passiveEnabled) {
   const passive = mode === 'Passive cooling' && passiveEnabled;
@@ -305,14 +316,24 @@ export class GenesisWpDeviceCard extends HTMLElement {
       const drawn=PARTS[category].filter(([sensors])=>sensors.some(exists)).map(([,svg])=>svg);
       const front=svg=>svg.includes('class="pump"')||svg.includes('class="heater"');
       const parts=drawn.filter(svg=>!front(svg)).join(''), frontParts=drawn.filter(front).join('');
-      const pipes=PIPES[category].filter(([,r])=>exists(Array.isArray(r)?r[0]:r)).map(([id,r,group,d,dash])=>{
-        const sensor=Array.isArray(r)?r[1]:r;
+      const styles=new Map();
+      const pipesSvg=PIPES[category].filter(([,r])=>exists(Array.isArray(r)?r[0]:r)).map(([id,r,group,d,dash])=>{
+        const sensor=Array.isArray(r)?r[1]:r, estimate=Array.isArray(r)?r[2]:undefined;
         const state=sensor===null?null:byRegister.get(key(sensor))?.state;
         const celsius=state ? toCelsius(state.state, state.attributes.unit_of_measurement) : null;
         const flow=active(group,mode,passiveEnabled);
         const color=flow&&celsius!==null?temperatureColor(celsius):'currentColor';
-        return `<path data-path="${id}" data-flow="${flow?'active':'idle'}" d="${d}" fill="none" stroke="${color}" stroke-opacity="${flow?1:0.22}" stroke-width="5"${dash?` stroke-dasharray="${dash}"`:''}/>`;
+        styles.set(id,{flow,color,opacity:flow?1:0.22});
+        const estimated=estimate&&flow&&celsius!==null;
+        return `<path data-path="${id}" data-flow="${flow?'active':'idle'}"${estimated?` data-estimated="${key(sensor)}"`:''} d="${d}" fill="none" stroke="${color}" stroke-opacity="${flow?1:0.22}" stroke-width="5"${dash?` stroke-dasharray="${dash}"`:''}>${estimated?`<title>estimated from ${estimate}</title>`:''}</path>`;
       }).join('');
+      const junctions=(JUNCTIONS[category]||[]).map(([x,y,r,ids])=>{
+        const joined=ids.map(id=>styles.get(id)).filter(Boolean);
+        if(!joined.length) return '';
+        const s=joined.find(j=>j.flow)||{flow:false,color:'currentColor',opacity:0.22};
+        return `<circle class="junction" data-junction="${ids[0]}" data-flow="${s.flow?'active':'idle'}" cx="${x}" cy="${y}" r="${r}" fill="${s.color}" fill-opacity="${s.opacity}"/>`;
+      }).join('');
+      const pipes=pipesSvg+junctions;
       const positioned=new Set();
       const diagram=this._config.layout==='diagram';
       const [vx,vy,vw,vh]=VIEWS[category].split(' ').map(Number);
