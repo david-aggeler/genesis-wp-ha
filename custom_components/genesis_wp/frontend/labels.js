@@ -4,10 +4,10 @@
 // English is the fallback for every language.
 const LABELS = {
   en: {
-    input_1: 'Mode', input_5: 'Compressor rpm', input_7: 'Discharge', input_8: 'Condenser in',
+    input_1: 'Mode', input_5: 'Speed', input_7: 'Discharge', input_8: 'Condenser in',
     input_9: 'Condenser out', input_10: 'From ground', input_11: 'To ground', input_12: 'Circuit 1 supply',
     input_13: 'Outdoor', input_15: 'Top', input_16: 'Lower', input_17: 'Weighted', input_18: 'Circuit 1 target',
-    input_39: 'Condenser pump', input_40: 'Circuit 2 supply', input_41: 'Tank', input_43: 'Mix valve',
+    input_39: 'Cond. pump', input_40: 'Circuit 2 supply', input_41: 'Tank', input_43: 'Mix valve',
     input_44: 'Brine pump', input_45: 'Hot gas', input_47: 'Valve', input_48: 'Run hours',
     input_54: 'Compressor', input_61: 'Gear', input_67: 'Heater step', input_68: 'Charge target',
     input_92: 'Mix valve', input_94: 'Mix valve', input_103: 'Return', input_104: 'Tank',
@@ -24,10 +24,10 @@ const LABELS = {
     coil_33: 'Passive cooling', holding_302: 'Passive target',
   },
   de: {
-    input_1: 'Betriebsart', input_5: 'Verdichter U/min', input_7: 'Heissgas', input_8: 'Kondensator ein',
+    input_1: 'Betriebsart', input_5: 'Drehzahl', input_7: 'Heissgas', input_8: 'Kondensator ein',
     input_9: 'Kondensator aus', input_10: 'Von Erdsonde', input_11: 'Zur Erdsonde', input_12: 'Vorlauf Kreis 1',
     input_13: 'Aussen', input_15: 'Oben', input_16: 'Unten', input_17: 'Gewichtet', input_18: 'Soll Kreis 1',
-    input_39: 'Kondensatorpumpe', input_40: 'Vorlauf Kreis 2', input_41: 'Speicher', input_43: 'Mischventil',
+    input_39: 'Kond.-Pumpe', input_40: 'Vorlauf Kreis 2', input_41: 'Speicher', input_43: 'Mischventil',
     input_44: 'Solepumpe', input_45: 'Heissgas-Vorlauf', input_47: 'Umschaltventil', input_48: 'Betriebsstunden',
     input_54: 'Verdichter', input_61: 'Stufe', input_67: 'Heizstab-Stufe', input_68: 'Ladesoll',
     input_92: 'Mischventil', input_94: 'Mischventil', input_103: 'R\u00fccklauf', input_104: 'Speicher',

@@ -35,16 +35,20 @@ export function toCelsius(raw, unit) {
   return convert(value);
 }
 // [register, x, y] tag anchors in the source drawing's coordinate system.
+// Diagram rows are 46 units apart: a 44-unit chip plus a 2-unit gap (requirement-24, ac-102).
 const POSITIONS = {
-  internal_heat_pump: [[10,30,420],[44,245,188],[11,262,540],['coil_33',30,140],['holding_302',30,184],[130,425,218],[127,425,262],[124,425,306],[125,425,350],
-    [5,250,0],[61,410,0],[319,250,44],[48,410,44],[413,250,88],[7,640,218],[128,640,262],
-    [122,640,340],[129,640,384],[126,640,428],[315,430,525],[9,940,230],[67,965,306],[8,940,412],[39,940,456],
+  internal_heat_pump: [[10,30,420],[44,245,188],[11,262,540],['coil_33',30,140],['holding_302',30,186],[130,425,218],[127,425,264],[124,425,310],[125,425,356],
+    [5,250,0],[61,410,0],[319,250,46],[48,410,46],[413,250,92],[7,640,218],[128,640,264],
+    [122,640,340],[129,640,386],[126,640,432],
+    // Expansion valve opening centered right below the valve symbol at (630, 510) (ac-109).
+    [315,555,530],[9,940,230],[67,965,306],[8,940,412],[39,940,458],
     // Heating circuit 1: settings at the top of the circuit, T33 and its set point by the T-piece.
-    ['holding_5',940,60],['coil_9',1090,60],['holding_4',940,104],['holding_3',1090,104],[18,1095,186],[12,1095,230],
-    // Buffer tank: charge set point inside, T31 at the lowest port.
-    [68,1165,400],[41,1330,500],
-    // Heating circuit 2: settings at the top, mixer by TR12/13, set point and T32 after FR2.
-    ['holding_107',1430,60],['holding_108',1585,60],['coil_11',1430,104],[43,1430,230],[147,1585,186],[40,1585,230]],
+    ['holding_5',940,60],['coil_9',1090,60],['holding_4',940,106],['holding_3',1090,106],[18,1095,186],[12,1095,232],
+    // Buffer tank: T31 at the lowest port, right of the cooling return riser. Input 68 (charge
+    // target) has no chip: the owner dropped it from the drawing (ac-93).
+    [41,1360,500],
+    // Heating circuit 2: right of TR12/13, above FR2 and the rooms (ac-105).
+    ['holding_107',1565,56],['holding_108',1735,56],['coil_11',1565,102],[43,1565,216],[147,1735,170],[40,1735,216]],
   buffer_tank: [[12,1130,150],[18,1130,104],[41,1130,500],[68,1130,546]],
   heating_system: [[12,1130,150],[18,1130,104],[13,830,-120],[9,960,120]],
   hot_water: [[9,10,20],[47,180,20],[15,410,130],[16,410,330],[17,410,380],[45,10,200],[117,10,430],[118,220,430]],
@@ -101,7 +105,7 @@ const PARTS = {
     [[67],heater(1040,290)],
     [[12,18],part('t33',1220,'<circle cx="1220" cy="290" r="6" fill="currentColor"/><text x="1228" y="318">either way</text>')+'<text x="940" y="48">Heating circuit 1</text>'],
     [[41,68],part('buffer',1240,rect(1160,330,160,250,'Buffer tank'))],
-    [[40,43],part('tr9',1420,valve3(1420,290,'up')+'<text x="1412" y="320" text-anchor="end">TR9</text>')+'<text x="1430" y="48">Heating circuit 2</text>'],
+    [[40,43],part('tr9',1420,valve3(1420,290,'up')+'<text x="1412" y="320" text-anchor="end">TR9</text>')+'<text x="1565" y="44">Heating circuit 2</text>'],
     [[43],part('mixer',1540,valve3(1540,290,'down')+'<text x="1528" y="320" text-anchor="end">TR12/13</text>')],
     [[40],part('fr2',1660,pump(1660,290,'FR2','right','below'))],
     [[40,147],part('rooms',1815,rect(1750,270,130,200,'Rooms (HC2)'))]],
@@ -148,7 +152,10 @@ const PIPES = {
     ['hc2-supply',40,'rooms','M1552,290 L1750,290'],
     ['room-return',41,'rooms','M1815,470 L1815,560 L1320,560'],
     ['bypass',41,'rooms','M1540,560 L1540,304'],
-    ['passive-port-a',40,'passive','M160,10 L160,-25 L1420,-25 L1420,276']],
+    ['passive-port-a',40,'passive','M160,10 L160,-25 L1420,-25 L1420,276'],
+    // Passive cooling: the room return leaves at the T31 port, rises over the plant and enters
+    // the cooling exchanger from the top (interface_spec-6, "room return to passive-cooling HX").
+    ['cooling-return',41,'passive','M1345,560 L1345,-10 L230,-10 L230,10']],
   buffer_tank: [['supply',12,'buffer','M1080,200 L1270,200 M1160,200 L1160,240'],['return',41,'buffer','M1270,600 L1270,620 L1120,620']],
   heating_system: [['condenser-out',9,'heating','M915,352 L915,200'],['supply',12,'heating','M915,200 L1270,200 M1160,200 L1160,240']],
   additional_heating_circuits: [['buffer-to-mixer',41,'hc2','M1260,200 L1408,200'],

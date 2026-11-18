@@ -195,3 +195,44 @@ p.route={path:'/genesis-wp'}; assert.match(html(),/data-tile=/);
   {const classes=new Set();const box={scrollWidth:976,clientWidth:710,classList:{toggle:(c,on)=>on?classes.add(c):classes.delete(c)}};
    p._overflow(box);assert.ok(classes.has('overflow'));box.clientWidth=1200;p._overflow(box);assert.ok(!classes.has('overflow'));}
 }
+// DHF-TEST: genesis-wp-ha/requirement-25 genesis-wp-ha/ac-97
+{
+  for(const c of order.filter(device)) {
+    p._activate({target:{closest:()=>({dataset:{tab:c}})}});
+    const drawings=(html().match(/<genesis-wp-device-card/g)||[]).length;
+    assert.equal(drawings,c==='internal_heat_pump'?1:0,c);
+    if(c!=='internal_heat_pump') assert.doesNotMatch(html(),/<main class="wide">/,c);
+  }
+}
+// DHF-TEST: genesis-wp-ha/requirement-25 genesis-wp-ha/ac-98 genesis-wp-ha/ac-99 genesis-wp-ha/ac-100 genesis-wp-ha/ac-101
+{
+  const extras={heating_system:{min:'holding_4',max:'holding_3',stop:'holding_16',measured:'input_12'},
+   additional_heating_circuits:{min:'holding_107',max:'holding_108',stop:'holding_16',measured:'input_40'}};
+  for(const [c,want] of Object.entries(extras)) {
+    if(!device(c)) continue;
+    p._activate({target:{closest:()=>({dataset:{tab:c}})}});
+    const card=html().match(/<genesis-wp-heating-curve-card[^>]*>/)?.[0];
+    assert.ok(card,c);
+    for(const [k,r] of Object.entries(want)) {
+      const id=entity(r);
+      if(id) assert.match(card,new RegExp(`data-${k}="${id.replaceAll('.','\\.')}"`),c+': '+k);
+      else assert.doesNotMatch(card,new RegExp(`data-${k}=`),c+': '+k+' absent');
+    }
+    // The config handed to the curve card carries exactly the extras that exist (ac-100).
+    const data=Object.fromEntries([...card.matchAll(/data-(\w+)="([^"]+)"/g)].map(m=>[m[1],m[2]]));
+    const config=p._curveConfig(data);
+    assert.equal(config.entity,data.curve);
+    for(const k of Object.keys(want)) assert.equal(config[k],entity(want[k]),c+': config '+k);
+    // ac-101: parameters after the curve, no curve-point rows.
+    const body=html();
+    assert.ok(body.indexOf('<genesis-wp-heating-curve-card')<body.indexOf('>Measurements<'),c);
+    assert.doesNotMatch(body.split('<div class="groups">')[1],/curve at [^<]* outdoor/i,c);
+  }
+  // A missing extra entity: no attribute, so the card config has no key for it.
+  const without={...hass,states:{...hass.states}};
+  const max=entity('holding_3'); if(max){delete without.states[max]; p.hass=without;
+   p._activate({target:{closest:()=>({dataset:{tab:'heating_system'}})}});
+   assert.doesNotMatch(html().match(/<genesis-wp-heating-curve-card[^>]*>/)[0],/data-max=/);
+   assert.equal(p._curveConfig({curve:'sensor.x'}).max,undefined);
+   p.hass=hass;}
+}
