@@ -21,9 +21,9 @@ from .helpers import real_form
 from .test_capabilities import candidates
 
 
-async def detected(start_emulator, profile) -> tuple:
+async def detected(start_emulator, profile, **options) -> tuple:
     """The emulator and the capability states the library detects on it."""
-    emu = await start_emulator(profile)
+    emu = await start_emulator(profile, **options)
     return emu, await read_capabilities(entry_data(emu))
 
 
@@ -89,7 +89,8 @@ async def test_without_opting_in_the_entry_is_created_directly(hass, start_emula
 # DHF-TEST: genesis-wp-ha/ac-55
 @pytest.mark.parametrize("profile", PROFILES)
 async def test_setup_choices_are_stored_as_options_and_gate_entities(hass, start_emulator, profile):
-    emu, _ = await detected(start_emulator, profile)
+    # Hot gas recovery fitted, so the modules step offers it and the owner can declare it not installed.
+    emu, _ = await detected(start_emulator, profile, capabilities={"hot_gas_recovery": True})
     form = await modules_form(hass, emu)
     result = await hass.config_entries.flow.async_configure(
         form["flow_id"], {"hot_gas_recovery": "not_installed", "passive_cooling": "installed"}

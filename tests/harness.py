@@ -19,7 +19,8 @@ UNIT = 1
 WPE_I_KIND = "stiebel_wpe_i_07_1"
 
 # Capabilities the library detects as absent on the 6.1.5 capture, the owner's plant (requirement-12).
-ABSENT_615 = ("hot_water", "pool", "active_cooling", "room_sensor", "electric_meter")
+# Hot gas recovery reads input 45 = not fitted since genesis-wp 41d57be (change_request-52).
+ABSENT_615 = ("hot_water", "pool", "active_cooling", "room_sensor", "electric_meter", "hot_gas_recovery")
 _RULES = {rule.name: rule for rule in CAPABILITY_RULES}
 
 
