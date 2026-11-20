@@ -236,3 +236,4 @@ p.route={path:'/genesis-wp'}; assert.match(html(),/data-tile=/);
    assert.equal(p._curveConfig({curve:'sensor.x'}).max,undefined);
    p.hass=hass;}
 }
+console.log("HARNESS-COMPLETE");

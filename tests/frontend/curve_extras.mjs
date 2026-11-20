@@ -136,4 +136,4 @@ const close = (a, b, label) => assert.ok(Math.abs(a - b) < 1e-6, `${label}: ${a}
   }
 }
 console.log("ok");
-process.exit(0);
+console.log("HARNESS-COMPLETE");

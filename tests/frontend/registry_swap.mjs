@@ -115,4 +115,4 @@ for (const helper of ['register-card.js', 'patch.js'])
 await import(pathToFileURL(copy).href);
 result.late_defined_immediately = Boolean(late.get(TAG));
 console.log(JSON.stringify(result));
-process.exit(0);
+console.log("HARNESS-COMPLETE");

@@ -1,30 +1,19 @@
 """Device card public delivery and emulator-backed rendering contract."""
 import json
 from pathlib import Path
-import shutil
-import subprocess
-from importlib.util import find_spec
 
 from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, UrlManager
 from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.setup import async_setup_component
 
 from .helpers import setup_entry
+from .node_harness import run_node_harness
 from .harness import PROFILE_615
 from .test_devices import register_entities, sub_devices
 
 ROOT = Path(__file__).parents[1]
 CARD = ROOT / "custom_components/genesis_wp/frontend/genesis-wp-device-card.js"
 URL = "/genesis_wp/genesis-wp-device-card.js"
-
-
-def run_render(fixture):
-    package = find_spec("nodejs_wheel")
-    node = shutil.which("node", path=str(Path(package.origin).parent / "bin")) if package else shutil.which("node")
-    assert node, "Node.js is required"
-    result = subprocess.run([node, str(ROOT / "tests/frontend/device_card.mjs"), str(CARD)],
-                            input=json.dumps(fixture), capture_output=True, text=True, timeout=30)
-    assert result.returncode == 0, result.stdout + result.stderr
 
 
 # DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-65
@@ -76,10 +65,10 @@ async def test_register_anchors_and_render(hass, start_emulator):
         "entities": {e.entity_id: {"device_id": e.device_id, "disabled_by": e.disabled_by} for e in entities.values()},
         "devices": {d.id: {"identifiers": list(d.identifiers), "name": d.name} for d in [*dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id), *sub_devices(hass, entry).values()]},
     }
-    run_render(fixture)
-    package = find_spec("nodejs_wheel")
-    node = shutil.which("node", path=str(Path(package.origin).parent / "bin")) if package else shutil.which("node")
-    result = subprocess.run([node, str(ROOT / "tests/frontend/panel.mjs"),
-                             str(CARD.parent / "genesis-wp-panel.js")],
-                            input=json.dumps(fixture), capture_output=True, text=True, timeout=30)
-    assert result.returncode == 0, result.stdout + result.stderr
+    payload = json.dumps(fixture)
+    run_node_harness(ROOT / "tests/frontend/device_card.mjs", CARD, stdin=payload)
+    run_node_harness(
+        ROOT / "tests/frontend/panel.mjs",
+        CARD.parent / "genesis-wp-panel.js",
+        stdin=payload,
+    )
