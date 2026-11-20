@@ -45,15 +45,28 @@ const pipe = (card, id) => html(card).match(new RegExp(`<path[^>]*data-path="${i
     }
   }
 }
-// Independent register anchors for the full-plant drawing.
+// DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-67
+// Expected full-plant tag inventory, independent of the card's position table.
+const plantAnchors = [
+  // Heat pump and passive cooling
+  ...[10,11,130,127,124,125,5,61,48,7,128,122,129,126,9,8,39,44].map(address => `input_${address}`),
+  'derived_brine_flow', 'derived_condenser_flow', 'coil_33', 'holding_302',
+  // Controller and KSM
+  'input_315', 'input_319', 'input_67', 'input_413',
+  // HC1, buffer tank and HC2
+  'holding_5', 'coil_9', 'holding_4', 'holding_3', 'input_18', 'input_12', 'input_41',
+  'holding_107', 'holding_108', 'coil_11', 'input_43', 'input_147', 'input_40',
+];
 let card=render('internal_heat_pump');
-for (const address of [10,11,130,127,124,125,5,61,48,7,128,122,129,126,9,8,39,44,12,18,41,43,40,147]) {
-  const key=`input_${address}`;
+for (const key of plantAnchors) {
   const id=byRegister(key);
   assert.ok(id,key);
   const state=hass.states[id];
   const rendered=tag(card,key);
   assert.ok(rendered,key);
+  assert.ok(rendered.includes(`data-entity="${id}"`), key);
+  const diagram = html(card).match(/<svg[\s\S]*?<\/svg>/)?.[0];
+  assert.ok(diagram?.includes(rendered), `${key}: tag outside the drawing`);
   const expected=['unknown','unavailable'].includes(state.state)
     ? hass.localize('state.default.'+state.state)
     : [state.state,state.attributes.unit_of_measurement].filter(Boolean).join(' ');
@@ -87,12 +100,22 @@ hass.states[supply].attributes.unit_of_measurement='kW'; card.hass=hass;
 assert.match(pipe(card,'either-way'), /stroke="currentColor"/);
 hass.states[supply].attributes.unit_of_measurement=supplyUnit;
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-68
-for (const value of ['unavailable','unknown']) {
-  hass.states[supply].state=value; card.hass=hass;
-  assert.match(tag(card,'input_12'), new RegExp(value, 'i'));
-  assert.doesNotMatch(pipe(card,'either-way'), /stroke="#[a-f0-9]+"/);
-  assert.doesNotMatch(tag(card,'input_12').match(/class="value"[^>]*>(.*?)<\/text>/)[1], /[0-9]/);
+const localizedStates = {unavailable:'Measurement missing', unknown:'State undetermined'};
+const localize = hass.localize;
+hass.localize = key => ({
+  'state.default.unavailable': localizedStates.unavailable,
+  'state.default.unknown': localizedStates.unknown,
+})[key] ?? localize(key);
+for (const [state, expected] of Object.entries(localizedStates)) {
+  hass.states[supply].state = state;
+  card.hass = hass;
+  const value = tag(card,'input_12')?.match(/class="value"[^>]*>(.*?)<\/text>/)?.[1];
+  assert.equal(value, expected, state);
+  assert.doesNotMatch(value, /[0-9]/);
+  assert.match(pipe(card,'either-way'), /data-flow="active"/);
+  assert.match(pipe(card,'either-way'), /stroke="currentColor" stroke-opacity="1"/);
 }
+hass.localize = localize;
 hass.states[supply].state='26.26';
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-70
 hass.states[byRegister('input_40')].state='26.26';
