@@ -613,7 +613,7 @@ SENSOR_TYPES = {
         ATTR_LABEL: "Buffer Tank Temperature",
     },
     thermiaconst.ATTR_INPUT_MIX_VALVE_1_POSITION: {
-        ATTR_LABEL: "Mix Valve 1 Position",
+        ATTR_LABEL: "Mixer Signal",
     },
     thermiaconst.ATTR_INPUT_BRINE_CIRCULATION_PUMP_SPEED: {
         ATTR_LABEL: "Brine Circulation Pump Speed",
