@@ -3,12 +3,7 @@
 from __future__ import annotations
 
 import json
-from importlib.util import find_spec
-import shutil
-import subprocess
 from pathlib import Path
-
-import pytest
 
 from custom_components.genesis_wp.const import CARD_URL
 from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL
@@ -16,6 +11,7 @@ from homeassistant.components.frontend import UrlManager
 from homeassistant.setup import async_setup_component
 
 from .helpers import setup_entry
+from .node_harness import run_node_harness
 
 SWAP_CHECK = Path(__file__).parent / "frontend" / "registry_swap.mjs"
 EXTRAS_CHECK = Path(__file__).parent / "frontend" / "curve_extras.mjs"
@@ -39,16 +35,8 @@ async def test_card_module_is_served_and_registered(hass, hass_client, start_emu
 # DHF-REQ: genesis-wp-ha/requirement-11
 # DHF-TEST: genesis-wp-ha/requirement-11 genesis-wp-ha/ac-36 genesis-wp-ha/ac-37 genesis-wp-ha/ac-38
 def test_card_is_defined_in_the_registry_home_assistant_swaps_in():
-    package = find_spec("nodejs_wheel")
-    node = None
-    if package is not None and package.origin is not None:
-        node = shutil.which("node", path=str(Path(package.origin).parent / "bin"))
-    if node is None:
-        node = shutil.which("node")
-    if node is None:
-        pytest.fail("Node.js is required; install requirements_test.txt")
-    out = subprocess.run([node, str(SWAP_CHECK), str(CARD)], capture_output=True, text=True, check=True, timeout=30)
-    assert json.loads(out.stdout) == {
+    output = run_node_harness(SWAP_CHECK, CARD)
+    assert json.loads(output) == {
         "defined_before_hui_view": False,
         "defined_in_native": False,
         "defined_in_replacement": True,
@@ -67,17 +55,8 @@ def test_card_is_defined_in_the_registry_home_assistant_swaps_in():
 # DHF-REQ: genesis-wp-ha/requirement-25
 # DHF-TEST: genesis-wp-ha/requirement-25 genesis-wp-ha/ac-98 genesis-wp-ha/ac-99 genesis-wp-ha/ac-100
 def test_curve_limits_stop_and_measured_tick():
-    package = find_spec("nodejs_wheel")
-    node = None
-    if package is not None and package.origin is not None:
-        node = shutil.which("node", path=str(Path(package.origin).parent / "bin"))
-    if node is None:
-        node = shutil.which("node")
-    if node is None:
-        pytest.fail("Node.js is required; install requirements_test.txt")
-    out = subprocess.run([node, str(EXTRAS_CHECK), str(CARD)], capture_output=True, text=True, timeout=30)
-    assert out.returncode == 0, out.stdout + out.stderr
-    assert out.stdout.strip() == "ok", out.stdout
+    output = run_node_harness(EXTRAS_CHECK, CARD)
+    assert output.strip() == "ok", output
 
 
 def test_card_module_is_ascii():

@@ -592,4 +592,4 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     assert.equal(html(c).match(new RegExp(`data-register="derived_condenser_flow"[^>]*>[^]*?<span class="value">([^<]*)<`))[1], '9.5 L/min');
   }
 }
-process.exit(0);
+console.log("HARNESS-COMPLETE");
