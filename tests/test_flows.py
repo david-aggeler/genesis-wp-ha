@@ -10,8 +10,10 @@ from custom_components.genesis_wp.const import DOMAIN
 from genesis_wp.emulator import heating
 from genesis_wp.emulator.climate import BUCKETS, LICENSE, SOURCE, ClimateProfile
 from homeassistant.helpers import entity_registry as er
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .harness import PROFILE_615
+from .helpers import entry_data
 from .helpers import setup_entry
 
 KEYS = ("condenser_flow", "brine_flow")
@@ -77,3 +79,75 @@ async def test_one_estimator_per_loop_reaches_a_calculated_flow(hass, start_emul
         assert value == pytest.approx(configured[key], rel=0.05)
         assert state.attributes["calibration"] == estimator.calibration
         assert estimator.calibration is not None
+
+
+PUMPS = {"condenser_flow": "input_condenser_circulation_pump_speed", "brine_flow": "input_brine_circulation_pump_speed"}
+
+
+def storage_key(entry) -> str:
+    return f"{DOMAIN}.flow_calibration.{entry.entry_id}"
+
+
+async def calibrated_entry(hass, start_emulator):
+    """An entry whose estimators learned a calibration over more than one window."""
+    emu = await start_emulator(PROFILE_615, dynamics=True, climate=flat_climate(), start_time=START)
+    entry = await setup_entry(hass, emu)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator.flow_clock = lambda: emu.simulated_time.timestamp()
+    for _ in range(8):
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        emu.advance(60)
+    learned = {key: e.calibration for key, e in coordinator.flow_estimators.items()}
+    assert all(learned.values()), learned
+    return emu, entry, learned
+
+
+# DHF-REQ: genesis-wp-ha/requirement-26  DHF-TEST: genesis-wp-ha/ac-110
+async def test_restart_reports_a_flow_from_the_stored_calibration(hass, hass_storage, start_emulator):
+    emu, entry, learned = await calibrated_entry(hass, start_emulator)
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass_storage[storage_key(entry)]["data"] == learned  # written on unload, not only delayed
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    for key, entity_id in flow_entities(hass, entry).items():
+        state = hass.states.get(entity_id)
+        assert state.attributes["source"] == "pump_speed", key
+        assert state.attributes["calibration"] == learned[key]
+        expected = learned[key] * coordinator.data[PUMPS[key]]
+        assert float(state.state) == pytest.approx(expected), key
+
+
+# DHF-REQ: genesis-wp-ha/requirement-26  DHF-TEST: genesis-wp-ha/ac-110
+async def test_a_stored_calibration_the_library_rejects_is_dropped(hass, hass_storage, start_emulator):
+    emu = await start_emulator(PROFILE_615)
+    entry = MockConfigEntry(domain=DOMAIN, data=entry_data(emu))
+    hass_storage[storage_key(entry)] = {"version": 1, "key": storage_key(entry),
+                                        "data": {"condenser_flow": -1.0, "brine_flow": "x"}}
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    for entity_id in flow_entities(hass, entry).values():
+        state = hass.states.get(entity_id)
+        assert state.state == "unknown"
+        assert state.attributes["calibration"] is None
+
+
+# DHF-REQ: genesis-wp-ha/requirement-26  DHF-TEST: genesis-wp-ha/ac-111
+async def test_removing_the_entry_discards_its_calibration(hass, hass_storage, start_emulator):
+    emu, entry, _ = await calibrated_entry(hass, start_emulator)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert storage_key(entry) in hass_storage
+
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    assert storage_key(entry) not in hass_storage
+
+    added = await setup_entry(hass, emu)
+    for entity_id in flow_entities(hass, added).values():
+        assert hass.states.get(entity_id).state == "unknown"

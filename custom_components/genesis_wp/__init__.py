@@ -42,6 +42,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import ChildDeviceInfo
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.update_coordinator import UpdateFailed
@@ -202,7 +203,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             CONF_PORT: emulator.port,
             CONF_UNIT: emulator.profile.unit_id,
         }
-    coordinator = GenesisDataUpdateCoordinator(hass, entry, connection, emulator)
+    store = flow_calibration_store(hass, entry.entry_id)
+    calibrations = await store.async_load() or {}
+    coordinator = GenesisDataUpdateCoordinator(hass, entry, connection, emulator, store, calibrations)
     await coordinator.async_refresh()
 
     if not coordinator.last_update_success:
@@ -238,6 +241,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         coordinator = hass.data[DOMAIN].pop(entry.entry_id)
+        await coordinator.async_save_calibrations()
         await coordinator.async_close()
         if not hass.data[DOMAIN]:
             async_remove_panel(hass, "genesis-wp")
@@ -245,7 +249,36 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     return unload_ok
 
 
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry):
+    """Discard the entry's stored flow calibration: it is only valid for the plant it was learned on."""
+    # DHF-REQ: genesis-wp-ha/requirement-26  (ac-111)
+    await flow_calibration_store(hass, entry.entry_id).async_remove()
+
+
 # DHF-REQ: genesis-wp-ha/requirement-26
+# The learned pump-speed calibration per loop, kept across restarts (ac-110).
+FLOW_CALIBRATION_VERSION = 1
+FLOW_CALIBRATION_SAVE_DELAY = 300  # [s]
+
+
+def flow_calibration_store(hass: HomeAssistant, entry_id: str) -> Store:
+    """The entry's stored calibrations, ``{loop key: L/min per %}``."""
+    return Store(hass, FLOW_CALIBRATION_VERSION, f"{DOMAIN}.flow_calibration.{entry_id}")
+
+
+def seeded_estimator(key: str, loop, seed) -> FlowEstimator:
+    """A loop's estimator from a stored calibration; one the library rejects is dropped."""
+    if seed is None:
+        return FlowEstimator(loop)
+    try:
+        estimator = FlowEstimator(loop, calibration=seed)
+    except ValueError as error:
+        _LOGGER.warning("%s: stored flow calibration dropped (%s)", key, error)
+        return FlowEstimator(loop)
+    _LOGGER.debug("%s: flow estimator seeded with calibration %s L/min per %%", key, seed)
+    return estimator
+
+
 # Derived flow sensors by entity key; the library's derived module owns the estimate.
 FLOW_LOOPS = {"condenser_flow": CONDENSER, "brine_flow": BRINE}
 
@@ -259,8 +292,12 @@ def flow_registers(loop) -> list[str]:
 class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
     """Fetches the registers the entities of one heat pump subscribed to."""
 
-    def __init__(self, hass, entry: ConfigEntry, connection, emulator: Emulator | None = None):
-        """Initialize; ``connection`` holds host, port and unit, ``emulator`` is set for an emulated entry."""
+    def __init__(self, hass, entry: ConfigEntry, connection, emulator: Emulator | None = None,
+                 store: Store | None = None, calibrations: dict | None = None):
+        """Initialize; ``connection`` holds host, port and unit, ``emulator`` is set for an emulated entry.
+
+        ``store`` keeps the flow calibrations across restarts, ``calibrations`` is its loaded content.
+        """
         self.thermia = create_entry_client(entry, connection)
         self.emulator = emulator
         self.kind = entry.data[CONF_MODEL]
@@ -288,10 +325,13 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         # One flow estimator per loop for the entry's lifetime: it learns its pump-speed
         # calibration across windows. Only loops whose registers this model has get one.
         self.flow_clock = time.monotonic
+        calibrations = calibrations if isinstance(calibrations, dict) else {}
         self.flow_estimators = {
-            key: FlowEstimator(loop) for key, loop in FLOW_LOOPS.items()
+            key: seeded_estimator(key, loop, calibrations.get(key)) for key, loop in FLOW_LOOPS.items()
             if all(REGISTERS[r][self.kind] for r in flow_registers(loop))
         }
+        self.flow_store = store
+        self._saved_calibrations = self.calibrations()
         self.flows: dict[str, FlowEstimate] = {}
         # Read the estimators' inputs every update, whether or not their own entities are enabled.
         self.registerAttribute(sorted({r for e in self.flow_estimators.values() for r in flow_registers(e.loop)}))
@@ -304,6 +344,18 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             update_interval=SCAN_INTERVAL,
         )
         self.update_device_info()
+
+    def calibrations(self) -> dict[str, float]:
+        """The learned calibration per loop; loops without one are left out."""
+        return {k: e.calibration for k, e in self.flow_estimators.items() if e.calibration is not None}
+
+    async def async_save_calibrations(self):
+        """Write the calibrations now if they changed since the last save."""
+        current = self.calibrations()
+        if self.flow_store is None or current == self._saved_calibrations:
+            return
+        await self.flow_store.async_save(current)
+        self._saved_calibrations = current
 
     async def async_close(self):
         """Close the client, then stop the entry's emulator if it has one."""
@@ -339,6 +391,14 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             self.flows[key] = estimate
             _LOGGER.debug("%s: %s L/min (%s, calibration %s L/min per %%)", key, estimate.value,
                           estimate.source, estimate.calibration)
+        current = self.calibrations()
+        if self.flow_store is not None and current != self._saved_calibrations:
+            self.flow_store.async_delay_save(self._mark_saved, FLOW_CALIBRATION_SAVE_DELAY)
+
+    def _mark_saved(self) -> dict[str, float]:
+        """The delayed save's payload: the calibrations at write time."""
+        self._saved_calibrations = self.calibrations()
+        return self._saved_calibrations
 
     def freeze_capabilities(self):
         """Fix the capability states the entities are created for; absent ones gate theirs out."""
