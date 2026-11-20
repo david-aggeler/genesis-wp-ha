@@ -15,7 +15,7 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/david-aggeler/genesis-wp-ha/issues",
   "requirements": [
-    "genesis-wp[emulator]@git+https://github.com/david-aggeler/genesis-wp@41d57bef57a322726f13b547a5c6aca78bbb2aee"
+    "genesis-wp[emulator]@git+https://github.com/david-aggeler/genesis-wp@4c8a91f2470908df36497cd14737c36fdbbd3cdf"
   ],
   "version": "0.1.0"
 }
