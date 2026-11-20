@@ -5,7 +5,7 @@ import { patch } from './patch.js';
 // operating point. Read-only, no dependencies.
 // Config: { type: custom:genesis-wp-heating-curve-card, entities: [<set temperature sensor>, ...] | entity: <one>, title?: str,
 //           min?: <entity>, max?: <entity>, stop?: <entity>, measured?: <entity> }
-// The optional keys (requirement-25) add the supply limit lines, the heating-season stop line and
+// The optional keys (requirement-25) add the supply limit lines, the heating limit line (holding 16, Heizgrenze) and
 // a measured-supply tick at the current outdoor temperature. Each is drawn only from an entity
 // with a numeric state; a missing or unavailable one draws nothing, never a substitute value.
 const EXTRAS = ["min", "max", "stop", "measured"];
@@ -253,11 +253,11 @@ export class GenesisWpHeatingCurveCard extends HTMLElement {
       .join("");
     let stop = "";
     if (stopX !== null) {
-      const text = `stop ${extra.stop} \u00b0C`;
+      const text = `heating limit ${extra.stop} \u00b0C`;
       const onLeft = stopX - PAD.left > W - PAD.right - stopX;
       const label = { text, anchor: onLeft ? "end" : "start", x: onLeft ? stopX - 4 : stopX + 4, y: H - PAD.bottom - 4 };
       for (let i = 0; i < 4 && limitLabels.some((l) => overlaps(labelBox(l), labelBox(label))); i++) label.y -= LINE_H;
-      stop = `<line class="stop" x1="${stopX}" x2="${stopX}" y1="${PAD.top}" y2="${H - PAD.bottom}"><title>heating stops above ${extra.stop} \u00b0C outdoor</title></line>
+      stop = `<line class="stop" x1="${stopX}" x2="${stopX}" y1="${PAD.top}" y2="${H - PAD.bottom}"><title>heating limit: no space heating above ${extra.stop} \u00b0C outdoor</title></line>
         <text class="label" data-label="stop" x="${label.x}" y="${label.y}" text-anchor="${label.anchor}">${text}</text>`;
     }
     const tick = extra.tick ? `<line class="measured" x1="${px(extra.tick[0]) - 9}" x2="${px(extra.tick[0]) + 9}" y1="${py(extra.tick[1])}" y2="${py(extra.tick[1])}"><title>measured supply: ${extra.tick[1]} \u00b0C</title></line>` : "";

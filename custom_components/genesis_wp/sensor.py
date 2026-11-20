@@ -19,6 +19,7 @@ from .register_entity import RegisterAnchor
 from .const import ATTR_ICON
 from .const import ATTR_LABEL
 from .const import CORE_SETTINGS
+from .const import SETTING_NAMES
 from .const import CURVE_X
 from .const import DOMAIN
 from .const import HEATPUMP_ALARMS
@@ -245,7 +246,7 @@ class ThermiaSettingSensor(RegisterSensor):
     def __init__(self, coordinator, kind):
         """Initialize."""
         super().__init__(coordinator, kind)
-        self._attr_name = kind.removeprefix("holding_").replace("_", " ").title()
+        self._attr_name = SETTING_NAMES.get(kind, kind.removeprefix("holding_").replace("_", " ").title())
         if kind in CORE_SETTINGS:
             self._use_core_setting()
 
