@@ -151,3 +151,34 @@ async def test_removing_the_entry_discards_its_calibration(hass, hass_storage, s
     added = await setup_entry(hass, emu)
     for entity_id in flow_entities(hass, added).values():
         assert hass.states.get(entity_id).state == "unknown"
+
+
+# DHF-REQ: genesis-wp-ha/requirement-26  DHF-TEST: genesis-wp-ha/ac-110 genesis-wp-ha/issue-24
+async def test_a_changing_calibration_schedules_one_delayed_save_at_a_time(hass, hass_storage, start_emulator):
+    """Polls while a save is pending must not re-arm Home Assistant's debounced delay (issue-24)."""
+    emu = await start_emulator(PROFILE_615, dynamics=True, climate=flat_climate(), start_time=START)
+    entry = await setup_entry(hass, emu)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator.flow_clock = lambda: emu.simulated_time.timestamp()
+    scheduled = []
+    coordinator.flow_store.async_delay_save = lambda data_func, delay=0: scheduled.append((data_func, delay))
+
+    seen = []
+    for _ in range(12):  # several windows: the calibration changes more than once
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        emu.advance(60)
+        seen.append(dict(coordinator.calibrations()))
+    changes = sum(1 for a, b in zip(seen, seen[1:]) if a != b)
+    assert changes >= 2, seen
+    assert len(scheduled) == 1  # pending: later changes do not re-arm the delay
+
+    data_func, delay = scheduled[0]
+    assert delay == 300
+    assert data_func() == coordinator.calibrations()  # the write takes the calibration at write time
+
+    for _ in range(6):  # after the write, the next change schedules a new save
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        emu.advance(60)
+    assert len(scheduled) == 2
