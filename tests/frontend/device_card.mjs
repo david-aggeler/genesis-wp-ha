@@ -15,10 +15,12 @@ const toC = st => st ? toCelsius(st.state, st.attributes.unit_of_measurement) : 
 await new Promise(r=>setTimeout(r,600));
 const Card = customElements.get('genesis-wp-device-card');
 assert.ok(Card);
-const categories = ['internal_heat_pump','buffer_tank','heating_system','additional_heating_circuits','hot_water','cooling','pool','ksm','electric_meter_and_energy','controller'];
+const categories = ['internal_heat_pump','hot_water','cooling','pool','ksm','electric_meter_and_energy','controller'];
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-66
-for (const config of [{}, {device:'invalid'}]) {
-  assert.throws(()=>new Card().setConfig(config), e=>categories.every(c=>e.message.includes(c)));
+const retired = ['buffer_tank','heating_system','additional_heating_circuits'];
+for (const device of [undefined, 'invalid', ...retired]) {
+  assert.throws(()=>new Card().setConfig(device === undefined ? {} : {device}),
+    {message:`device must be one of: ${categories.join(', ')}`}, String(device));
 }
 let services = 0, ws = 0;
 const hass = {...fixture, callService(){services++;}, callWS(){ws++;}, localize(key){return key.endsWith('.unavailable')?'Unavailable':key.endsWith('.unknown')?'Unknown':undefined;}};
@@ -28,7 +30,8 @@ const byRegister = key => Object.entries(hass.states).find(([,s])=>s.attributes.
 const tag = (card, key) => html(card).match(new RegExp(`<g[^>]*data-register="${key}"[^>]*>[\\s\\S]*?<\\/g>`))?.[0];
 const pipe = (card, id) => html(card).match(new RegExp(`<path[^>]*data-path="${id}"[^>]*>`))?.[0];
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-67
-for (const category of categories.slice(0,4)) {
+{
+  const category = 'internal_heat_pump';
   const card = render(category);
   assert.match(html(card), /<svg/);
   const device = Object.entries(hass.devices).find(([,d])=>d.identifiers.some(([domain,id])=>domain==='genesis_wp'&&id===`${fixture.entry}_${category}`))?.[0];
@@ -42,81 +45,97 @@ for (const category of categories.slice(0,4)) {
     }
   }
 }
-// Independent register anchors from the requirement's per-card table.
-for (const [category, keys] of Object.entries({internal_heat_pump:[10,11,130,127,124,125,5,61,48,7,128,122,129,126,9,8,39,44],buffer_tank:[41,68],heating_system:[12,18],additional_heating_circuits:[43,40,147]})) {
-  const card=render(category);
-  for (const address of keys) { const key=`input_${address}`; if(byRegister(key)) {
-    const state=hass.states[byRegister(key)];
-    const rendered=tag(card,key);
-    assert.ok(rendered,key);
-    const expected=['unknown','unavailable'].includes(state.state)
-      ? hass.localize('state.default.'+state.state)
-      : [state.state,state.attributes.unit_of_measurement].filter(Boolean).join(' ');
-    assert.equal(rendered.match(/class="value"[^>]*>(.*?)<\/text>/)?.[1],expected,category+': '+key);
-    // A second, distinct live value catches cross-entity binding and stale values.
-    const previous=state.state;
-    state.state='37.125'; card.hass=hass;
-    assert.equal(tag(card,key).match(/class="value"[^>]*>(.*?)<\/text>/)?.[1],
-      ['37.125',state.attributes.unit_of_measurement].filter(Boolean).join(' '));
-    state.state=previous; card.hass=hass;
-  } }
+// DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-67
+// Expected full-plant tag inventory, independent of the card's position table.
+const plantAnchors = [
+  // Heat pump and passive cooling
+  ...[10,11,130,127,124,125,5,61,48,7,128,122,129,126,9,8,39,44].map(address => `input_${address}`),
+  'derived_brine_flow', 'derived_condenser_flow', 'coil_33', 'holding_302',
+  // Controller and KSM
+  'input_315', 'input_319', 'input_67', 'input_413',
+  // HC1, buffer tank and HC2
+  'holding_5', 'coil_9', 'holding_4', 'holding_3', 'input_18', 'input_12', 'input_41',
+  'holding_107', 'holding_108', 'coil_11', 'input_43', 'input_147', 'input_40',
+];
+let card=render('internal_heat_pump');
+for (const key of plantAnchors) {
+  const id=byRegister(key);
+  assert.ok(id,key);
+  const state=hass.states[id];
+  const rendered=tag(card,key);
+  assert.ok(rendered,key);
+  assert.ok(rendered.includes(`data-entity="${id}"`), key);
+  const diagram = html(card).match(/<svg[\s\S]*?<\/svg>/)?.[0];
+  assert.ok(diagram?.includes(rendered), `${key}: tag outside the drawing`);
+  const expected=['unknown','unavailable'].includes(state.state)
+    ? hass.localize('state.default.'+state.state)
+    : [state.state,state.attributes.unit_of_measurement].filter(Boolean).join(' ');
+  assert.equal(rendered.match(/class="value"[^>]*>(.*?)<\/text>/)?.[1],expected,key);
+  assert.equal(html(card).split(`data-register="${key}"`).length,2,key);
+  const previous=state.state;
+  state.state='37.125'; card.hass=hass;
+  assert.equal(tag(card,key).match(/class="value"[^>]*>(.*?)<\/text>/)?.[1],
+    ['37.125',state.attributes.unit_of_measurement].filter(Boolean).join(' '));
+  state.state=previous; card.hass=hass;
 }
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-73
-let card=render('buffer_tank');
-assert.match(tag(card,'input_12'), /class="[^"]*context/);
-assert.match(tag(card,'input_41'), /class="[^"]*own/);
-assert.match(tag(card,'input_68'), /calculated/);
-hass.states[byRegister('input_12')].state='26.26'; card.hass=hass;
-assert.match(tag(card,'input_12'), />26.26 °C<\/text>/);
-assert.match(html(card), /\.context rect\{[^}]*stroke-dasharray:2 3/);
-assert.doesNotMatch(tag(card,'input_41'), /context|calculated/);
-hass.states[byRegister('input_12')].state='40.0'; card.hass=hass;
-assert.match(tag(card,'input_12'), />40.0 °C<\/text>/);
+assert.match(tag(card,'input_12'), /class="[^"]*\bcontext\b/);
+assert.doesNotMatch(tag(card,'input_12'), /class="[^"]*\bown\b/);
+assert.match(tag(card,'input_18'), /calculated/);
 const supply=byRegister('input_12'), mode=byRegister('input_1');
 hass.states[mode].state='Heat';
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-69
 hass.states[supply].state='26.26'; card.hass=hass;
-assert.match(pipe(card,'supply'), /stroke="#eca143"/);
+assert.match(pipe(card,'either-way'), /stroke="#eca143"/);
 hass.states[supply].state='40.0'; card.hass=hass;
-assert.match(pipe(card,'supply'), /stroke="#df4e29"/);
+assert.match(pipe(card,'either-way'), /stroke="#df4e29"/);
 // HA display-unit conversion: equivalent °F and K readings color the same as °C; the tag keeps the display unit.
 const supplyUnit=hass.states[supply].attributes.unit_of_measurement;
 for (const [value, unit] of [['104.0','°F'],['313.15','K']]) {
   hass.states[supply].state=value; hass.states[supply].attributes.unit_of_measurement=unit; card.hass=hass;
-  assert.match(pipe(card,'supply'), /stroke="#df4e29"/);
+  assert.match(pipe(card,'either-way'), /stroke="#df4e29"/);
   assert.match(tag(card,'input_12'), new RegExp(`>${value} ${unit}</text>`));
 }
 hass.states[supply].attributes.unit_of_measurement='kW'; card.hass=hass;
-assert.match(pipe(card,'supply'), /stroke="currentColor"/);
+assert.match(pipe(card,'either-way'), /stroke="currentColor"/);
 hass.states[supply].attributes.unit_of_measurement=supplyUnit;
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-68
-for (const value of ['unavailable','unknown']) {
-  hass.states[supply].state=value; card.hass=hass;
-  assert.match(tag(card,'input_12'), new RegExp(value, 'i'));
-  assert.doesNotMatch(pipe(card,'supply'), /stroke="#[a-f0-9]+"/);
-  assert.doesNotMatch(tag(card,'input_12').match(/class="value"[^>]*>(.*?)<\/text>/)[1], /[0-9]/);
+const localizedStates = {unavailable:'Measurement missing', unknown:'State undetermined'};
+const localize = hass.localize;
+hass.localize = key => ({
+  'state.default.unavailable': localizedStates.unavailable,
+  'state.default.unknown': localizedStates.unknown,
+})[key] ?? localize(key);
+for (const [state, expected] of Object.entries(localizedStates)) {
+  hass.states[supply].state = state;
+  card.hass = hass;
+  const value = tag(card,'input_12')?.match(/class="value"[^>]*>(.*?)<\/text>/)?.[1];
+  assert.equal(value, expected, state);
+  assert.doesNotMatch(value, /[0-9]/);
+  assert.match(pipe(card,'either-way'), /data-flow="active"/);
+  assert.match(pipe(card,'either-way'), /stroke="currentColor" stroke-opacity="1"/);
 }
+hass.localize = localize;
 hass.states[supply].state='26.26';
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-70
-hass.states[byRegister('input_41')].state='40.0';
 hass.states[byRegister('input_40')].state='26.26';
-card=render('additional_heating_circuits');
-assert.match(pipe(card,'buffer-to-mixer'), /data-flow="active"/);
-assert.match(pipe(card,'passive-cooling'), /data-flow="idle"/);
-assert.match(pipe(card,'passive-cooling'), /stroke="currentColor" stroke-opacity="0.22"/);
-assert.match(pipe(card,'buffer-to-mixer'), /stroke="#df4e29" stroke-opacity="1"/);
+card=render('internal_heat_pump');
+assert.match(pipe(card,'hc2-port-b'), /data-flow="active"/);
+assert.match(pipe(card,'passive-port-a'), /data-flow="idle"/);
+assert.match(pipe(card,'passive-port-a'), /stroke="currentColor" stroke-opacity="0.22"/);
+assert.match(pipe(card,'hc2-port-b'), /stroke="#eca143" stroke-opacity="1"/);
 hass.states[mode].state='Passive cooling';
 const coil=byRegister('coil_33'); hass.states[coil].state='on'; card.hass=hass;
-assert.match(pipe(card,'buffer-to-mixer'), /data-flow="idle"/);
-assert.match(pipe(card,'passive-cooling'), /data-flow="active"/);
-assert.match(pipe(card,'buffer-to-mixer'), /stroke="currentColor" stroke-opacity="0.22"/);
-assert.match(pipe(card,'passive-cooling'), /stroke="#eca143" stroke-opacity="1"/);
+assert.match(pipe(card,'hc2-port-b'), /data-flow="idle"/);
+assert.match(pipe(card,'passive-port-a'), /data-flow="active"/);
+assert.match(pipe(card,'hc2-port-b'), /stroke="currentColor" stroke-opacity="0.22"/);
+assert.match(pipe(card,'passive-port-a'), /stroke="#eca143" stroke-opacity="1"/);
 for(const state of ['Heat','Defrost','Hot water','Anti legionella','Pool','Cool','Standby','No demand','OFF','Manual Operation']) {
   hass.states[mode].state=state; card.hass=hass;
-  assert.match(pipe(card,'buffer-to-mixer'), /data-flow="active"/);
-  assert.match(pipe(card,'passive-cooling'), /data-flow="idle"/);
-  assert.match(pipe(card,'passive-cooling'), /stroke="currentColor" stroke-opacity="0.22"/);
-  assert.match(pipe(card,'buffer-to-mixer'), /stroke="#df4e29" stroke-opacity="1"/);
+  assert.match(pipe(card,'hc2-port-b'), /data-flow="active"/);
+  assert.match(pipe(card,'passive-port-a'), /data-flow="idle"/);
+  assert.match(pipe(card,'passive-port-a'), /stroke="currentColor" stroke-opacity="0.22"/);
+  assert.match(pipe(card,'hc2-port-b'), /stroke="#eca143" stroke-opacity="1"/);
 }
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-74
 const hpDevice=hass.entities[byRegister('input_54')].device_id;
@@ -144,14 +163,14 @@ for(const [,state] of alarms.slice(1)) assert.ok(!strip.includes(state.attribute
 alarms[0][1].state='off'; card.hass=hass;
 assert.doesNotMatch(html(card), /class="alarms"/);
 // Missing child, another entry, disabled entities and untrusted text are safe.
-assert.match(html(render('buffer_tank','absent')), /not found/i);
+assert.match(html(render('internal_heat_pump','absent')), /not found/i);
 hass.states[supply].attributes.friendly_name='<img src=x onerror=alert(1)>';
-assert.doesNotMatch(html(render('buffer_tank')), /<img/);
+assert.doesNotMatch(html(render('internal_heat_pump')), /<img/);
 
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-72
 // DHF-TEST: genesis-wp-ha/ac-66 genesis-wp-ha/ac-68 genesis-wp-ha/ac-71
 // DHF-TEST: genesis-wp-ha/ac-74 genesis-wp-ha/ac-75
-for (const category of categories.slice(4)) {
+for (const category of categories.slice(1)) {
   const device=Object.entries(hass.devices).find(([,d])=>d.identifiers.some(([domain,id])=>domain==='genesis_wp'&&id===`${fixture.entry}_${category}`))?.[0];
   assert.ok(device,category);
   const own=Object.entries(hass.entities).filter(([,e])=>e.device_id===device&&!e.disabled_by);
@@ -269,7 +288,7 @@ assert.equal(deviceField.required,true);
 assert.equal(deviceField.selector.select.mode,'dropdown');
 assert.deepEqual(deviceField.selector.select.options.map(o=>o.value),categories);
 assert.deepEqual(deviceField.selector.select.options.map(o=>o.label),[
-  'Internal heat pump','Buffer tank','Heating system','Additional heating circuits',
+  'Internal heat pump',
   'Hot water','Cooling','Pool','KSM','Electric meter and energy','Controller']);
 assert.deepEqual(titleField.selector,{text:{}});
 assert.deepEqual(entryField.selector,{config_entry:{integration:'genesis_wp'}});
@@ -297,7 +316,11 @@ assert.deepEqual(Card.getStubConfig({devices:{
   pool:child('genesis_wp','entry_pool'),
   buffer:child('genesis_wp','entry_buffer_tank'),
   foreign:child('other','entry_internal_heat_pump'),
-}}),{device:'buffer_tank'});
+}}),{device:'pool'});
+for (const category of retired) {
+  assert.deepEqual(Card.getStubConfig({devices:{only:child('genesis_wp',`entry_${category}`)}}),
+    {device:'internal_heat_pump'});
+}
 for(const category of categories) {
   assert.deepEqual(Card.getStubConfig({devices:{only:child('genesis_wp',`entry_${category}`)}}),{device:category});
 }
@@ -500,14 +523,6 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     const joined = ['either-way','hc2-port-b','condenser-out'].map(id => style(oh, id)).filter(Boolean);
     assert.ok(joined.length && joined.every(s => s.flow === 'idle'), JSON.stringify(joined));
     assert.deepEqual(dot(oh), {flow:'idle', color:'currentColor', opacity:'0.22'});
-    // The heating system card's supply T-piece follows its supply pipe the same way.
-    const hs = new Card(); hs.setConfig({device:'heating_system',entry:fixture.entry}); hs.hass = heat;
-    const hsSupply = style(html(hs), 'supply');
-    if (hsSupply) {
-      const d = html(hs).match(/<circle class="junction" data-junction="supply" data-flow="(\w+)"[^>]* fill="([^"]+)" fill-opacity="([\d.]+)"/);
-      assert.ok(d, 'heating system junction');
-      assert.deepEqual({flow:d[1], color:d[2], opacity:d[3]}, hsSupply.flow === 'active' ? hsSupply : {flow:'idle', color:'currentColor', opacity:'0.22'});
-    }
     // No static text-colored dot remains in the drawing.
     assert.doesNotMatch(out, /<circle cx="1220" cy="290"[^>]*fill="currentColor"/);
   }

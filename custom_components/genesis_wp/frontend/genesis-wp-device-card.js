@@ -4,15 +4,19 @@ import { shortLabel } from './labels.js';
 // DHF-REQ: genesis-wp-ha/requirement-18
 // Read-only entity presentation. Register keys are anchors, never wire reads or decoding.
 // Geometry redrawn from genesis-wp interface_spec-6, process control room editions.
-const CATEGORIES = ['internal_heat_pump', 'buffer_tank', 'heating_system', 'additional_heating_circuits',
+const CATEGORIES = ['internal_heat_pump',
   'hot_water', 'cooling', 'pool', 'ksm', 'electric_meter_and_energy', 'controller'];
+// These child devices still supply entities to the full-plant drawing.
+const PLANT_CATEGORIES = [...CATEGORIES, 'buffer_tank', 'heating_system', 'additional_heating_circuits'];
 const LABELS = {
-  internal_heat_pump: 'Internal heat pump', buffer_tank: 'Buffer tank',
-  heating_system: 'Heating system', additional_heating_circuits: 'Additional heating circuits',
+  internal_heat_pump: 'Internal heat pump',
   hot_water: 'Hot water', cooling: 'Cooling', pool: 'Pool', ksm: 'KSM',
   electric_meter_and_energy: 'Electric meter and energy', controller: 'Controller',
 };
-const CATEGORY_COLORS = ['#8e6cc0', '#d4a14d', '#5fb88a', '#50a0cb'];
+const CATEGORY_COLORS = {
+  internal_heat_pump: '#8e6cc0', hot_water: '#8e6cc0', cooling: '#d4a14d', pool: '#5fb88a',
+  ksm: '#50a0cb', electric_meter_and_energy: '#8e6cc0', controller: '#d4a14d',
+};
 const escapeText = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const key = address => `input_${address}`;
 // Derived flows (requirement-26) are estimates, drawn like the controller's calculated values.
@@ -54,8 +58,6 @@ const POSITIONS = {
     [41,1165,500],
     // Heating circuit 2: right of TR12/13, above FR2 and the rooms (ac-105).
     ['holding_107',1565,56],['holding_108',1735,56],['coil_11',1565,102],[43,1565,216],[147,1735,170],[40,1735,216]],
-  buffer_tank: [[12,1130,150],[18,1130,104],[41,1130,500],[68,1130,546]],
-  heating_system: [[12,1130,150],[18,1130,104],[13,830,-120],[9,960,120]],
   hot_water: [[9,10,20],[47,180,20],[15,410,130],[16,410,330],[17,410,380],[45,10,200],[117,10,430],[118,220,430]],
   cooling: [[11,10,20],[106,410,20],[103,410,380],[104,220,160],[105,220,290],[92,410,220]],
   pool: [[9,10,20],[119,410,20],[120,410,330],[94,220,150]],
@@ -64,9 +66,8 @@ const POSITIONS = {
     [69,10,130],[70,195,130],[71,380,130],[72,10,180],[73,195,180],[74,380,180],
     [78,10,230],[79,195,230],[80,380,230]],
   controller: [],
-  additional_heating_circuits: [[43,1305,262],[40,1305,380],[147,1305,426],[41,1305,540],['holding_302',1305,0],['coil_33',1305,46]],
 };
-const VIEWS = {hot_water:'0 0 590 500',cooling:'0 0 590 450',pool:'0 0 590 400',ksm:'0 0 550 100',electric_meter_and_energy:'0 0 550 290',controller:'0 0 550 40',internal_heat_pump:'0 -40 1900 670', buffer_tank:'1080 70 240 620', heating_system:'810 -165 520 865', additional_heating_circuits:'1260 -165 370 865'};
+const VIEWS = {hot_water:'0 0 590 500',cooling:'0 0 590 450',pool:'0 0 590 400',ksm:'0 0 550 100',electric_meter_and_energy:'0 0 550 290',controller:'0 0 550 40',internal_heat_pump:'0 -40 1900 670'};
 const rect = (x,y,w,h,label) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="8" fill="currentColor" fill-opacity="0.04" stroke="currentColor"/><text x="${x+6}" y="${y+22}">${label}</text>`;
 // The triangle points along the pipe in the flow direction; the label sits right, left or above the symbol.
 const FLOW_ANGLE = {down:0, left:90, up:180, right:-90};
@@ -114,10 +115,6 @@ const PARTS = {
     [[43],part('mixer',1540,valve3(1540,290,'down')+'<text x="1528" y="320" text-anchor="end">TR12/13</text>')],
     [[40],part('fr2',1660,pump(1660,290,'FR2','right','below'))],
     [[40,147],part('rooms',1815,rect(1750,270,130,200,'Rooms (HC2)'))]],
-  buffer_tank: [[[41,68],rect(1120,240,150,400,'Buffer tank')]],
-  heating_system: [[[12,18],'<text x="960" y="250">Supply T-piece</text>']],
-  additional_heating_circuits: [[[40,43],valve(1420,200,'TR9 A/B')+valve(1470,280,'TR12/13')+pump(1470,340,'FR2')+rect(1425,440,125,120,'Rooms / HC2')],
-    [['coil_33','holding_302'],rect(1280,-126,100,98,'HX 24')]],
 };
 // [path id, temperature register, flow group, path geometry, phase dash]
 // The register may be [shown when, colored by]: a pipe without a sensor on it is drawn while its
@@ -170,24 +167,16 @@ const PIPES = {
     // Passive cooling: the room return leaves at the T31 port, rises over the plant and enters
     // the cooling exchanger from the top (interface_spec-6, "room return to passive-cooling HX").
     ['cooling-return',[41,null],'passive','M1345,560 L1345,-10 L230,-10 L230,10']],
-  buffer_tank: [['supply',12,'buffer','M1080,200 L1270,200 M1160,200 L1160,240'],['return',41,'buffer','M1270,600 L1270,620 L1120,620']],
-  heating_system: [['condenser-out',9,'heating','M915,352 L915,200'],['supply',12,'heating','M915,200 L1270,200 M1160,200 L1160,240']],
-  additional_heating_circuits: [['buffer-to-mixer',41,'hc2','M1260,200 L1408,200'],
-    ['passive-cooling',40,'passive','M1347,-124 L1420,-140 L1420,186'],
-    ['passive-return',41,'passive','M1535,600 L1290,600 L1290,-10 L1347,-10 L1347,-28'],
-    ['hc2-supply',40,'rooms','M1432,200 L1470,200 L1470,440'],
-    ['hc2-return',41,'rooms','M1535,560 L1535,600 L1270,600 M1535,600 L1575,600 L1575,280 L1484,280']],
 };
 // Junction dots [x, y, r, [path ids]]: a dot takes the style of the first active path it joins,
 // the idle style when none is active, and is omitted when none of its paths is drawn (issue-22).
 const JUNCTIONS = {
   internal_heat_pump: [[1220,290,6,['either-way','hc2-port-b','condenser-out']]],
-  heating_system: [[1160,200,7,['supply']]],
 };
 function active(group, mode, passiveEnabled) {
   const passive = mode === 'Passive cooling' && passiveEnabled;
   const compressor = ['Heat','Defrost','Hot water','Anti legionella','Pool'].includes(mode);
-  return ({brine:compressor||passive, compressor, heating:['Heat','Defrost'].includes(mode),
+  return ({brine:compressor||passive, compressor,
     hot_water:['Hot water','Anti legionella'].includes(mode), cooling:mode==='Cool', pool:mode==='Pool',
     buffer:['Heat','Defrost'].includes(mode), hc2:!passive, passive, rooms:true})[group];
 }
@@ -301,10 +290,11 @@ export class GenesisWpDeviceCard extends HTMLElement {
     else {
       const byRegister=new Map(), own=[];
       const devices=this._hass.devices||{};
+      const identifiers=new Set([resolved.entry, ...PLANT_CATEGORIES.map(c=>`${resolved.entry}_${c}`)]);
       for(const [id,e] of Object.entries(this._hass.entities||{})) {
         const state=this._hass.states[id];
         if(e.disabled_by || !state?.attributes.register) continue;
-        const sameEntry=(devices[e.device_id]?.identifiers||[]).some(([domain,value])=>domain==='genesis_wp'&&(value===resolved.entry||CATEGORIES.some(c=>value===`${resolved.entry}_${c}`)));
+        const sameEntry=(devices[e.device_id]?.identifiers||[]).some(([domain,value])=>domain==='genesis_wp'&&identifiers.has(value));
         if(!sameEntry) continue;
         const entity={id,state,register:state.attributes.register,deviceId:e.device_id,diagnostic:e.entity_category==='diagnostic'};
         byRegister.set(entity.register,entity);
@@ -367,7 +357,7 @@ export class GenesisWpDeviceCard extends HTMLElement {
       if(activeAlarms.length) body+=`<div class="alarms" role="status">${activeAlarms.map(e=>escapeText(e.state.attributes.friendly_name||e.id)).join('<br>')}</div>`;
     }
     const diagram=this._config.layout==='diagram';
-    patch(this.shadowRoot, `<style>[role=button]{cursor:pointer}[role=button]:focus-visible{outline:2px solid var(--primary-color)}:host{display:block;color:var(--primary-text-color)}ha-card{padding:16px}h2{font-size:var(--ha-font-size-xl);font-weight:var(--ha-font-weight-normal)}.mode{color:var(--secondary-text-color)}svg{display:block;width:100%;height:auto}text{fill:currentColor;font-family:inherit;font-size:11px}.own rect,.context rect{fill:var(--card-background-color);stroke:var(--tag-color);stroke-width:1.5}.context{opacity:.65}.context rect{stroke-dasharray:2 3}.own.calculated rect{stroke-dasharray:6 3}.alarms{color:var(--error-color,#d46161);padding:8px}.value{font-size:13px;font-weight:bold}.chip rect{rx:10px}.stage{position:relative}.stage .drawing{position:absolute;inset:0;width:100%;height:100%}.stage .drawing text{font-size:12px}div.chip{position:absolute;box-sizing:border-box;display:flex;flex-direction:column;padding:0 var(--ha-space-1);border:1.5px solid var(--tag-color);border-radius:var(--ha-border-radius-sm,4px);background:var(--card-background-color);overflow:hidden;cursor:pointer;line-height:1.1}.part-label{position:absolute;white-space:nowrap;line-height:1;font-size:var(--ha-font-size-s);color:var(--primary-text-color);pointer-events:none}div.chip.context{border-style:dotted;opacity:.8}div.chip.calculated{border-style:dashed}div.chip .label{font-size:var(--ha-font-size-s);color:var(--secondary-text-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}div.chip .value{font-size:var(--ha-font-size-s);font-weight:var(--ha-font-weight-medium);white-space:nowrap}.legend{display:flex;flex-wrap:wrap;gap:var(--ha-space-1) var(--ha-space-4);margin-top:var(--ha-space-2);font-size:var(--ha-font-size-s);color:var(--secondary-text-color)}.scale{display:inline-flex;align-items:center;gap:var(--ha-space-1)}.bar{display:inline-block;width:160px;height:8px;border-radius:4px}.fault{color:var(--error-color,#d46161)}.fault rect{stroke:var(--error-color,#d46161)}</style>${diagram?'<div class="diagram"':'<ha-card'} style="--tag-color:${CATEGORY_COLORS[CATEGORIES.indexOf(category)%4]}">${diagram?'':`<h2>${escapeText(title)}</h2><div class="mode">${escapeText(mode)}</div>`}${body}${diagram?'</div>':'</ha-card>'}`);
+    patch(this.shadowRoot, `<style>[role=button]{cursor:pointer}[role=button]:focus-visible{outline:2px solid var(--primary-color)}:host{display:block;color:var(--primary-text-color)}ha-card{padding:16px}h2{font-size:var(--ha-font-size-xl);font-weight:var(--ha-font-weight-normal)}.mode{color:var(--secondary-text-color)}svg{display:block;width:100%;height:auto}text{fill:currentColor;font-family:inherit;font-size:11px}.own rect,.context rect{fill:var(--card-background-color);stroke:var(--tag-color);stroke-width:1.5}.context{opacity:.65}.context rect{stroke-dasharray:2 3}.own.calculated rect{stroke-dasharray:6 3}.alarms{color:var(--error-color,#d46161);padding:8px}.value{font-size:13px;font-weight:bold}.chip rect{rx:10px}.stage{position:relative}.stage .drawing{position:absolute;inset:0;width:100%;height:100%}.stage .drawing text{font-size:12px}div.chip{position:absolute;box-sizing:border-box;display:flex;flex-direction:column;padding:0 var(--ha-space-1);border:1.5px solid var(--tag-color);border-radius:var(--ha-border-radius-sm,4px);background:var(--card-background-color);overflow:hidden;cursor:pointer;line-height:1.1}.part-label{position:absolute;white-space:nowrap;line-height:1;font-size:var(--ha-font-size-s);color:var(--primary-text-color);pointer-events:none}div.chip.context{border-style:dotted;opacity:.8}div.chip.calculated{border-style:dashed}div.chip .label{font-size:var(--ha-font-size-s);color:var(--secondary-text-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}div.chip .value{font-size:var(--ha-font-size-s);font-weight:var(--ha-font-weight-medium);white-space:nowrap}.legend{display:flex;flex-wrap:wrap;gap:var(--ha-space-1) var(--ha-space-4);margin-top:var(--ha-space-2);font-size:var(--ha-font-size-s);color:var(--secondary-text-color)}.scale{display:inline-flex;align-items:center;gap:var(--ha-space-1)}.bar{display:inline-block;width:160px;height:8px;border-radius:4px}.fault{color:var(--error-color,#d46161)}.fault rect{stroke:var(--error-color,#d46161)}</style>${diagram?'<div class="diagram"':'<ha-card'} style="--tag-color:${CATEGORY_COLORS[category]}">${diagram?'':`<h2>${escapeText(title)}</h2><div class="mode">${escapeText(mode)}</div>`}${body}${diagram?'</div>':'</ha-card>'}`);
   }
 }
 registerCard('genesis-wp-device-card', GenesisWpDeviceCard, {
