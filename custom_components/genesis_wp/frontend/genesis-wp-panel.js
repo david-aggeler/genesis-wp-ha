@@ -19,7 +19,7 @@ const KEYS={internal_heat_pump:[['input_54'],['input_9','heat'],['input_10','coo
 // head with their circuit's heating curve; every other tab is a plain parameter list.
 const DIAGRAMS=['internal_heat_pump'];
 // Per heating tab, the registers behind the curve's extra elements (genesis-wp interface_spec-6,
-// "Heating circuits HC1 and HC2"): supply limits, heating-season stop, measured supply.
+// "Heating circuits HC1 and HC2"): supply limits, heating limit (Heizgrenze), measured supply.
 const CURVE_EXTRAS={heating_system:{min:'holding_4',max:'holding_3',stop:'holding_16',measured:'input_12'},
  additional_heating_circuits:{min:'holding_107',max:'holding_108',stop:'holding_16',measured:'input_40'}};
 // Energy flow on the overview: ground -> heat pump -> buffer -> house. Each node is

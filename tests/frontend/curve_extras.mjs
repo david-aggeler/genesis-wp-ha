@@ -52,7 +52,7 @@ const close = (a, b, label) => assert.ok(Math.abs(a - b) < 1e-6, `${label}: ${a}
   assert.ok(html.indexOf('class="limit"') < html.indexOf('class="curve"'));
   assert.ok(html.indexOf('class="stop"') < html.indexOf('class="curve"'));
   assert.ok(html.indexOf('class="measured"') < html.indexOf('class="now"'));
-  assert.match(html, /max 45 °C/); assert.match(html, /stop 17 °C/);
+  assert.match(html, /max 45 °C/); assert.match(html, /heating limit 17 °C/); assert.doesNotMatch(html, /stop 17 °C|season/);
 }
 
 // DHF-TEST: genesis-wp-ha/requirement-25 genesis-wp-ha/ac-100

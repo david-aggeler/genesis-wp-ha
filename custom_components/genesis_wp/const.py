@@ -440,7 +440,8 @@ BINARY_SENSOR_TYPES = {
         ATTR_CLASS: CLASS_STATE,
     },
     thermiaconst.ATTR_DINPUT_HEATING_SEASON_ACTIVE: {
-        ATTR_LABEL: "Heating Season Active",
+        # Owner 2026-11-20: Heizgrenze is "heating limit", not a season (change_request-55).
+        ATTR_LABEL: "Outdoor Temperature Below Heating Limit",
         ATTR_CLASS: CLASS_STATE,
     },
     thermiaconst.ATTR_DINPUT_EXTERNAL_ADDITIONAL_HEATER_ACTIVE: {
@@ -959,3 +960,10 @@ REGISTER_EXCLUSIONS = {
 # DHF-REQ: genesis-wp-ha/requirement-17
 # Explicit exceptions to library metadata; remove as library corrections land.
 REGISTER_OVERRIDES = {}
+
+
+# Setting names that differ from the register key (change_request-55): holding 16 is the
+# heating limit (Heizgrenze), an outdoor-temperature threshold, not a heating season.
+SETTING_NAMES = {
+    thermiaconst.ATTR_HOLDING_HEATING_SEASON_STOP_TEMPERATURE: "Heating Limit Outdoor Temperature",
+}

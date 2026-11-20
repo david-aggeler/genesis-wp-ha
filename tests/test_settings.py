@@ -201,3 +201,18 @@ async def test_set_temperature_sensor_carries_its_curve_and_the_outdoor_temperat
     ]
     assert attributes["curve"] == expected, circuit
     assert attributes["outdoor_temperature"] == _emulator_value(PROFILE_615, _register("input", 13))
+
+
+# DHF-REQ: genesis-wp-ha/requirement-25  (change_request-55: Heizgrenze is "heating limit")
+async def test_heating_limit_entities_are_not_named_after_a_season(hass, start_emulator):
+    entry = await setup_entry(hass, await start_emulator(PROFILE_615))
+    registry = er.async_get(hass)
+    names = {}
+    for register, domain in ((c.ATTR_HOLDING_HEATING_SEASON_STOP_TEMPERATURE, "sensor"),
+                             (c.ATTR_DINPUT_HEATING_SEASON_ACTIVE, "binary_sensor")):
+        entity_id = registry.async_get_entity_id(domain, DOMAIN, _unique_id(entry, register))
+        assert entity_id, register
+        names[register] = hass.states.get(entity_id).attributes["friendly_name"]
+    assert names[c.ATTR_HOLDING_HEATING_SEASON_STOP_TEMPERATURE].endswith("Heating Limit Outdoor Temperature")
+    assert names[c.ATTR_DINPUT_HEATING_SEASON_ACTIVE].endswith("Outdoor Temperature Below Heating Limit")
+    assert not any("season" in n.lower() for n in names.values())
