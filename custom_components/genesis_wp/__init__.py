@@ -332,6 +332,9 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         }
         self.flow_store = store
         self._saved_calibrations = self.calibrations()
+        # Home Assistant's delayed save is a debounce: re-arming it on every poll would postpone
+        # the write indefinitely (issue-24), so it is armed once and cleared when it writes.
+        self._save_pending = False
         self.flows: dict[str, FlowEstimate] = {}
         # Read the estimators' inputs every update, whether or not their own entities are enabled.
         self.registerAttribute(sorted({r for e in self.flow_estimators.values() for r in flow_registers(e.loop)}))
@@ -356,6 +359,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             return
         await self.flow_store.async_save(current)
         self._saved_calibrations = current
+        self._save_pending = False
 
     async def async_close(self):
         """Close the client, then stop the entry's emulator if it has one."""
@@ -392,12 +396,14 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             _LOGGER.debug("%s: %s L/min (%s, calibration %s L/min per %%)", key, estimate.value,
                           estimate.source, estimate.calibration)
         current = self.calibrations()
-        if self.flow_store is not None and current != self._saved_calibrations:
+        if self.flow_store is not None and not self._save_pending and current != self._saved_calibrations:
+            self._save_pending = True
             self.flow_store.async_delay_save(self._mark_saved, FLOW_CALIBRATION_SAVE_DELAY)
 
     def _mark_saved(self) -> dict[str, float]:
         """The delayed save's payload: the calibrations at write time."""
         self._saved_calibrations = self.calibrations()
+        self._save_pending = False
         return self._saved_calibrations
 
     def freeze_capabilities(self):
