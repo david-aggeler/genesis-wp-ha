@@ -33,3 +33,10 @@ async def test_input_43_entity_is_named_mixer_signal(hass, start_emulator):
 def test_input_43_panel_label_is_mixer_signal():
     output = run_node_harness(LABELS_CHECK, LABELS)
     assert json.loads(output) == ["Mixer signal", "Mischer-Stellsignal"]
+
+
+# DHF-TEST: genesis-wp-ha/requirement-18
+def test_short_label_never_strips_to_blank():
+    """A device prefix plus a trailing "Temperature" must not leave an empty tag label."""
+    output = run_node_harness(LABELS_CHECK, LABELS, "fallback")
+    assert json.loads(output) == ["Temperature", "Temperature", "Supply", "Controller", "Temperature"]
