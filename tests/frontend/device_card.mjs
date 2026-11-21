@@ -51,6 +51,20 @@ for (const [device, register, width] of [['hot_water', 'input_15', 150], ['contr
     assert.ok(rule?.includes(declaration), declaration);
   }
 }
+// DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-126
+// formal_review-50 B1: prefix plus trailing "Temperature" must not render a blank label.
+{
+  const id = byRegister('input_55');
+  const deviceName = hass.devices[hass.entities[id].device_id].name;
+  const states = structuredClone(hass.states);
+  states[id].attributes.friendly_name = `${deviceName}  Temperature`;
+  const card = new Card();
+  card.setConfig({device:'controller', entry:fixture.entry});
+  card.hass = {...hass, states, locale:{language:'en'}};
+  const label = tag(card, 'input_55')?.match(/<div class="tag-label">([^<]*)<\/div>/)?.[1];
+  assert.equal(label, 'Temperature');
+  assert.ok(!label.startsWith(deviceName));
+}
 {
   const states = structuredClone(hass.states);
   states[byRegister('input_1')].state = 'Heat';
