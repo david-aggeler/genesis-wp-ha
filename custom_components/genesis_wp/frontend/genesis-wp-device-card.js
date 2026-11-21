@@ -212,7 +212,7 @@ function active(group, mode, passiveEnabled) {
 const LEG_SOURCE = new Map([
   ['condenser-out','condenser'], ['condenser-in','condenser'], ['buffer-return','condenser'],
   ['brine-in','brine'], ['brine-hx','brine'], ['brine-out','brine'],
-  ['tr9-mixer','hc2'], ['hc2-supply','hc2'], ['room-return','hc2'],
+  ['hc2-supply','hc2'], ['room-return','hc2'],
 ]);
 
 // Home Assistant can display a flow sensor in any of its volume flow rate units.
@@ -259,7 +259,22 @@ function chevrons(id, path, share, speed, darkMode) {
   return `<g data-chevrons="${id}" fill="none" stroke="${stroke}" stroke-opacity="${opacity}" stroke-width="1.1">${markers}</g>`;
 }
 
+const REDUCED_MOTION = '(prefers-reduced-motion: reduce)';
+
 export class GenesisWpDeviceCard extends HTMLElement {
+  _motionPreferenceChanged = () => this._render();
+
+  connectedCallback() {
+    this._motionPreference = globalThis.matchMedia?.(REDUCED_MOTION);
+    this._motionPreference?.addEventListener('change', this._motionPreferenceChanged);
+    this._render();
+  }
+
+  disconnectedCallback() {
+    this._motionPreference?.removeEventListener('change', this._motionPreferenceChanged);
+    this._motionPreference = undefined;
+  }
+
   setConfig(config) {
     if (!config || !CATEGORIES.includes(config.device)) throw new Error(`device must be one of: ${CATEGORIES.join(', ')}`);
     this._config = {...config};
@@ -407,7 +422,7 @@ export class GenesisWpDeviceCard extends HTMLElement {
         hc2: fr2 === 'on' ? nonnegativeNumber(readState('derived_hc2_return')?.attributes.circuit_flow)
           : fr2 === 'off' ? 0 : null,
       };
-      const reduced = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      const reduced = (this._motionPreference ?? globalThis.matchMedia?.(REDUCED_MOTION))?.matches;
       const speed = normalizeFlowSpeed(this._config.flow_speed);
       const darkMode = this._hass.themes?.darkMode;
       const motion = new Map();
@@ -434,7 +449,8 @@ export class GenesisWpDeviceCard extends HTMLElement {
       const markers = PIPES[category].filter(([id]) => LEG_SOURCE.has(id)).map(([id]) =>
         `<g>${motion.get(id) || ''}</g>`,
       ).join('');
-      const pipes = pipesSvg + junctions + `<g class="flow-motion" aria-hidden="true" pointer-events="none">${markers}</g>`;
+      // Keep optional geometry inside fixed siblings so the motion wrapper keeps its index.
+      const pipes = `<g>${pipesSvg}${junctions}</g><g class="flow-motion" aria-hidden="true" pointer-events="none">${markers}</g>`;
       const positioned=new Set();
       const diagram=this._config.layout==='diagram';
       const [vx,vy,vw,vh]=VIEWS[category].split(' ').map(Number);
@@ -465,8 +481,8 @@ export class GenesisWpDeviceCard extends HTMLElement {
         }):svg;
         const drawingParts=svgOnly(parts), drawingFront=svgOnly(frontParts);
         body=diagram
-          ? `<div class="stage" style="aspect-ratio:${vw}/${vh};min-width:${Math.round(vw*0.67)}px"><svg class="drawing" viewBox="${VIEWS[category]}" role="img" aria-label="${escapeText(title)}">${drawingParts}${pipes}${drawingFront}</svg>${labels.join('')}${tags}</div><div class="legend"><span>pipe color = measured temperature [\u00b0C]</span><span class="scale"><span>0</span><span class="bar" style="background:linear-gradient(90deg,${SCALE.map(([v,c])=>`${c} ${v/45*100}%`).join(',')})"></span><span>45</span></span><span>${styleLegend}</span></div>`
-          : `<svg viewBox="${VIEWS[category]}" role="img" aria-label="${escapeText(title)}">${parts}${pipes}${frontParts}${tags}</svg>${legend}`;
+          ? `<div class="stage" style="aspect-ratio:${vw}/${vh};min-width:${Math.round(vw*0.67)}px"><svg class="drawing" viewBox="${VIEWS[category]}" role="img" aria-label="${escapeText(title)}"><g>${drawingParts}</g>${pipes}${drawingFront}</svg>${labels.join('')}${tags}</div><div class="legend"><span>pipe color = measured temperature [\u00b0C]</span><span class="scale"><span>0</span><span class="bar" style="background:linear-gradient(90deg,${SCALE.map(([v,c])=>`${c} ${v/45*100}%`).join(',')})"></span><span>45</span></span><span>${styleLegend}</span></div>`
+          : `<svg viewBox="${VIEWS[category]}" role="img" aria-label="${escapeText(title)}"><g>${parts}</g>${pipes}${frontParts}${tags}</svg>${legend}`;
         // layout 'diagram': the sidebar panel lists the values itself.
         if(!diagram) body+=this._panel(category,panel);
         if(activeAlarms.length) body+=`<div class="alarms" role="status">${activeAlarms.map(e=>escapeText(e.state.attributes.friendly_name||e.id)).join('<br>')}</div>`;

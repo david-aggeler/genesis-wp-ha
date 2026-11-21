@@ -243,14 +243,26 @@ console.log("HARNESS-COMPLETE");
  const stored = new Map();
  globalThis.localStorage = {getItem:key=>stored.get(key),setItem:(key,value)=>stored.set(key,value)};
  const settings = new Panel();
- const diagram = {dataset:{diagram:'internal_heat_pump',entry:hass.entry},setConfig(config){this.config=config;}};
+ const diagram = new (customElements.get('genesis-wp-device-card'))();
+ diagram.dataset = {diagram:'internal_heat_pump',entry:hass.entry};
+ const states = structuredClone(hass.states);
+ const entities = structuredClone(hass.entities);
+ for (const [register, state] of [['input_1', 'Heat'], ['derived_condenser_flow', '20']]) {
+   const id = entity(register);
+   states[id].state = state;
+   entities[id].disabled_by = null;
+ }
+ states[entity('derived_condenser_flow')].attributes.unit_of_measurement = 'L/min';
+ const duration = () => Number(diagram.shadowRoot.innerHTML.match(
+   /data-chevrons="condenser-out"[^>]*><path[^>]*><animateMotion dur="([0-9.]+)s"/,
+ )?.[1]);
  settings.shadowRoot.querySelectorAll = selector => selector === '[data-diagram]' ? [diagram] : [];
  settings.route = {path:'/genesis-wp/internal_heat_pump'};
- settings.hass = {...hass, callService(){assert.fail('flow speed must not call a service');}};
+ settings.hass = {...hass, states, entities, callService(){assert.fail('flow speed must not call a service');}};
  assert.match(settings.shadowRoot.innerHTML, /<input type="range" data-flow-speed min="0.02" max="1" step="0.01" value="0.16">/);
- assert.equal(diagram.config.flow_speed, 0.16);
+ assert.equal(duration(), 31.25);
  settings.shadowRoot.listeners.input({target:{dataset:{flowSpeed:''},value:'0.42'}});
- assert.equal(diagram.config.flow_speed, 0.42);
+ assert.ok(Math.abs(duration() - 11.9047619048) < 0.0001);
  const restored = new Panel();
  restored.route = {path:'/genesis-wp/internal_heat_pump'};
  restored.hass = hass;
@@ -261,6 +273,6 @@ console.log("HARNESS-COMPLETE");
  privatePanel.hass = hass;
  assert.match(privatePanel.shadowRoot.innerHTML, /data-flow-speed[^>]*value="0.16"/);
  settings.shadowRoot.listeners.input({target:{dataset:{flowSpeed:''},value:'0.7'}});
- assert.equal(diagram.config.flow_speed, 0.7);
+ assert.ok(Math.abs(duration() - 7.1428571429) < 0.0001);
  delete globalThis.localStorage;
 }

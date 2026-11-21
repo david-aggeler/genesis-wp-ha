@@ -453,7 +453,8 @@ assert.equal(services,0); assert.equal(ws,0);
   set('input_1', 'Heat');
   set('derived_condenser_flow', '20');
   set('derived_brine_flow', '2');
-  set('derived_hc2_return', '24').circuit_flow = 10;
+  const returnState = states[byRegister('derived_hc2_return')];
+  assert.equal(returnState.state, 'unavailable');
   set('dinput_209', 'on');
   const renderFlow = (flow_speed, darkMode = false) => {
     const card = new Card();
@@ -468,9 +469,15 @@ assert.equal(services,0); assert.equal(ws,0);
   const card = renderFlow(0.5);
   assert.equal(duration(card, 'condenser-out'), 10);
   assert.ok(Math.abs(duration(card, 'brine-hx') - 67.7777777778) < 0.0001);
-  assert.ok(Math.abs(duration(card, 'tr9-mixer') - 6.4) < 0.0001);
+  assert.ok(Math.abs(duration(card, 'hc2-supply') - 7.20130932897) < 0.0001);
+  assert.ok(Math.abs(duration(card, 'room-return') - 13.2751391169) < 0.0001);
   assert.equal(duration(renderFlow(), 'condenser-out'), 31.25);
-  assert.equal(duration(renderFlow(1), 'condenser-out'), 5);
+  card.setConfig({device:'internal_heat_pump', entry:fixture.entry, flow_speed:1});
+  assert.equal(duration(card, 'condenser-out'), 5);
+  card.setConfig({device:'internal_heat_pump', entry:fixture.entry, flow_speed:0.5});
+  const pumpSymbols = html(card).match(/<(?:circle class="pump"|path data-flow-direction)[^>]*>/g);
+  assert.ok(pumpSymbols.length);
+  for (const symbol of pumpSymbols) assert.ok(symbol.endsWith('/>'), symbol);
   assert.match(html(card), /data-chevrons="condenser-out"[^>]*stroke="white" stroke-opacity="0.8"/);
   assert.match(html(renderFlow(0.5, true)), /data-chevrons="condenser-out"[^>]*stroke="black" stroke-opacity="0.55"/);
   assert.match(html(card), /data-chevrons="condenser-out"[^>]*stroke-width="1.1"/);
@@ -478,7 +485,7 @@ assert.equal(services,0); assert.equal(ws,0);
   assert.match(markers(card, 'room-return'), /path="M1815,470 L1815,560 L1540,560"/);
   const converted = set('derived_condenser_flow', '1.2');
   converted.unit_of_measurement = 'm³/h';
-  assert.equal(duration(renderFlow(0.5), 'tr9-mixer'), duration(card, 'tr9-mixer'));
+  assert.equal(duration(renderFlow(0.5), 'hc2-supply'), duration(card, 'hc2-supply'));
   converted.unit_of_measurement = 'L/min';
   set('derived_condenser_flow', 'unavailable');
   const unknown = renderFlow(0.5);
@@ -490,15 +497,87 @@ assert.equal(services,0); assert.equal(ws,0);
   assert.equal(markers(renderFlow(), 'hc2-supply'), '');
   set('dinput_209', 'on');
   assert.match(markers(card, 'condenser-out'), /path="M920,290 L1220,290" rotate="auto"/);
-  for (const leg of ['either-way', 'hc2-port-b', 'bypass', 'room-return-buffer', 'suction']) {
+  for (const leg of ['either-way', 'hc2-port-b', 'tr9-mixer', 'bypass', 'room-return-buffer', 'suction']) {
     assert.equal(markers(card, leg), '', leg);
   }
   assert.match(pipe(card, 'bypass'), /data-flow="active"[^>]*stroke="currentColor" stroke-opacity="0.75"/);
-  globalThis.matchMedia = query => ({matches:query === '(prefers-reduced-motion: reduce)'});
+  let listener;
+  const preference = {
+    matches: true,
+    addEventListener(type, callback) { assert.equal(type, 'change'); listener = callback; },
+    removeEventListener(type, callback) { assert.equal(type, 'change'); assert.equal(listener, callback); listener = undefined; },
+  };
+  globalThis.matchMedia = query => {
+    assert.equal(query, '(prefers-reduced-motion: reduce)');
+    return preference;
+  };
   const reduced = renderFlow(0.5);
-  delete globalThis.matchMedia;
+  reduced.connectedCallback();
+  const pipeTags = () => html(reduced).match(/<path data-path[^>]*>/g);
   assert.doesNotMatch(html(reduced), /<animateMotion/);
-  assert.deepEqual(html(reduced).match(/<path data-path[^>]*>/g), html(card).match(/<path data-path[^>]*>/g));
+  assert.deepEqual(pipeTags(), html(card).match(/<path data-path[^>]*>/g));
+  for (const matches of [false, true]) {
+    preference.matches = matches;
+    listener({matches});
+    assert.equal(duration(reduced, 'condenser-out'), matches ? NaN : 10);
+    assert.deepEqual(pipeTags(), html(card).match(/<path data-path[^>]*>/g));
+  }
+  reduced.disconnectedCallback();
+  assert.equal(listener, undefined);
+  delete globalThis.matchMedia;
+  returnState.attributes.circuit_flow = 0;
+  const zeroHc2 = renderFlow();
+  for (const leg of ['hc2-supply', 'room-return']) {
+    assert.match(pipe(zeroHc2, leg), /data-flow="idle"[^>]*stroke="currentColor" stroke-opacity="0.22"/);
+    assert.equal(markers(zeroHc2, leg), '');
+  }
+  returnState.attributes.circuit_flow = 18.33;
+  // Reconcile the rendered SVG with the production patcher, then check node identity.
+  const {morph} = await import(new URL('./patch.js', pathToFileURL(process.argv[2])));
+  const drawingTree = () => {
+    const svg = html(card).match(/<svg\b[^>]*>[\s\S]*?<\/svg>/)[0];
+    const root = {childNodes:[]};
+    const stack = [root];
+    for (const [tag, closing, name, attributes] of svg.matchAll(/<(\/?)([\w-]+)([^>]*)>/g)) {
+      if (closing) {
+        stack.pop();
+        continue;
+      }
+      const attrs = new Map([...attributes.matchAll(/([\w-]+)="([^"]*)"/g)]
+        .map(([, key, value]) => [key, value]));
+      const node = {
+        nodeType:1, nodeName:name, childNodes:[],
+        get attributes() { return Array.from(attrs, ([name, value]) => ({name, value})); },
+        hasAttribute(key) { return attrs.has(key); },
+        getAttribute(key) { return attrs.get(key); },
+        setAttribute(key, value) { attrs.set(key, value); },
+        removeAttribute(key) { attrs.delete(key); },
+        appendChild(child) { this.childNodes.push(child); },
+        replaceChild(child, previous) { this.childNodes[this.childNodes.indexOf(previous)] = child; },
+        removeChild(child) { this.childNodes.splice(this.childNodes.indexOf(child), 1); },
+      };
+      stack.at(-1).childNodes.push(node);
+      if (!tag.endsWith('/>')) stack.push(node);
+    }
+    return root.childNodes[0];
+  };
+  const animation = drawing => drawing.childNodes.find(node => node.getAttribute('class') === 'flow-motion')
+    .childNodes.flatMap(slot => slot.childNodes)
+    .find(node => node.getAttribute('data-chevrons') === 'condenser-out').childNodes[0].childNodes[0];
+  const liveDrawing = drawingTree();
+  const liveAnimation = animation(liveDrawing);
+  const mixerId = byRegister('input_43');
+  const beforeGeometry = html(card);
+  entities[mixerId].disabled_by = 'user';
+  card.hass = {...hass, states, entities};
+  assert.match(beforeGeometry, /TR12\/13/);
+  assert.doesNotMatch(html(card), /TR12\/13/);
+  morph(liveDrawing, drawingTree());
+  assert.equal(animation(liveDrawing), liveAnimation);
+  entities[mixerId].disabled_by = null;
+  card.hass = {...hass, states, entities};
+  morph(liveDrawing, drawingTree());
+  assert.equal(animation(liveDrawing), liveAnimation);
   set('derived_brine_flow', '0');
   assert.match(pipe(renderFlow(), 'brine-hx'), /data-flow="idle"[^>]*stroke="currentColor" stroke-opacity="0.22"/);
   assert.equal(markers(renderFlow(), 'brine-hx'), '');
