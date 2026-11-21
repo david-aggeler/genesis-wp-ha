@@ -242,6 +242,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     if all(platform in coordinator.setup_entity_ids for platform in PLATFORMS):
         _remove_stale_entities(hass, entry, coordinator)
+        _remove_empty_child_devices(hass, entry.entry_id, coordinator.device_id)
     # The entities subscribed their registers while being added; read them now
     # instead of one update interval later.
     await coordinator.async_refresh()
@@ -257,6 +258,20 @@ def _remove_stale_entities(hass, entry, coordinator):
         if entity.unique_id not in coordinator.setup_entity_ids.get(entity.domain, ()):
             registry.async_remove(entity.entity_id)
             _LOGGER.info("Removed stale entity with unique ID %s", entity.unique_id)
+
+
+# DHF-REQ: genesis-wp-ha/requirement-15
+def _remove_empty_child_devices(hass, entry_id, parent_device_id):
+    """Remove this entry's category devices once they have no registry entities."""
+    devices = dr.async_get(hass)
+    entities = er.async_get(hass)
+    for child in dr.async_entries_for_parent_device(devices, parent_device_id):
+        if child.config_entry_id != entry_id:
+            continue
+        if er.async_entries_for_device(entities, child.id, include_disabled_entities=True):
+            continue
+        devices.async_remove_device(child.id)
+        _LOGGER.info("Removed empty child device with registry ID %s", child.id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):

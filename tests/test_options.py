@@ -9,6 +9,7 @@ from custom_components.genesis_wp.config_flow import model_capabilities
 from custom_components.genesis_wp.const import DOMAIN
 from genesis_wp import const as c
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -96,6 +97,22 @@ async def test_reload_removes_stale_module_entities(hass, entry_with_hot_gas_rec
     await turn_off_hot_gas_recovery(hass, entry)
 
     assert registered(hass, entry) == before - hot_gas
+
+
+# DHF-TEST: genesis-wp-ha/requirement-15 genesis-wp-ha/ac-154
+async def test_reload_removes_emptied_child_device(hass, entry_with_hot_gas_recovery):
+    entry = entry_with_hot_gas_recovery
+    registry = dr.async_get(hass)
+    main = registry.async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+    identifier = (DOMAIN, f"{entry.entry_id}_hot_water")
+    child = registry.async_get_child_device_by_identifier(identifier, entry.entry_id)
+    before = {device.id for device in dr.async_entries_for_parent_device(registry, main.id)}
+    assert child.id in before and len(before) > 1
+
+    await turn_off_hot_gas_recovery(hass, entry)
+
+    assert registry.async_get(main.id) is not None
+    assert {device.id for device in dr.async_entries_for_parent_device(registry, main.id)} == before - {child.id}
 
 
 # DHF-REQ: genesis-wp-ha/requirement-14  DHF-TEST: genesis-wp-ha/ac-46
