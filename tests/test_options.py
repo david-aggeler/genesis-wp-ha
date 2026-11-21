@@ -71,7 +71,10 @@ async def test_options_step_lists_modules_with_automatic_default(hass, start_emu
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] is FlowResultType.FORM
 
-    fields = {str(key): key for key in result["data_schema"].schema if str(key) not in {"show_absent", "buffer_volume", "circuit_flow"}}
+    fields = {
+        str(key): key for key in result["data_schema"].schema
+        if str(key) not in {"show_absent", "buffer_volume", "circuit_flow"}
+    }
     detected = hass.data[DOMAIN][entry.entry_id].thermia.capabilities
     expected = [name for name in model_capabilities(WPE_I_KIND) if detected[name].state != "absent"]
     assert list(fields) == expected
@@ -85,6 +88,7 @@ async def test_options_step_lists_modules_with_automatic_default(hass, start_emu
 
     result = await hass.config_entries.options.async_configure(result["flow_id"], {})
     assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
     assert entry.options == {"buffer_volume": None, "circuit_flow": None}
 
 
@@ -105,7 +109,9 @@ async def test_saving_module_options_applies_them(hass, start_emulator):
 
     # Hot water and pool are detected absent: they sit on the second page (requirement-16).
     result = await hass.config_entries.options.async_init(entry_id)
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {"show_absent": True, "buffer_volume": 300, "circuit_flow": 18.33})
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"show_absent": True, "buffer_volume": 300, "circuit_flow": 18.33}
+    )
     assert result["step_id"] == "absent_modules"
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"hot_water": "installed", "pool": "not_installed"}
@@ -119,7 +125,10 @@ async def test_saving_module_options_applies_them(hass, start_emulator):
 
     # The stored choice is shown again, not reset to automatic.
     result = await hass.config_entries.options.async_init(entry_id)
-    defaults = {str(key): key.default() for key in result["data_schema"].schema}
+    defaults = {
+        str(key): key.default() for key in result["data_schema"].schema
+        if str(key) in {"hot_water", "pool"}
+    }
     assert defaults["hot_water"] == "installed" and defaults["pool"] == "not_installed"
     assert "hot_water: present (set here)" in result["description_placeholders"]["detected"]
 
