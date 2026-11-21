@@ -29,6 +29,42 @@ const html = card => card.shadowRoot.innerHTML;
 const byRegister = key => Object.entries(hass.states).find(([,s])=>s.attributes.register===key)?.[0];
 const tag = (card, key) => html(card).match(new RegExp(`<g[^>]*data-register="${key}"[^>]*>[\\s\\S]*?<\\/g>`))?.[0];
 const pipe = (card, id) => html(card).match(new RegExp(`<path[^>]*data-path="${id}"[^>]*>`))?.[0];
+// DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-126 genesis-wp-ha/ac-127 genesis-wp-ha/ac-128
+for (const [device, register, width] of [['hot_water', 'input_15', 150], ['controller', 'input_55', 260]]) {
+  const id = byRegister(register);
+  const deviceName = hass.devices[hass.entities[id].device_id].name;
+  const wideLabel = `${'W'.repeat(19)}é👩‍🔧${'W'.repeat(20)} & status`;
+  const fullName = `${deviceName} ${wideLabel}`;
+  const states = structuredClone(hass.states);
+  states[id].attributes.friendly_name = fullName;
+  const card = new Card();
+  card.setConfig({device, entry:fixture.entry});
+  card.hass = {...hass, states, locale:{language:'en'}};
+  const rendered = tag(card, register);
+  assert.ok(rendered, register);
+  const label = rendered.match(/<div class="tag-label">([^<]+)<\/div>/)?.[1];
+  assert.equal(label, device === 'controller' ? wideLabel.replace('&', '&amp;') : 'Top', register);
+  assert.ok(rendered.includes(`<title>${fullName.replace('&', '&amp;')}</title>`), register);
+  assert.ok(rendered.includes(`<foreignObject x="6" y="2" width="${width - 12}" height="18">`), register);
+  const rule = html(card).match(/\.tag-label\{([^}]+)}/)?.[1];
+  for (const declaration of ['overflow:hidden', 'white-space:nowrap', 'text-overflow:ellipsis']) {
+    assert.ok(rule?.includes(declaration), declaration);
+  }
+}
+// DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-126
+// formal_review-50 B1: prefix plus trailing "Temperature" must not render a blank label.
+{
+  const id = byRegister('input_55');
+  const deviceName = hass.devices[hass.entities[id].device_id].name;
+  const states = structuredClone(hass.states);
+  states[id].attributes.friendly_name = `${deviceName}  Temperature`;
+  const card = new Card();
+  card.setConfig({device:'controller', entry:fixture.entry});
+  card.hass = {...hass, states, locale:{language:'en'}};
+  const label = tag(card, 'input_55')?.match(/<div class="tag-label">([^<]*)<\/div>/)?.[1];
+  assert.equal(label, 'Temperature');
+  assert.ok(!label.startsWith(deviceName));
+}
 {
   const states = structuredClone(hass.states);
   states[byRegister('input_1')].state = 'Heat';

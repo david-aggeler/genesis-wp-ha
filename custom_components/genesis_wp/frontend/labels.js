@@ -57,7 +57,8 @@ export function language(hass) {
 export function shortLabel(hass, register, friendlyName, deviceName) {
   const short = LABELS[language(hass)][register] ?? LABELS.en[register];
   if (short) return short;
-  let name = friendlyName || '';
-  if (deviceName && name.startsWith(deviceName + ' ')) name = name.slice(deviceName.length + 1);
-  return name.replace(/ Temperature$/, '');
+  let name = (friendlyName || '').trim();
+  if (deviceName && name.startsWith(deviceName + ' ')) name = name.slice(deviceName.length + 1).trim();
+  // Never strip a label to nothing: a name that is only "Temperature" after the prefix keeps it.
+  return name.replace(/\s+Temperature$/, '').trim() || name;
 }
