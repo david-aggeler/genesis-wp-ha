@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import math
 from datetime import date, datetime
+from functools import partial
 
 import pytest
 
+from custom_components import genesis_wp
 from custom_components.genesis_wp.const import DOMAIN
 from genesis_wp.emulator import heating
 from genesis_wp.emulator.climate import BUCKETS, LICENSE, SOURCE, ClimateProfile
+from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -182,3 +186,45 @@ async def test_a_changing_calibration_schedules_one_delayed_save_at_a_time(hass,
         await hass.async_block_till_done()
         emu.advance(60)
     assert len(scheduled) == 2
+
+
+# DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-118
+@pytest.mark.parametrize("disabled", [None, "buffer_volume", "circuit_flow", "heating_circuit_2", "buffer_tank"])
+async def test_hc2_return_availability(hass, start_emulator, monkeypatch, disabled):
+    # Only the loopback emulator handles these reads, so omit the production inter-request delay.
+    monkeypatch.setattr(genesis_wp, "ThermiaGenesis", partial(genesis_wp.ThermiaGenesis, delay=0))
+    emu = await start_emulator(PROFILE_615, dynamics=True, climate=flat_climate(), start_time=START)
+    emu.step(60)
+    entry = await setup_entry(hass, emu)
+    if disabled is not None:
+        result = await hass.config_entries.options.async_init(entry.entry_id)
+        fields = {"buffer_volume": 300, "circuit_flow": 18.33}
+        if disabled in fields:
+            del fields[disabled]
+        else:
+            fields[disabled] = "not_installed"
+        result = await hass.config_entries.options.async_configure(result["flow_id"], fields)
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        await hass.async_block_till_done()
+    entity_id = er.async_get(hass).async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_derived_hc2_return")
+    assert entity_id is not None
+    assert hass.states.get(entity_id).state == "unavailable"
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    coordinator.flow_clock = lambda: emu.simulated_time.timestamp()
+    for minute in range(36):
+        await coordinator.async_refresh()
+        if minute == 29 or disabled is not None:
+            assert hass.states.get(entity_id).state == "unavailable"
+        emu.advance(60)
+    if disabled is not None:
+        return
+    state = hass.states.get(entity_id)
+    assert math.isfinite(float(state.state))
+    assert state.attributes["unit_of_measurement"] == "°C"
+    assert state.attributes["source"] == "estimate"
+    assert state.attributes["circuit_flow"] == 18.33
+    assert state.attributes["heat"] >= 0
+
+    emu.advance(121)
+    await coordinator.async_refresh()
+    assert hass.states.get(entity_id).state == "unavailable"

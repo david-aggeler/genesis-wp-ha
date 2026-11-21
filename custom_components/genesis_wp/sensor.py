@@ -12,7 +12,9 @@ from genesis_wp.const import REGISTERS
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.sensor import SensorStateClass
+from homeassistant.const import UnitOfTemperature
 from homeassistant.const import UnitOfVolumeFlowRate
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .register_entity import RegisterAnchor
 
@@ -71,6 +73,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         elif spec[KEY_REG_TYPE] == REG_HOLDING:
             sensors.append(ThermiaSettingSensor(coordinator, register))
     sensors.extend(FlowSensor(coordinator, key) for key in coordinator.flow_estimators)
+    if coordinator.supports_hc2_return:
+        sensors.append(HC2ReturnSensor(coordinator))
     async_add_entities(sensors, False)
 
 
@@ -317,3 +321,41 @@ class FlowSensor(SensorEntity):
         """Follow coordinator updates."""
         await super().async_added_to_hass()
         self.async_on_remove(self.coordinator.async_add_listener(self.async_write_ha_state))
+
+# DHF-REQ: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-118
+class HC2ReturnSensor(CoordinatorEntity, SensorEntity):
+    """The estimated heating circuit 2 return temperature."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Estimated circuit 2 return"
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_suggested_display_precision = 1
+    _unrecorded_attributes = frozenset({"register"})
+
+    def __init__(self, coordinator):
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.entry_id}_derived_hc2_return"
+        self._attr_device_info = coordinator.device_info_for(coordinator.flow_estimators["condenser_flow"].loop.pump)
+
+    @property
+    def capability_attributes(self):
+        """Keep the frontend anchor when the estimate is unavailable."""
+        return {**(super().capability_attributes or {}), "register": "derived_hc2_return"}
+
+    @property
+    def available(self):
+        return super().available and self.native_value is not None
+
+    @property
+    def native_value(self):
+        return self.coordinator.hc2_return.value
+
+    @property
+    def extra_state_attributes(self):
+        return {
+            "source": "estimate",
+            "heat": self.coordinator.hc2_return.heat,
+            "circuit_flow": self.coordinator.circuit_flow,
+        }

@@ -96,6 +96,9 @@
     }
   },
   "options": {
+    "error": {
+      "nonfinite_number": "Enter a finite number."
+    },
     "step": {
       "init": {
         "title": "Modules",
@@ -114,6 +117,8 @@
           "external_heater": "External heater",
           "electric_meter": "Electric meter",
           "smart_grid": "SG Ready",
+          "buffer_volume": "Buffer volume",
+          "circuit_flow": "Heating circuit 2 flow",
           "show_absent": "Show modules detected as not installed"
         }
       },

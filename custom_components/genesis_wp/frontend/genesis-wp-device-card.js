@@ -21,7 +21,8 @@ const escapeText = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'
 const key = address => `input_${address}`;
 // DHF-REQ: genesis-wp-ha/requirement-27
 const calculated = new Set([17,18,68,122,124,125,126,147].map(key));
-const estimated = new Set(['derived_condenser_flow', 'derived_brine_flow']);
+// DHF-REQ: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-113
+const estimated = new Set(['derived_condenser_flow', 'derived_brine_flow', 'derived_hc2_return']);
 const valueSource = register => estimated.has(register) ? ' estimated' : calculated.has(register) ? ' calculated' : '';
 const styleLegend = 'solid: measured; faded chip: other section; dashed: calculated by the controller; \u2248: estimated; faded: idle; gray: no sensor';
 // The standalone SVG legend cannot wrap text, so the style legend is split at '; ' into lines of at
@@ -70,7 +71,7 @@ const POSITIONS = {
     // Input 68 (charge target) has no chip: the owner dropped it from the drawing (ac-93).
     [41,1165,500],
     // Heating circuit 2: right of TR12/13, above FR2 and the rooms (ac-105).
-    ['holding_107',1565,56],['holding_108',1735,56],['coil_11',1565,102],[43,1565,216],[147,1735,170],[40,1735,216]],
+    ['holding_107',1565,56],['holding_108',1735,56],['coil_11',1565,102],[43,1565,216],[147,1735,170],[40,1735,216],['derived_hc2_return',1565,500]],
   hot_water: [[9,10,20],[47,180,20],[15,410,130],[16,410,330],[17,410,380],[45,10,200],[117,10,430],[118,220,430]],
   cooling: [[11,10,20],[106,410,20],[103,410,380],[104,220,160],[105,220,290],[92,410,220]],
   pool: [[9,10,20],[119,410,20],[120,410,330],[94,220,150]],
@@ -130,10 +131,9 @@ const PARTS = {
     [[40,147],part('rooms',1815,rect(1750,270,130,200,'Rooms (HC2)'))]],
 };
 // [path id, temperature register, flow group, path geometry, phase dash]
-// The register may be [shown when, colored by]: a pipe without a sensor on it is drawn while its
-// part exists, colored by null, so it stays neutral (issue-21, never a guessed temperature).
-// A third element, a label, marks an owner-chosen estimate: the pipe takes that sensor's color,
-// carries data-estimated and says "estimated from <label>" on hover (change_request-50).
+// The register may be [shown when, colored by]. The first register anchors the pipe to a part;
+// an array of anchors shows the pipe when any of them exists.
+// A missing temperature from the second register uses the no-sensor style.
 const PIPES = {
   hot_water: [['charging',9,'hot_water','M10,80 L390,80 L390,160'],
     ['tank-top',15,'hot_water','M390,160 L570,160'],
@@ -169,12 +169,13 @@ const PIPES = {
     ['buffer-return',8,'buffer','M1160,560 L1100,560 L1100,390'],
     // Heating circuit 2 draws from the buffer top through TR9 port B. The room return, its bypass to
     // TR12/13 and its branch to the passive-cooling exchanger carry no sensor: T31 (input 41) sits in
-    // a tank wall sleeve and reads the tank-bottom water, not the return (issue-21). The owner chose
-    // T31's color as an estimate for the room return only (change_request-50).
+    // a tank wall sleeve. The room return uses the integration estimate.
+    // DHF-REQ: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-117 genesis-wp-ha/ac-118
     ['hc2-port-b',12,'hc2','M1220,290 L1408,290'],
     ['tr9-mixer',12,'rooms','M1432,290 L1528,290'],
     ['hc2-supply',40,'rooms','M1552,290 L1750,290'],
-    ['room-return',[41,41,'T31'],'rooms','M1815,470 L1815,560 L1320,560'],
+    // Shown whenever the Rooms block is (T32 or the HC2 supply set point), colored by the estimate.
+    ['room-return',[[40,147],'derived_hc2_return'],'rooms','M1815,470 L1815,560 L1320,560'],
     ['bypass',[41,null],'rooms','M1540,560 L1540,304'],
     ['passive-port-a',40,'passive','M160,10 L160,-25 L1420,-25 L1420,276'],
     // Passive cooling: the room return leaves at the T31 port, rises over the plant and enters
@@ -330,16 +331,17 @@ export class GenesisWpDeviceCard extends HTMLElement {
       const front=svg=>svg.includes('class="pump"')||svg.includes('class="heater"');
       const parts=drawn.filter(svg=>!front(svg)).join(''), frontParts=drawn.filter(front).join('');
       const styles=new Map();
-      const pipesSvg=PIPES[category].filter(([,r])=>exists(Array.isArray(r)?r[0]:r)).map(([id,r,group,d,dash])=>{
-        const sensor=Array.isArray(r)?r[1]:r, estimate=Array.isArray(r)?r[2]:undefined;
-        const state=sensor===null?null:byRegister.get(key(sensor))?.state;
+      const anchored=r=>{const a=Array.isArray(r)?r[0]:r; return Array.isArray(a)?a.some(exists):exists(a);};
+      const pipesSvg=PIPES[category].filter(([,r])=>anchored(r)).map(([id,r,group,d,dash])=>{
+        const sensor=Array.isArray(r)?r[1]:r;
+        const state=sensor===null?null:byRegister.get(typeof sensor==='number'?key(sensor):sensor)?.state;
         const celsius=state ? toCelsius(state.state, state.attributes.unit_of_measurement) : null;
         const flow=active(group,mode,passiveEnabled);
         const color=flow&&celsius!==null?temperatureColor(celsius):'currentColor';
-        const opacity = flow ? (sensor === null ? 0.75 : 1) : 0.22;
+        const noSensor = Array.isArray(r) && celsius === null;
+        const opacity = flow ? (noSensor ? 0.75 : 1) : 0.22;
         styles.set(id,{flow,color,opacity});
-        const estimated=estimate&&flow&&celsius!==null;
-        return `<path data-path="${id}" data-flow="${flow?'active':'idle'}"${estimated?` data-estimated="${key(sensor)}"`:''} d="${d}" fill="none" stroke="${color}" stroke-opacity="${opacity}" stroke-width="5"${dash?` stroke-dasharray="${dash}"`:''}>${estimated?`<title>estimated from ${estimate}</title>`:''}</path>`;
+        return `<path data-path="${id}" data-flow="${flow?'active':'idle'}" d="${d}" fill="none" stroke="${color}" stroke-opacity="${opacity}" stroke-width="5"${dash?` stroke-dasharray="${dash}"`:''}></path>`;
       }).join('');
       const junctions=(JUNCTIONS[category]||[]).map(([x,y,r,ids])=>{
         const joined=ids.map(id=>styles.get(id)).filter(Boolean);
