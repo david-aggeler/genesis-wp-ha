@@ -359,7 +359,7 @@ export class GenesisWpDeviceCard extends HTMLElement {
         return setting(a)-setting(b)||a.id.localeCompare(b.id);
       });
       // DHF-REQ: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-129
-      if(!parts && !frontParts && !pipes && !tags && !panel.length) {
+      if(!own.length) {
         body='<p>No enabled entities for this device</p>';
       } else {
         const activeAlarms=alarms.filter(e=>e.state.state==='on');

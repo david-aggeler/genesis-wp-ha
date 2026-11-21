@@ -26,17 +26,26 @@ let services = 0, ws = 0;
 const hass = {...fixture, callService(){services++;}, callWS(){ws++;}, localize(key){return key.endsWith('.unavailable')?'Unavailable':key.endsWith('.unknown')?'Unknown':undefined;}};
 const render = (device, entry=fixture.entry) => { const card = new Card(); card.setConfig({device,entry}); card.hass=hass; return card; };
 const html = card => card.shadowRoot.innerHTML;
-// DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-129
-for (const layout of [undefined, 'diagram']) {
-  const card = new Card();
-  card.setConfig({device:'internal_heat_pump', entry:fixture.entry, layout});
-  card.hass = {...hass, entities:{}};
-  const output = html(card);
-  const mode = layout ?? 'card';
-  assert.match(output, /<p>No enabled entities for this device<\/p>/, mode);
-  assert.doesNotMatch(output, /<svg\b|Temperature legend|pipe color = measured temperature/, mode);
-}
 const byRegister = key => Object.entries(hass.states).find(([,s])=>s.attributes.register===key)?.[0];
+// DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-129
+const heatPumpId = Object.keys(hass.devices).find(id => hass.devices[id].identifiers.some(
+  ([domain, identifier]) => domain === 'genesis_wp' && identifier === `${fixture.entry}_internal_heat_pump`,
+));
+assert.ok(heatPumpId);
+const siblingEntities = Object.fromEntries(Object.entries(hass.entities)
+  .filter(([, entity]) => entity.device_id !== heatPumpId));
+assert.equal(siblingEntities[byRegister('input_12')]?.disabled_by, null, 'sibling T33 is enabled');
+for (const [scenario, entities] of [['empty registry', {}], ['enabled siblings', siblingEntities]]) {
+  for (const layout of [undefined, 'diagram']) {
+    const card = new Card();
+    card.setConfig({device:'internal_heat_pump', entry:fixture.entry, layout});
+    card.hass = {...hass, entities};
+    const output = html(card);
+    const context = `${layout ?? 'card'}, ${scenario}`;
+    assert.match(output, /<p>No enabled entities for this device<\/p>/, context);
+    assert.doesNotMatch(output, /<svg\b|Temperature legend|pipe color = measured temperature/, context);
+  }
+}
 const tag = (card, key) => html(card).match(new RegExp(`<g[^>]*data-register="${key}"[^>]*>[\\s\\S]*?<\\/g>`))?.[0];
 const pipe = (card, id) => html(card).match(new RegExp(`<path[^>]*data-path="${id}"[^>]*>`))?.[0];
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-126 genesis-wp-ha/ac-127 genesis-wp-ha/ac-128
