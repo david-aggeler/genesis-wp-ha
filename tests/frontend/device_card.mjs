@@ -29,6 +29,43 @@ const html = card => card.shadowRoot.innerHTML;
 const byRegister = key => Object.entries(hass.states).find(([,s])=>s.attributes.register===key)?.[0];
 const tag = (card, key) => html(card).match(new RegExp(`<g[^>]*data-register="${key}"[^>]*>[\\s\\S]*?<\\/g>`))?.[0];
 const pipe = (card, id) => html(card).match(new RegExp(`<path[^>]*data-path="${id}"[^>]*>`))?.[0];
+{
+  const states = structuredClone(hass.states);
+  states[byRegister('input_1')].state = 'Heat';
+  states[byRegister('input_12')].state = '26.26';
+  for (const register of ['derived_condenser_flow', 'derived_brine_flow', 'input_18']) {
+    states[byRegister(register)].state = '13.7';
+  }
+  for (const layout of [undefined, 'diagram']) {
+    const card = new Card();
+    card.setConfig({device:'internal_heat_pump', entry:fixture.entry, layout});
+    card.hass = {...hass, states};
+    const out = html(card);
+    const chip = key => layout === 'diagram'
+      ? out.match(new RegExp(`<div class="chip [^"]*"[^>]*data-register="${key}"[^>]*>[\\s\\S]*?</div>`))?.[0]
+      : tag(card, key);
+    // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-112
+    assert.match(chip('input_12'), /class="[^"]*context/);
+    assert.match(out, /\.context\{opacity:0?\.75\}/);
+    assert.doesNotMatch(out, /\.context[^{}]*\{[^{}]*(?:dotted|stroke-dasharray)/);
+    // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-113
+    for (const register of ['derived_condenser_flow', 'derived_brine_flow']) {
+      assert.match(chip(register), /class="[^"]*estimated/);
+      assert.match(chip(register), /class="value"[^>]*>≈ 13\.7/);
+    }
+    // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-114
+    assert.match(chip('input_18'), /class="[^"]*calculated/);
+    assert.match(chip('input_18'), /class="value"[^>]*>13\.7/);
+    assert.match(out, /stroke-dasharray:6 3/);
+    // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-115
+    assert.match(pipe(card,'bypass'), /data-flow="active"[^>]*stroke="currentColor" stroke-opacity="0.75"/);
+    assert.match(pipe(card,'cooling-return'), /data-flow="idle"[^>]*stroke-opacity="0.22"/);
+    assert.match(pipe(card,'either-way'), /data-flow="active"[^>]*stroke="#[0-9a-f]+" stroke-opacity="1"/);
+    // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-116
+    assert.ok(out.includes('solid: measured; faded chip: other section; dashed: calculated by the controller; ≈: estimated; faded: idle; gray: no sensor'));
+    assert.doesNotMatch(out, /dashed: calculated</);
+  }
+}
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-67
 {
   const category = 'internal_heat_pump';
@@ -67,15 +104,16 @@ for (const key of plantAnchors) {
   assert.ok(rendered.includes(`data-entity="${id}"`), key);
   const diagram = html(card).match(/<svg[\s\S]*?<\/svg>/)?.[0];
   assert.ok(diagram?.includes(rendered), `${key}: tag outside the drawing`);
+  const prefix = key.startsWith('derived_') ? '≈ ' : '';
   const expected=['unknown','unavailable'].includes(state.state)
     ? hass.localize('state.default.'+state.state)
-    : [state.state,state.attributes.unit_of_measurement].filter(Boolean).join(' ');
+    : prefix + [state.state,state.attributes.unit_of_measurement].filter(Boolean).join(' ');
   assert.equal(rendered.match(/class="value"[^>]*>(.*?)<\/text>/)?.[1],expected,key);
   assert.equal(html(card).split(`data-register="${key}"`).length,2,key);
   const previous=state.state;
   state.state='37.125'; card.hass=hass;
   assert.equal(tag(card,key).match(/class="value"[^>]*>(.*?)<\/text>/)?.[1],
-    ['37.125',state.attributes.unit_of_measurement].filter(Boolean).join(' '));
+    [prefix + '37.125',state.attributes.unit_of_measurement].filter(Boolean).join(' '));
   state.state=previous; card.hass=hass;
 }
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-73
@@ -472,7 +510,7 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     const tag = out.match(/<path data-path="bypass"[^>]*>/)?.[0];
     assert.ok(tag, 'bypass');
     assert.match(tag, /data-flow="active"/);
-    assert.match(tag, /stroke="currentColor" stroke-opacity="1"/);
+    assert.match(tag, /stroke="currentColor" stroke-opacity="0.75"/);
     assert.doesNotMatch(tag, /data-estimated/);
   }
   // change_request-50: the owner chose T31's color as a labeled estimate for the room return.
@@ -556,7 +594,7 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     const tag = html(c).match(/<path data-path="cooling-return"[^>]*>/)[0];
     assert.match(tag, /data-flow="active"/);
     // No sensor on the room return (issue-21): active, but neutral rather than T31's color.
-    assert.match(tag, /stroke="currentColor" stroke-opacity="1"/);
+    assert.match(tag, /stroke="currentColor" stroke-opacity="0.75"/);
   }
   // ac-108: one estimated-flow chip beside each circulation pump; unknown shows the placeholder, not 0.
   for (const [register, [px, py]] of Object.entries({derived_condenser_flow:[1040, 390], derived_brine_flow:[225, 200]})) {
@@ -599,12 +637,12 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     };
     const c = new Card(); c.setConfig({device:'internal_heat_pump',entry:fixture.entry,layout:'diagram'}); c.hass = st;
     const value = html(c).match(new RegExp(`data-register="derived_condenser_flow"[^>]*>[^]*?<span class="value">([^<]*)<`))[1];
-    assert.equal(value, '9.8 L/min');
+    assert.equal(value, '≈ 9.8 L/min');
     // Unknown keeps the localized placeholder; a formatter that throws falls back to the raw state.
     st.states[id].state = 'unknown'; c.hass = st;
     assert.equal(html(c).match(new RegExp(`data-register="derived_condenser_flow"[^>]*>[^]*?<span class="value">([^<]*)<`))[1], 'Unknown');
     st.states[id].state = '9.5'; st.formatEntityState = () => { throw new Error('x'); }; c.hass = st;
-    assert.equal(html(c).match(new RegExp(`data-register="derived_condenser_flow"[^>]*>[^]*?<span class="value">([^<]*)<`))[1], '9.5 L/min');
+    assert.equal(html(c).match(new RegExp(`data-register="derived_condenser_flow"[^>]*>[^]*?<span class="value">([^<]*)<`))[1], '≈ 9.5 L/min');
   }
 }
 console.log("HARNESS-COMPLETE");
