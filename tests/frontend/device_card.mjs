@@ -26,6 +26,16 @@ let services = 0, ws = 0;
 const hass = {...fixture, callService(){services++;}, callWS(){ws++;}, localize(key){return key.endsWith('.unavailable')?'Unavailable':key.endsWith('.unknown')?'Unknown':undefined;}};
 const render = (device, entry=fixture.entry) => { const card = new Card(); card.setConfig({device,entry}); card.hass=hass; return card; };
 const html = card => card.shadowRoot.innerHTML;
+// DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-129
+for (const layout of [undefined, 'diagram']) {
+  const card = new Card();
+  card.setConfig({device:'internal_heat_pump', entry:fixture.entry, layout});
+  card.hass = {...hass, entities:{}};
+  const output = html(card);
+  const mode = layout ?? 'card';
+  assert.match(output, /<p>No enabled entities for this device<\/p>/, mode);
+  assert.doesNotMatch(output, /<svg\b|Temperature legend|pipe color = measured temperature/, mode);
+}
 const byRegister = key => Object.entries(hass.states).find(([,s])=>s.attributes.register===key)?.[0];
 const tag = (card, key) => html(card).match(new RegExp(`<g[^>]*data-register="${key}"[^>]*>[\\s\\S]*?<\\/g>`))?.[0];
 const pipe = (card, id) => html(card).match(new RegExp(`<path[^>]*data-path="${id}"[^>]*>`))?.[0];
