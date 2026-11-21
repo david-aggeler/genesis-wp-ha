@@ -29,6 +29,92 @@ const html = card => card.shadowRoot.innerHTML;
 const byRegister = key => Object.entries(hass.states).find(([,s])=>s.attributes.register===key)?.[0];
 const tag = (card, key) => html(card).match(new RegExp(`<g[^>]*data-register="${key}"[^>]*>[\\s\\S]*?<\\/g>`))?.[0];
 const pipe = (card, id) => html(card).match(new RegExp(`<path[^>]*data-path="${id}"[^>]*>`))?.[0];
+{
+  const states = structuredClone(hass.states);
+  states[byRegister('input_1')].state = 'Heat';
+  states[byRegister('input_12')].state = '26.26';
+  const estimates = ['derived_condenser_flow', 'derived_brine_flow'];
+  const calculated = [18, 122, 124, 125, 126, 147].map(address => `input_${address}`);
+  for (const register of [...estimates, ...calculated, 'input_17', 'input_68']) {
+    states[byRegister(register)].state = '13.7';
+  }
+  const renderWithStates = (device, layout, entities = hass.entities) => {
+    const card = new Card();
+    card.setConfig({device, entry:fixture.entry, layout});
+    card.hass = {...hass, states, entities};
+    return card;
+  };
+  const positionedChip = (card, register) => html(card).match(new RegExp(
+    `<div class="chip [^"]*"[^>]*data-register="${register}"[^>]*>[\\s\\S]*?</div>`
+  ))?.[0];
+  const checkDashedValue = (card, register, source, layout) => {
+    const positioned = layout === 'diagram';
+    const chip = positioned ? positionedChip(card, register) : tag(card, register);
+    const label = `${register} (${layout ?? 'card'})`;
+    assert.ok(chip, label);
+    const classes = chip.match(/^<\w+ class="([^"]+)"/)[1].split(/\s+/);
+    assert.ok(classes.includes(source), label);
+    assert.match(chip, positioned
+      ? /<svg class="chip-border"[^>]*>\s*<rect\b[^>]*\/?>\s*<\/svg>/
+      : /<rect\b[^>]*>/, label);
+
+    const style = html(card).match(/<style>([\s\S]*?)<\/style>/)[1];
+    const dashRules = [...style.matchAll(/([^{}]+)\{[^{}]*\bstroke-dasharray:\s*6\s+3\s*(?:;|\})/g)];
+    const selectors = dashRules.flatMap(rule => rule[1].trim().split(/\s*,\s*/));
+    assert.ok(selectors.includes(`.${source} rect`), label);
+
+    const value = chip.match(/class="value"[^>]*>([^<]+)<\/(?:span|text)>/)?.[1];
+    assert.ok(value?.includes('13.7'), label);
+    if (source === 'estimated') assert.match(value, /^≈ 13\.7/, label);
+    else assert.doesNotMatch(value, /≈/, label);
+  };
+  for (const layout of [undefined, 'diagram']) {
+    const card = renderWithStates('internal_heat_pump', layout);
+    const out = html(card);
+    const contextChip = layout === 'diagram' ? positionedChip(card, 'input_12') : tag(card, 'input_12');
+    // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-112
+    assert.match(contextChip, /class="[^"]*context/);
+    assert.match(out, /\.context\{opacity:0?\.75\}/);
+    assert.doesNotMatch(out, /\.context[^{}]*\{[^{}]*(?:dotted|stroke-dasharray)/);
+    // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-113
+    for (const register of estimates) checkDashedValue(card, register, 'estimated', layout);
+    // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-114
+    for (const register of calculated) checkDashedValue(card, register, 'calculated', layout);
+    checkDashedValue(renderWithStates('hot_water', layout), 'input_17', 'calculated', layout);
+    // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-115
+    assert.match(pipe(card,'bypass'), /data-flow="active"[^>]*stroke="currentColor" stroke-opacity="0.75"/);
+    assert.match(pipe(card,'cooling-return'), /data-flow="idle"[^>]*stroke-opacity="0.22"/);
+    assert.match(pipe(card,'either-way'), /data-flow="active"[^>]*stroke="#[0-9a-f]+" stroke-opacity="1"/);
+    // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-116
+    const fullLegend = 'solid: measured; faded chip: other section; dashed: calculated by the controller; ≈: estimated; faded: idle; gray: no sensor';
+    if (layout === 'diagram') assert.ok(out.includes(fullLegend));
+    else {
+      // The standalone SVG cannot wrap: every style-legend line must fit the legend viewport.
+      // Budget: 8px text at 4.2 units per character (DejaVu Sans measured 498 units for the
+      // 120-character single line), so a line fits when chars * 4.2 <= the viewBox width.
+      const legendSvg = out.match(/<svg viewBox="0 0 (\d+) (\d+)" aria-label="Temperature legend">.*?<\/svg>/s);
+      assert.ok(legendSvg, 'standalone legend svg');
+      const [svg, width, height] = [legendSvg[0], Number(legendSvg[1]), Number(legendSvg[2])];
+      const lines = [...svg.matchAll(/<text x="0" y="(\d+)" class="style-legend">([^<]+)<\/text>/g)];
+      assert.ok(lines.length >= 2, 'style legend wraps into lines');
+      assert.equal(lines.map(m => m[2]).join(' '), fullLegend);
+      for (const [, y, text] of lines) {
+        assert.ok(text.length * 4.2 <= width, `legend line fits ${width} units: ${text}`);
+        assert.ok(Number(y) <= height, `legend line y ${y} inside viewBox height ${height}`);
+      }
+    }
+    assert.doesNotMatch(out, /dashed: calculated</);
+  }
+  // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-114
+  // Input 68 has no drawing position. Exercise its value tag through a supported
+  // card category while keeping the emulator's register identity and state.
+  const chargeTarget = byRegister('input_68');
+  const [deviceId] = Object.entries(hass.devices).find(([, device]) =>
+    device.identifiers.some(([domain, id]) =>
+      domain === 'genesis_wp' && id === `${fixture.entry}_internal_heat_pump`));
+  const entities = {...hass.entities, [chargeTarget]: {...hass.entities[chargeTarget], device_id: deviceId}};
+  checkDashedValue(renderWithStates('internal_heat_pump', undefined, entities), 'input_68', 'calculated');
+}
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-67
 {
   const category = 'internal_heat_pump';
@@ -67,15 +153,16 @@ for (const key of plantAnchors) {
   assert.ok(rendered.includes(`data-entity="${id}"`), key);
   const diagram = html(card).match(/<svg[\s\S]*?<\/svg>/)?.[0];
   assert.ok(diagram?.includes(rendered), `${key}: tag outside the drawing`);
+  const prefix = key.startsWith('derived_') ? '≈ ' : '';
   const expected=['unknown','unavailable'].includes(state.state)
     ? hass.localize('state.default.'+state.state)
-    : [state.state,state.attributes.unit_of_measurement].filter(Boolean).join(' ');
+    : prefix + [state.state,state.attributes.unit_of_measurement].filter(Boolean).join(' ');
   assert.equal(rendered.match(/class="value"[^>]*>(.*?)<\/text>/)?.[1],expected,key);
   assert.equal(html(card).split(`data-register="${key}"`).length,2,key);
   const previous=state.state;
   state.state='37.125'; card.hass=hass;
   assert.equal(tag(card,key).match(/class="value"[^>]*>(.*?)<\/text>/)?.[1],
-    ['37.125',state.attributes.unit_of_measurement].filter(Boolean).join(' '));
+    [prefix + '37.125',state.attributes.unit_of_measurement].filter(Boolean).join(' '));
   state.state=previous; card.hass=hass;
 }
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-73
@@ -472,7 +559,7 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     const tag = out.match(/<path data-path="bypass"[^>]*>/)?.[0];
     assert.ok(tag, 'bypass');
     assert.match(tag, /data-flow="active"/);
-    assert.match(tag, /stroke="currentColor" stroke-opacity="1"/);
+    assert.match(tag, /stroke="currentColor" stroke-opacity="0.75"/);
     assert.doesNotMatch(tag, /data-estimated/);
   }
   // change_request-50: the owner chose T31's color as a labeled estimate for the room return.
@@ -556,7 +643,7 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     const tag = html(c).match(/<path data-path="cooling-return"[^>]*>/)[0];
     assert.match(tag, /data-flow="active"/);
     // No sensor on the room return (issue-21): active, but neutral rather than T31's color.
-    assert.match(tag, /stroke="currentColor" stroke-opacity="1"/);
+    assert.match(tag, /stroke="currentColor" stroke-opacity="0.75"/);
   }
   // ac-108: one estimated-flow chip beside each circulation pump; unknown shows the placeholder, not 0.
   for (const [register, [px, py]] of Object.entries({derived_condenser_flow:[1040, 390], derived_brine_flow:[225, 200]})) {
@@ -599,12 +686,12 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     };
     const c = new Card(); c.setConfig({device:'internal_heat_pump',entry:fixture.entry,layout:'diagram'}); c.hass = st;
     const value = html(c).match(new RegExp(`data-register="derived_condenser_flow"[^>]*>[^]*?<span class="value">([^<]*)<`))[1];
-    assert.equal(value, '9.8 L/min');
+    assert.equal(value, '≈ 9.8 L/min');
     // Unknown keeps the localized placeholder; a formatter that throws falls back to the raw state.
     st.states[id].state = 'unknown'; c.hass = st;
     assert.equal(html(c).match(new RegExp(`data-register="derived_condenser_flow"[^>]*>[^]*?<span class="value">([^<]*)<`))[1], 'Unknown');
     st.states[id].state = '9.5'; st.formatEntityState = () => { throw new Error('x'); }; c.hass = st;
-    assert.equal(html(c).match(new RegExp(`data-register="derived_condenser_flow"[^>]*>[^]*?<span class="value">([^<]*)<`))[1], '9.5 L/min');
+    assert.equal(html(c).match(new RegExp(`data-register="derived_condenser_flow"[^>]*>[^]*?<span class="value">([^<]*)<`))[1], '≈ 9.5 L/min');
   }
 }
 console.log("HARNESS-COMPLETE");
