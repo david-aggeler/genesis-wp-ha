@@ -27,6 +27,43 @@ const hass = {...fixture, callService(){services++;}, callWS(){ws++;}, localize(
 const render = (device, entry=fixture.entry) => { const card = new Card(); card.setConfig({device,entry}); card.hass=hass; return card; };
 const html = card => card.shadowRoot.innerHTML;
 const byRegister = key => Object.entries(hass.states).find(([,s])=>s.attributes.register===key)?.[0];
+// DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-129
+const heatPumpId = Object.keys(hass.devices).find(id => hass.devices[id].identifiers.some(
+  ([domain, identifier]) => domain === 'genesis_wp' && identifier === `${fixture.entry}_internal_heat_pump`,
+));
+assert.ok(heatPumpId);
+const siblingEntities = Object.fromEntries(Object.entries(hass.entities)
+  .filter(([, entity]) => entity.device_id !== heatPumpId));
+assert.equal(siblingEntities[byRegister('input_12')]?.disabled_by, null, 'sibling T33 is enabled');
+for (const [scenario, entities] of [['empty registry', {}], ['enabled siblings', siblingEntities]]) {
+  for (const layout of [undefined, 'diagram']) {
+    const card = new Card();
+    card.setConfig({device:'internal_heat_pump', entry:fixture.entry, layout});
+    card.hass = {...hass, entities};
+    const output = html(card);
+    const context = `${layout ?? 'card'}, ${scenario}`;
+    assert.match(output, /<p>No enabled entities for this device<\/p>/, context);
+    assert.doesNotMatch(output, /<svg\b|Temperature legend|pipe color = measured temperature/, context);
+  }
+}
+// DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-73 genesis-wp-ha/ac-129
+// An enabled own registry entity without a current state is not an empty device: T33 stays as context.
+{
+  const waitingId = Object.keys(hass.entities).find(id => hass.entities[id].device_id === heatPumpId && !hass.entities[id].disabled_by);
+  assert.ok(waitingId, 'an enabled heat-pump registry entity exists');
+  const t33 = byRegister('input_12');
+  const entities = {...siblingEntities, [waitingId]: hass.entities[waitingId]};
+  const states = Object.fromEntries(Object.entries(hass.states).filter(([id]) => id !== waitingId));
+  for (const layout of [undefined, 'diagram']) {
+    const card = new Card();
+    card.setConfig({device:'internal_heat_pump', entry:fixture.entry, layout});
+    card.hass = {...hass, entities, states};
+    const output = html(card);
+    const context = `${layout ?? 'card'}, waiting own entity`;
+    assert.doesNotMatch(output, /No enabled entities for this device/, context);
+    assert.match(output, new RegExp(`class="[^"]*\\bcontext\\b[^"]*"[^>]*data-register="input_12"[^>]*data-entity="${t33.replace(/\./g, '\\.')}"`), context);
+  }
+}
 const tag = (card, key) => html(card).match(new RegExp(`<g[^>]*data-register="${key}"[^>]*>[\\s\\S]*?<\\/g>`))?.[0];
 const pipe = (card, id) => html(card).match(new RegExp(`<path[^>]*data-path="${id}"[^>]*>`))?.[0];
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-126 genesis-wp-ha/ac-127 genesis-wp-ha/ac-128

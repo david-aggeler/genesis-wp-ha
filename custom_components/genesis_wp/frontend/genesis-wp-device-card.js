@@ -308,9 +308,13 @@ export class GenesisWpDeviceCard extends HTMLElement {
     if(!resolved) body='<p>Device not found</p>';
     else {
       const byRegister=new Map(), own=[];
+      // The empty state keys on registry enablement, not on current renderability: an enabled own
+      // entity still waiting for a state keeps the drawing and its sibling context tags.
+      let ownEnabled=0;
       const devices=this._hass.devices||{};
       const identifiers=new Set([resolved.entry, ...PLANT_CATEGORIES.map(c=>`${resolved.entry}_${c}`)]);
       for(const [id,e] of Object.entries(this._hass.entities||{})) {
+        if(!e.disabled_by && e.device_id===resolved.id) ownEnabled++;
         const state=this._hass.states[id];
         if(e.disabled_by || !state?.attributes.register) continue;
         const sameEntry=(devices[e.device_id]?.identifiers||[]).some(([domain,value])=>domain==='genesis_wp'&&identifiers.has(value));
@@ -358,23 +362,28 @@ export class GenesisWpDeviceCard extends HTMLElement {
         const setting=e=>/^(holding|coil)_/.test(e.register)||e.diagnostic?1:0;
         return setting(a)-setting(b)||a.id.localeCompare(b.id);
       });
-      const activeAlarms=alarms.filter(e=>e.state.state==='on');
-      const legend=`<svg viewBox="0 0 460 ${52+styleLegendLines.length*11}" aria-label="Temperature legend"><text x="0" y="12">pipe color = measured temperature [\u00b0C]</text>${Array.from({length:46},(_,i)=>`<rect x="${i*10}" y="18" width="10" height="12" fill="${temperatureColor(i)}"/>`).join('')}<text x="0" y="44">0</text><text x="440" y="44">45</text>${styleLegendLines.map((line,i)=>`<text x="0" y="${60+i*11}" class="style-legend">${line}</text>`).join('')}</svg>`;
-      // layout 'diagram': tags and part labels are HTML over the drawing, so their text keeps the
-      // theme size (--ha-font-size-s) at any stage width. Below 0.67 px per unit the stage stops
-      // shrinking and scrolls: a two-line chip (about 29 px) then still fits its 44-unit row.
-      const labels=[];
-      const svgOnly=svg=>diagram?svg.replace(/<text x="(-?[\d.]+)" y="(-?[\d.]+)"(?: text-anchor="(\w+)")?>([^<]*)<\/text>/g,(m,x,y,anchor,text)=>{
-        labels.push(`<span class="part-label" style="left:${((x-vx)/vw*100).toFixed(2)}%;top:${((y-vy)/vh*100).toFixed(2)}%;transform:translate(${anchor==='middle'?-50:anchor==='end'?-100:0}%,-80%)">${text}</span>`);
-        return '';
-      }):svg;
-      const drawingParts=svgOnly(parts), drawingFront=svgOnly(frontParts);
-      body=diagram
-        ? `<div class="stage" style="aspect-ratio:${vw}/${vh};min-width:${Math.round(vw*0.67)}px"><svg class="drawing" viewBox="${VIEWS[category]}" role="img" aria-label="${escapeText(title)}">${drawingParts}${pipes}${drawingFront}</svg>${labels.join('')}${tags}</div><div class="legend"><span>pipe color = measured temperature [\u00b0C]</span><span class="scale"><span>0</span><span class="bar" style="background:linear-gradient(90deg,${SCALE.map(([v,c])=>`${c} ${v/45*100}%`).join(',')})"></span><span>45</span></span><span>${styleLegend}</span></div>`
-        : `<svg viewBox="${VIEWS[category]}" role="img" aria-label="${escapeText(title)}">${parts}${pipes}${frontParts}${tags}</svg>${legend}`;
-      // layout 'diagram': the sidebar panel lists the values itself.
-      if(this._config.layout!=='diagram') body+=this._panel(category,panel);
-      if(activeAlarms.length) body+=`<div class="alarms" role="status">${activeAlarms.map(e=>escapeText(e.state.attributes.friendly_name||e.id)).join('<br>')}</div>`;
+      // DHF-REQ: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-129
+      if(!ownEnabled) {
+        body='<p>No enabled entities for this device</p>';
+      } else {
+        const activeAlarms=alarms.filter(e=>e.state.state==='on');
+        const legend=`<svg viewBox="0 0 460 ${52+styleLegendLines.length*11}" aria-label="Temperature legend"><text x="0" y="12">pipe color = measured temperature [\u00b0C]</text>${Array.from({length:46},(_,i)=>`<rect x="${i*10}" y="18" width="10" height="12" fill="${temperatureColor(i)}"/>`).join('')}<text x="0" y="44">0</text><text x="440" y="44">45</text>${styleLegendLines.map((line,i)=>`<text x="0" y="${60+i*11}" class="style-legend">${line}</text>`).join('')}</svg>`;
+        // layout 'diagram': tags and part labels are HTML over the drawing, so their text keeps the
+        // theme size (--ha-font-size-s) at any stage width. Below 0.67 px per unit the stage stops
+        // shrinking and scrolls: a two-line chip (about 29 px) then still fits its 44-unit row.
+        const labels=[];
+        const svgOnly=svg=>diagram?svg.replace(/<text x="(-?[\d.]+)" y="(-?[\d.]+)"(?: text-anchor="(\w+)")?>([^<]*)<\/text>/g,(m,x,y,anchor,text)=>{
+          labels.push(`<span class="part-label" style="left:${((x-vx)/vw*100).toFixed(2)}%;top:${((y-vy)/vh*100).toFixed(2)}%;transform:translate(${anchor==='middle'?-50:anchor==='end'?-100:0}%,-80%)">${text}</span>`);
+          return '';
+        }):svg;
+        const drawingParts=svgOnly(parts), drawingFront=svgOnly(frontParts);
+        body=diagram
+          ? `<div class="stage" style="aspect-ratio:${vw}/${vh};min-width:${Math.round(vw*0.67)}px"><svg class="drawing" viewBox="${VIEWS[category]}" role="img" aria-label="${escapeText(title)}">${drawingParts}${pipes}${drawingFront}</svg>${labels.join('')}${tags}</div><div class="legend"><span>pipe color = measured temperature [\u00b0C]</span><span class="scale"><span>0</span><span class="bar" style="background:linear-gradient(90deg,${SCALE.map(([v,c])=>`${c} ${v/45*100}%`).join(',')})"></span><span>45</span></span><span>${styleLegend}</span></div>`
+          : `<svg viewBox="${VIEWS[category]}" role="img" aria-label="${escapeText(title)}">${parts}${pipes}${frontParts}${tags}</svg>${legend}`;
+        // layout 'diagram': the sidebar panel lists the values itself.
+        if(!diagram) body+=this._panel(category,panel);
+        if(activeAlarms.length) body+=`<div class="alarms" role="status">${activeAlarms.map(e=>escapeText(e.state.attributes.friendly_name||e.id)).join('<br>')}</div>`;
+      }
     }
     const diagram=this._config.layout==='diagram';
     patch(this.shadowRoot, `<style>[role=button]{cursor:pointer}[role=button]:focus-visible{outline:2px solid var(--primary-color)}:host{display:block;color:var(--primary-text-color)}ha-card{padding:16px}h2{font-size:var(--ha-font-size-xl);font-weight:var(--ha-font-weight-normal)}.mode{color:var(--secondary-text-color)}svg{display:block;width:100%;height:auto}text{fill:currentColor;font-family:inherit;font-size:11px}.tag-label{font-size:11px;line-height:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.own rect,.context rect{fill:var(--card-background-color);stroke:var(--tag-color);stroke-width:1.5}.context{opacity:.75}.calculated rect,.estimated rect{stroke-dasharray:6 3}.style-legend{font-size:8px}.alarms{color:var(--error-color,#d46161);padding:8px}.value{font-size:13px;font-weight:bold}.chip rect{rx:10px}.stage{position:relative}.stage .drawing{position:absolute;inset:0;width:100%;height:100%}.stage .drawing text{font-size:12px}div.chip{position:absolute;box-sizing:border-box;display:flex;flex-direction:column;padding:0 var(--ha-space-1);border:1.5px solid var(--tag-color);border-radius:var(--ha-border-radius-sm,4px);background:var(--card-background-color);overflow:hidden;cursor:pointer;line-height:1.1}.part-label{position:absolute;white-space:nowrap;line-height:1;font-size:var(--ha-font-size-s);color:var(--primary-text-color);pointer-events:none}div.chip.calculated,div.chip.estimated{border-color:transparent;overflow:visible}.chip-border{position:absolute;inset:-1.5px;width:calc(100% + 3px);height:calc(100% + 3px);pointer-events:none}.chip-border rect{x:.75px;y:.75px;width:calc(100% - 1.5px);height:calc(100% - 1.5px);fill:none}div.chip .label{font-size:var(--ha-font-size-s);color:var(--secondary-text-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}div.chip .value{font-size:var(--ha-font-size-s);font-weight:var(--ha-font-weight-medium);white-space:nowrap;overflow:hidden}.legend{display:flex;flex-wrap:wrap;gap:var(--ha-space-1) var(--ha-space-4);margin-top:var(--ha-space-2);font-size:var(--ha-font-size-s);color:var(--secondary-text-color)}.scale{display:inline-flex;align-items:center;gap:var(--ha-space-1)}.bar{display:inline-block;width:160px;height:8px;border-radius:4px}.fault{color:var(--error-color,#d46161)}.fault rect{stroke:var(--error-color,#d46161)}</style>${diagram?'<div class="diagram"':'<ha-card'} style="--tag-color:${CATEGORY_COLORS[category]}">${diagram?'':`<h2>${escapeText(title)}</h2><div class="mode">${escapeText(mode)}</div>`}${body}${diagram?'</div>':'</ha-card>'}`);
