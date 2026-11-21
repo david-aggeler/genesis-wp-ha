@@ -254,11 +254,20 @@ export class GenesisWpDeviceCard extends HTMLElement {
     }
     return `${prefix}${value}${state.attributes.unit_of_measurement ? ' '+state.attributes.unit_of_measurement : ''}`;
   }
+  // DHF-REQ: genesis-wp-ha/requirement-18
   _tag(entity, x, y, context=false, panel=false) {
     const {id,state,register}=entity;
     const cls = `${register==='dinput_251'&&state.state==='on'?'fault ':''}${context?'context':'own'}${valueSource(register)}${id.startsWith('binary_sensor.')?' chip':''}`;
     const title=state.attributes.friendly_name||id;
-    return `<g class="${cls}" role="button" tabindex="0" data-register="${escapeText(register)}" data-entity="${escapeText(id)}" transform="translate(${x} ${y})"><title>${escapeText(title)}</title><rect width="${panel?260:150}" height="40" rx="4"/><text x="6" y="14">${escapeText(title)}</text><text class="value" x="6" y="32">${escapeText(this._value(state, register))}</text></g>`;
+    const width = panel ? 260 : 150;
+    const clipId = `tag-label-${width}-${escapeText(id)}`;
+    // Budget at one em per character, then clip for glyphs wider than the budget.
+    const budget = Math.floor((width - 12) / 11);
+    const characters = Array.from(this._short(entity));
+    const label = characters.length > budget
+      ? characters.slice(0, budget - 1).join('').trimEnd() + '\u2026'
+      : characters.join('');
+    return `<g class="${cls}" role="button" tabindex="0" data-register="${escapeText(register)}" data-entity="${escapeText(id)}" transform="translate(${x} ${y})"><title>${escapeText(title)}</title><rect width="${width}" height="40" rx="4"/><clipPath id="${clipId}"><path d="M6 0H${width - 6}V20H6Z"/></clipPath><text x="6" y="14" clip-path="url(#${clipId})">${escapeText(label)}</text><text class="value" x="6" y="32">${escapeText(this._value(state, register))}</text></g>`;
   }
   // Short tag label: the name without its device's prefix and without a trailing "Temperature".
   _short(entity) {

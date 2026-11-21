@@ -29,6 +29,27 @@ const html = card => card.shadowRoot.innerHTML;
 const byRegister = key => Object.entries(hass.states).find(([,s])=>s.attributes.register===key)?.[0];
 const tag = (card, key) => html(card).match(new RegExp(`<g[^>]*data-register="${key}"[^>]*>[\\s\\S]*?<\\/g>`))?.[0];
 const pipe = (card, id) => html(card).match(new RegExp(`<path[^>]*data-path="${id}"[^>]*>`))?.[0];
+// DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-126 genesis-wp-ha/ac-127 genesis-wp-ha/ac-128
+for (const [device, register, width] of [['hot_water', 'input_15', 150], ['controller', 'input_55', 260]]) {
+  const id = byRegister(register);
+  const deviceName = hass.devices[hass.entities[id].device_id].name;
+  const fullName = `${deviceName} ${'Wide label '.repeat(12).trim()} & status`;
+  const states = structuredClone(hass.states);
+  states[id].attributes.friendly_name = fullName;
+  const card = new Card();
+  card.setConfig({device, entry:fixture.entry});
+  card.hass = {...hass, states, locale:{language:'en'}};
+  const rendered = tag(card, register);
+  assert.ok(rendered, register);
+  const label = rendered.match(/<text x="6" y="14"[^>]*>([^<]+)<\/text>/)?.[1];
+  assert.ok(label && !label.startsWith(deviceName), register);
+  if (device === 'controller') assert.match(label, /^Wide label .*…$/);
+  else assert.equal(label, 'Top');
+  assert.ok(rendered.includes(`<title>${fullName.replace('&', '&amp;')}</title>`), register);
+  const clipId = rendered.match(/<text x="6" y="14" clip-path="url\(#([^"]+)\)"/)?.[1];
+  assert.ok(clipId, register);
+  assert.ok(rendered.includes(`<clipPath id="${clipId}"><path d="M6 0H${width - 6}V20H6Z"`), register);
+}
 {
   const states = structuredClone(hass.states);
   states[byRegister('input_1')].state = 'Heat';
