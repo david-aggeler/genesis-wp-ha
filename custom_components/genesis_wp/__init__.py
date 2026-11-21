@@ -91,12 +91,16 @@ VERSION_REGISTERS = {
 }
 
 
+def _rule_evidence(rule):
+    return (rule.enable, *rule.sensors, *rule.signals, *rule.running)
+
+
 def capability_evidence(kind) -> list[str]:
     """Registers the library's capability rules read for ``kind``; always fetched (requirement-12)."""
     names = {
         n
         for rule in CAPABILITY_RULES
-        for n in (rule.enable, *rule.sensors, *rule.signals, *rule.running)
+        for n in _rule_evidence(rule)
         if n is not None
     }
     return sorted(n for n in names if REGISTERS[n][kind])
@@ -255,7 +259,10 @@ def _remove_stale_entities(hass, entry, coordinator):
     """Remove registry entries the configured platforms no longer provide."""
     registry = er.async_get(hass)
     for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
-        if entity.unique_id not in coordinator.setup_entity_ids.get(entity.domain, ()):
+        if (
+            entity.unique_id not in coordinator.setup_entity_ids.get(entity.domain, ())
+            and entity.unique_id not in coordinator.setup_retained_entity_ids
+        ):
             registry.async_remove(entity.entity_id)
             _LOGGER.info("Removed stale entity with unique ID %s", entity.unique_id)
 
@@ -344,6 +351,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self.setup_entity_ids: dict[str, set[str]] = {}
         # Capability states the entities were created for, set after the first refresh (requirement-12).
         self.setup_capabilities: dict[str, str] | None = None
+        self.setup_retained_entity_ids: set[str] = set()
         self.excluded: frozenset[str] = frozenset()
         self._reload_scheduled = False
         # Device registry ID of the heat pump, the parent of the category devices; set during setup.
@@ -475,8 +483,35 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         capabilities = self.thermia.capabilities
         self.setup_capabilities = {name: cap.state for name, cap in capabilities.items()}
         self.excluded = frozenset(r for cap in capabilities.values() if cap.state == ABSENT for r in cap.gates)
+        self.setup_retained_entity_ids = self._uncertain_entity_ids(capabilities)
         for name, cap in capabilities.items():
             _LOGGER.debug("Capability %s: %s (%s)", name, cap.state, "; ".join(cap.evidence))
+
+    # DHF-REQ: genesis-wp-ha/requirement-12
+    def _uncertain_entity_ids(self, capabilities) -> set[str]:
+        """Keep registry entries gated out solely by incomplete automatic evidence."""
+        unread = self.thermia.unread
+        if not unread:
+            return set()
+
+        uncertain = set()
+        confirmed_exclusions = set()
+        # The library orders rules so member capabilities precede combined rules.
+        for rule in CAPABILITY_RULES:
+            capability = capabilities.get(rule.name)
+            if capability is None or capability.state != ABSENT:
+                continue
+            if not capability.overridden and (
+                unread.intersection(_rule_evidence(rule))
+                or uncertain.intersection(rule.members)
+            ):
+                uncertain.add(rule.name)
+                _LOGGER.info("Deferring registry cleanup for %s due to unread evidence", rule.name)
+            else:
+                confirmed_exclusions.update(capability.gates)
+
+        uncertain_exclusions = {register for name in uncertain for register in capabilities[name].gates}
+        return {self.unique_id(register) for register in uncertain_exclusions - confirmed_exclusions}
 
     def _store_seen(self):
         """Keep the modules the library has seen running in the entry, so a reload still counts them."""

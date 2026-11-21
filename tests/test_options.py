@@ -115,6 +115,30 @@ async def test_reload_removes_emptied_child_device(hass, entry_with_hot_gas_reco
     assert {device.id for device in dr.async_entries_for_parent_device(registry, main.id)} == before - {child.id}
 
 
+# DHF-TEST: genesis-wp-ha/requirement-12 genesis-wp-ha/ac-155
+async def test_reload_retains_meter_entries_after_partial_read(hass, start_emulator):
+    first_phase = c.REGISTERS[c.ATTR_INPUT_ELECTRIC_METER_L1_0_VOLTAGE][c.KEY_ADDRESS]
+    second_phase = c.REGISTERS[c.ATTR_INPUT_ELECTRIC_METER_L2_0_VOLTAGE][c.KEY_ADDRESS]
+    emu = await start_emulator(
+        PROFILE_615,
+        overrides={("input_registers", first_phase): 0, ("input_registers", second_phase): 2300},
+    )
+    entry = await setup_with_options(hass, emu, {})
+    meter = {unique_id(entry, register) for register in gates("electric_meter")}
+    assert meter and meter <= registered(hass, entry)
+    devices = dr.async_get(hass)
+    identifier = (DOMAIN, f"{entry.entry_id}_electric_meter_and_energy")
+    child = devices.async_get_child_device_by_identifier(identifier, entry.entry_id)
+    assert child is not None
+
+    emu.inject_fault("input_registers", second_phase)
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert meter <= registered(hass, entry)
+    assert devices.async_get(child.id) is not None
+
+
 # DHF-REQ: genesis-wp-ha/requirement-14  DHF-TEST: genesis-wp-ha/ac-46
 async def test_options_step_lists_modules_with_automatic_default(hass, start_emulator):
     entry = await setup_with_options(hass, await start_emulator(PROFILE_615), {})
