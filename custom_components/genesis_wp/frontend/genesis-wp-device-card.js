@@ -308,9 +308,13 @@ export class GenesisWpDeviceCard extends HTMLElement {
     if(!resolved) body='<p>Device not found</p>';
     else {
       const byRegister=new Map(), own=[];
+      // The empty state keys on registry enablement, not on current renderability: an enabled own
+      // entity still waiting for a state keeps the drawing and its sibling context tags.
+      let ownEnabled=0;
       const devices=this._hass.devices||{};
       const identifiers=new Set([resolved.entry, ...PLANT_CATEGORIES.map(c=>`${resolved.entry}_${c}`)]);
       for(const [id,e] of Object.entries(this._hass.entities||{})) {
+        if(!e.disabled_by && e.device_id===resolved.id) ownEnabled++;
         const state=this._hass.states[id];
         if(e.disabled_by || !state?.attributes.register) continue;
         const sameEntry=(devices[e.device_id]?.identifiers||[]).some(([domain,value])=>domain==='genesis_wp'&&identifiers.has(value));
@@ -359,7 +363,7 @@ export class GenesisWpDeviceCard extends HTMLElement {
         return setting(a)-setting(b)||a.id.localeCompare(b.id);
       });
       // DHF-REQ: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-129
-      if(!own.length) {
+      if(!ownEnabled) {
         body='<p>No enabled entities for this device</p>';
       } else {
         const activeAlarms=alarms.filter(e=>e.state.state==='on');
