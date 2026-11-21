@@ -24,6 +24,16 @@ const calculated = new Set([17,18,68,122,124,125,126,147].map(key));
 const estimated = new Set(['derived_condenser_flow', 'derived_brine_flow']);
 const valueSource = register => estimated.has(register) ? ' estimated' : calculated.has(register) ? ' calculated' : '';
 const styleLegend = 'solid: measured; faded chip: other section; dashed: calculated by the controller; \u2248: estimated; faded: idle; gray: no sensor';
+// The standalone SVG legend cannot wrap text, so the style legend is split at '; ' into lines of at
+// most STYLE_LEGEND_LINE_CHARS characters (8px text, about 4.2 units per character, inside 460 units).
+const STYLE_LEGEND_LINE_CHARS = 90;
+const styleLegendLines = styleLegend.split('; ').reduce((lines, part, i, parts) => {
+  const piece = i < parts.length - 1 ? `${part};` : part;
+  const last = lines[lines.length - 1];
+  if (last !== undefined && last.length + 1 + piece.length <= STYLE_LEGEND_LINE_CHARS) lines[lines.length - 1] = `${last} ${piece}`;
+  else lines.push(piece);
+  return lines;
+}, []);
 // Temperature legend, 0..45 C. Intermediate colors are linear RGB interpolations.
 // The source legend samples these stops at each half degree (0.5..44.5).
 const SCALE = [[0,'#2c7bb6'],[10,'#64b5d6'],[20,'#e6c84f'],[30,'#f08a3c'],[45,'#d7301f']];
@@ -346,7 +356,7 @@ export class GenesisWpDeviceCard extends HTMLElement {
         return setting(a)-setting(b)||a.id.localeCompare(b.id);
       });
       const activeAlarms=alarms.filter(e=>e.state.state==='on');
-      const legend=`<svg viewBox="0 0 460 65" aria-label="Temperature legend"><text x="0" y="12">pipe color = measured temperature [\u00b0C]</text>${Array.from({length:46},(_,i)=>`<rect x="${i*10}" y="18" width="10" height="12" fill="${temperatureColor(i)}"/>`).join('')}<text x="0" y="44">0</text><text x="440" y="44">45</text><text x="0" y="62" class="style-legend">${styleLegend}</text></svg>`;
+      const legend=`<svg viewBox="0 0 460 ${52+styleLegendLines.length*11}" aria-label="Temperature legend"><text x="0" y="12">pipe color = measured temperature [\u00b0C]</text>${Array.from({length:46},(_,i)=>`<rect x="${i*10}" y="18" width="10" height="12" fill="${temperatureColor(i)}"/>`).join('')}<text x="0" y="44">0</text><text x="440" y="44">45</text>${styleLegendLines.map((line,i)=>`<text x="0" y="${60+i*11}" class="style-legend">${line}</text>`).join('')}</svg>`;
       // layout 'diagram': tags and part labels are HTML over the drawing, so their text keeps the
       // theme size (--ha-font-size-s) at any stage width. Below 0.67 px per unit the stage stops
       // shrinking and scrolls: a two-line chip (about 29 px) then still fits its 44-unit row.

@@ -86,7 +86,23 @@ const pipe = (card, id) => html(card).match(new RegExp(`<path[^>]*data-path="${i
     assert.match(pipe(card,'cooling-return'), /data-flow="idle"[^>]*stroke-opacity="0.22"/);
     assert.match(pipe(card,'either-way'), /data-flow="active"[^>]*stroke="#[0-9a-f]+" stroke-opacity="1"/);
     // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-116
-    assert.ok(out.includes('solid: measured; faded chip: other section; dashed: calculated by the controller; ≈: estimated; faded: idle; gray: no sensor'));
+    const fullLegend = 'solid: measured; faded chip: other section; dashed: calculated by the controller; ≈: estimated; faded: idle; gray: no sensor';
+    if (layout === 'diagram') assert.ok(out.includes(fullLegend));
+    else {
+      // The standalone SVG cannot wrap: every style-legend line must fit the legend viewport.
+      // Budget: 8px text at 4.2 units per character (DejaVu Sans measured 498 units for the
+      // 120-character single line), so a line fits when chars * 4.2 <= the viewBox width.
+      const legendSvg = out.match(/<svg viewBox="0 0 (\d+) (\d+)" aria-label="Temperature legend">.*?<\/svg>/s);
+      assert.ok(legendSvg, 'standalone legend svg');
+      const [svg, width, height] = [legendSvg[0], Number(legendSvg[1]), Number(legendSvg[2])];
+      const lines = [...svg.matchAll(/<text x="0" y="(\d+)" class="style-legend">([^<]+)<\/text>/g)];
+      assert.ok(lines.length >= 2, 'style legend wraps into lines');
+      assert.equal(lines.map(m => m[2]).join(' '), fullLegend);
+      for (const [, y, text] of lines) {
+        assert.ok(text.length * 4.2 <= width, `legend line fits ${width} units: ${text}`);
+        assert.ok(Number(y) <= height, `legend line y ${y} inside viewBox height ${height}`);
+      }
+    }
     assert.doesNotMatch(out, /dashed: calculated</);
   }
   // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-114
