@@ -425,7 +425,11 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
                           estimate.source, estimate.calibration)
         # DHF-REQ: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-118
         if self.hc2_estimator is not None:
-            self.hc2_return = self.hc2_estimator.add(now, read, self.flows["condenser_flow"].value)
+            if any(self.thermia.capability_state(name) == ABSENT for name in ("buffer_tank", "heating_circuit_2")):
+                self.hc2_estimator.add(now, {}, None)
+                self.hc2_return = NO_RETURN
+            else:
+                self.hc2_return = self.hc2_estimator.add(now, read, self.flows["condenser_flow"].value)
         current = self.calibrations()
         if self.flow_store is not None and not self._save_pending and current != self._saved_calibrations:
             self._save_pending = True

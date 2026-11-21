@@ -636,23 +636,28 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
   }
   {
     const returnId = idOf('derived_hc2_return');
-    const renderReturn = (estimate, buffer) => {
+    const renderReturn = (estimate, buffer, disableT31 = false) => {
       const states = structuredClone(heat.states);
       states[returnId].state = estimate;
       states[returnId].attributes.unit_of_measurement = '°C';
       states[idOf(41)].state = buffer;
       const diagram = new Card();
       diagram.setConfig({device:'internal_heat_pump',entry:fixture.entry,layout:'diagram'});
-      diagram.hass = {...heat, states};
+      const entities = structuredClone(heat.entities);
+      if (disableT31) entities[idOf(41)].disabled_by = 'user';
+      diagram.hass = {...heat, entities, states};
       return pipe(diagram, 'room-return');
     };
     // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-117
     const active = renderReturn('20', '30');
     assert.match(active, /data-flow="active"[^>]*stroke="#e6c84f" stroke-opacity="1"/);
     assert.equal(renderReturn('20', '45'), active);
+    assert.equal(renderReturn('20', '45', true), active);
     assert.match(renderReturn('30', '45'), /stroke="#f08a3c" stroke-opacity="1"/);
     // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-118
-    assert.match(renderReturn('unavailable', '45'), /stroke="currentColor" stroke-opacity="0.75"/);
+    for (const disabled of [false, true]) {
+      assert.match(renderReturn('unavailable', '45', disabled), /data-flow="active"[^>]*stroke="currentColor" stroke-opacity="0.75"/);
+    }
   }
   // change_request-50 (owner): the buffer tank's two cold ports are level on opposite walls, the
   // heat-pump return on the left wall (x 1160), the room return on the right wall (x 1320).

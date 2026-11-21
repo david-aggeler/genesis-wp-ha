@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from custom_components.genesis_wp import capability_overrides
 from custom_components.genesis_wp.config_flow import model_capabilities
 from custom_components.genesis_wp.const import DOMAIN
@@ -168,3 +170,15 @@ async def test_hc2_return_options_offer_defaults_and_keep_cleared_fields_blank(h
     fields = {str(key): key.description for key in result["data_schema"].schema}
     assert fields["buffer_volume"].get("suggested_value") is None
     assert fields["circuit_flow"]["suggested_value"] == 20
+
+
+
+@pytest.mark.parametrize("field", ["buffer_volume", "circuit_flow"])
+@pytest.mark.parametrize("value", ["NaN", "Infinity"])
+async def test_hc2_return_options_reject_nonfinite_values(hass, start_emulator, field, value):
+    entry = await setup_with_options(hass, await start_emulator(PROFILE_615), {})
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {field: value})
+    assert result["type"] is FlowResultType.FORM
+    assert result["errors"].get(field)
+    assert entry.options == {}

@@ -1,5 +1,6 @@
 """Config flow for genesis_wp heat pumps."""
 import logging
+import math
 
 import voluptuous as vol
 from genesis_wp import ThermiaException
@@ -367,12 +368,19 @@ class GenesisOptionsFlow(config_entries.OptionsFlowWithReload):
 
     async def async_step_init(self, user_input=None):
         """Offer module overrides and the plant constants for circuit 2 return estimation."""
+        errors = {}
         if user_input is not None:
-            self._options = module_choices(user_input, self._page_names)
-            self._options.update({key: user_input.get(key) for key in HC2_RETURN_DEFAULTS})
-            if user_input.get(SHOW_ABSENT):
-                return await self.async_step_absent_modules()
-            return self.async_create_entry(data=self._options)
+            constants = {key: user_input.get(key) for key in HC2_RETURN_DEFAULTS}
+            errors = {
+                key: "nonfinite_number" for key, value in constants.items()
+                if value is not None and not math.isfinite(value)
+            }
+            if not errors:
+                self._options = module_choices(user_input, self._page_names)
+                self._options.update(constants)
+                if user_input.get(SHOW_ABSENT):
+                    return await self.async_step_absent_modules()
+                return self.async_create_entry(data=self._options)
 
         states, overridden = self._states()
         options = self.config_entry.options
@@ -390,6 +398,7 @@ class GenesisOptionsFlow(config_entries.OptionsFlowWithReload):
         return self.async_show_form(
             step_id="init",
             data_schema=schema,
+            errors=errors,
             description_placeholders={"detected": describe_states(names + absent, states, overridden)},
         )
 

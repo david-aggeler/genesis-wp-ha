@@ -96,6 +96,9 @@
     }
   },
   "options": {
+    "error": {
+      "nonfinite_number": "Enter a finite number."
+    },
     "step": {
       "init": {
         "title": "Modules",

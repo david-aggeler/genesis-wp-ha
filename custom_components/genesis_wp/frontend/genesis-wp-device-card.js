@@ -173,7 +173,7 @@ const PIPES = {
     ['hc2-port-b',12,'hc2','M1220,290 L1408,290'],
     ['tr9-mixer',12,'rooms','M1432,290 L1528,290'],
     ['hc2-supply',40,'rooms','M1552,290 L1750,290'],
-    ['room-return',[41,'derived_hc2_return'],'rooms','M1815,470 L1815,560 L1320,560'],
+    ['room-return',[40,'derived_hc2_return'],'rooms','M1815,470 L1815,560 L1320,560'],
     ['bypass',[41,null],'rooms','M1540,560 L1540,304'],
     ['passive-port-a',40,'passive','M160,10 L160,-25 L1420,-25 L1420,276'],
     // Passive cooling: the room return leaves at the T31 port, rises over the plant and enters
