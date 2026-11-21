@@ -49,6 +49,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import ChildDeviceInfo
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -90,12 +91,16 @@ VERSION_REGISTERS = {
 }
 
 
+def _rule_evidence(rule):
+    return (rule.enable, *rule.sensors, *rule.signals, *rule.running)
+
+
 def capability_evidence(kind) -> list[str]:
     """Registers the library's capability rules read for ``kind``; always fetched (requirement-12)."""
     names = {
         n
         for rule in CAPABILITY_RULES
-        for n in (rule.enable, *rule.sensors, *rule.signals, *rule.running)
+        for n in _rule_evidence(rule)
         if n is not None
     }
     return sorted(n for n in names if REGISTERS[n][kind])
@@ -239,11 +244,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             module_url="/genesis_wp/genesis-wp-panel.js", require_admin=False,
         )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    if all(platform in coordinator.setup_entity_ids for platform in PLATFORMS):
+        _remove_stale_entities(hass, entry, coordinator)
+        _remove_empty_child_devices(hass, entry.entry_id, coordinator.device_id)
     # The entities subscribed their registers while being added; read them now
     # instead of one update interval later.
     await coordinator.async_refresh()
 
     return True
+
+
+# DHF-REQ: genesis-wp-ha/requirement-14
+def _remove_stale_entities(hass, entry, coordinator):
+    """Remove registry entries the configured platforms no longer provide."""
+    registry = er.async_get(hass)
+    for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if (
+            entity.unique_id not in coordinator.setup_entity_ids.get(entity.domain, ())
+            and entity.unique_id not in coordinator.setup_retained_entity_ids
+        ):
+            registry.async_remove(entity.entity_id)
+            _LOGGER.info("Removed stale entity with unique ID %s", entity.unique_id)
+
+
+# DHF-REQ: genesis-wp-ha/requirement-15
+def _remove_empty_child_devices(hass, entry_id, parent_device_id):
+    """Remove this entry's category devices once they have no registry entities."""
+    devices = dr.async_get(hass)
+    entities = er.async_get(hass)
+    for child in dr.async_entries_for_parent_device(devices, parent_device_id):
+        if child.config_entry_id != entry_id:
+            continue
+        if er.async_entries_for_device(entities, child.id, include_disabled_entities=True):
+            continue
+        devices.async_remove_device(child.id)
+        _LOGGER.info("Removed empty child device with registry ID %s", child.id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
@@ -313,8 +348,10 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self.kind = entry.data[CONF_MODEL]
         self.entry_id = entry.entry_id
         self.attributes = {}
+        self.setup_entity_ids: dict[str, set[str]] = {}
         # Capability states the entities were created for, set after the first refresh (requirement-12).
         self.setup_capabilities: dict[str, str] | None = None
+        self.setup_retained_entity_ids: set[str] = set()
         self.excluded: frozenset[str] = frozenset()
         self._reload_scheduled = False
         # Device registry ID of the heat pump, the parent of the category devices; set during setup.
@@ -446,8 +483,35 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         capabilities = self.thermia.capabilities
         self.setup_capabilities = {name: cap.state for name, cap in capabilities.items()}
         self.excluded = frozenset(r for cap in capabilities.values() if cap.state == ABSENT for r in cap.gates)
+        self.setup_retained_entity_ids = self._uncertain_entity_ids(capabilities)
         for name, cap in capabilities.items():
             _LOGGER.debug("Capability %s: %s (%s)", name, cap.state, "; ".join(cap.evidence))
+
+    # DHF-REQ: genesis-wp-ha/requirement-12
+    def _uncertain_entity_ids(self, capabilities) -> set[str]:
+        """Keep registry entries gated out solely by incomplete automatic evidence."""
+        unread = self.thermia.unread
+        if not unread:
+            return set()
+
+        uncertain = set()
+        confirmed_exclusions = set()
+        # The library orders rules so member capabilities precede combined rules.
+        for rule in CAPABILITY_RULES:
+            capability = capabilities.get(rule.name)
+            if capability is None or capability.state != ABSENT:
+                continue
+            if not capability.overridden and (
+                unread.intersection(_rule_evidence(rule))
+                or uncertain.intersection(rule.members)
+            ):
+                uncertain.add(rule.name)
+                _LOGGER.info("Deferring registry cleanup for %s due to unread evidence", rule.name)
+            else:
+                confirmed_exclusions.update(capability.gates)
+
+        uncertain_exclusions = {register for name in uncertain for register in capabilities[name].gates}
+        return {self.unique_id(register) for register in uncertain_exclusions - confirmed_exclusions}
 
     def _store_seen(self):
         """Keep the modules the library has seen running in the entry, so a reload still counts them."""
@@ -467,6 +531,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         """
         if self.setup_capabilities is None or self._reload_scheduled or self.thermia.unread & set(self.evidence):
             return
+        self._resolve_retained_entities()
         appeared = sorted(
             name
             for name, cap in self.thermia.capabilities.items()
@@ -478,6 +543,34 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
                              name, self.thermia.capabilities[name].state)
             self._reload_scheduled = True
             self.hass.config_entries.async_schedule_reload(self.entry_id)
+
+    # DHF-REQ: genesis-wp-ha/requirement-12
+    def _resolve_retained_entities(self):
+        """Finish the cleanup deferred at setup once a complete read confirms the capability absent.
+
+        Called only after an update that read every evidence register. Entries whose capability
+        is no longer absent stay; the absent-to-present reload adds their entities.
+        """
+        if not self.setup_retained_entity_ids:
+            return
+        confirmed = {
+            self.unique_id(register)
+            for cap in self.thermia.capabilities.values()
+            if cap.state == ABSENT
+            for register in cap.gates
+        }
+        removable = self.setup_retained_entity_ids & confirmed
+        if not removable:
+            return
+        registry = er.async_get(self.hass)
+        for entity in er.async_entries_for_config_entry(registry, self.entry_id):
+            if entity.unique_id in removable:
+                registry.async_remove(entity.entity_id)
+                _LOGGER.info("Removed entity with unique ID %s: absence confirmed by a complete read",
+                             entity.unique_id)
+        self.setup_retained_entity_ids = self.setup_retained_entity_ids - removable
+        if self.device_id is not None:
+            _remove_empty_child_devices(self.hass, self.entry_id, self.device_id)
 
     def has_value(self, register) -> bool:
         """True when the last update read this register and it is fitted (not None)."""

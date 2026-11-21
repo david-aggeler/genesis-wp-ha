@@ -76,6 +76,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     if coordinator.supports_hc2_return:
         sensors.append(HC2ReturnSensor(coordinator))
     async_add_entities(sensors, False)
+    coordinator.setup_entity_ids["sensor"] = {sensor.unique_id for sensor in sensors}
 
 
 class RegisterSensor(RegisterAnchor, SensorEntity):

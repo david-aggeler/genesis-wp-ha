@@ -32,6 +32,7 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         elif spec[KEY_REG_TYPE] == REG_COIL:
             sensors.append(ThermiaCoilSensor(coordinator, register))
     async_add_entities(sensors, False)
+    coordinator.setup_entity_ids["binary_sensor"] = {sensor.unique_id for sensor in sensors}
 
 
 class ThermiaCoilSensor(RegisterAnchor, BinarySensorEntity):

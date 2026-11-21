@@ -112,7 +112,8 @@ async def start_emulator(socket_enabled) -> AsyncIterator[Callable[..., Emulator
     running: list[Emulator] = []
 
     async def start(profile: str = PROFILE_615, **options) -> Emulator:
-        emu = Emulator(get_profile(profile), port=0, **options)
+        options.setdefault("port", 0)  # a test restarting the device on the same port passes it
+        emu = Emulator(get_profile(profile), **options)
         await emu.start()
         running.append(emu)
         return emu

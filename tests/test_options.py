@@ -9,6 +9,7 @@ from custom_components.genesis_wp.config_flow import model_capabilities
 from custom_components.genesis_wp.const import DOMAIN
 from genesis_wp import const as c
 from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -65,6 +66,126 @@ async def test_not_installed_module_gets_no_entities(hass, start_emulator):
     smart_grid = {unique_id(entry, r) for r in gates("smart_grid")}
     assert smart_grid
     assert not smart_grid & registered(hass, entry)
+
+
+@pytest.fixture
+async def entry_with_hot_gas_recovery(hass, start_emulator):
+    options = dict.fromkeys(model_capabilities(WPE_I_KIND), "present")
+    # Hot water shares the child device with hot gas recovery.
+    options["hot_water"] = "absent"
+    return await setup_with_options(hass, await start_emulator(PROFILE_615), options)
+
+
+async def turn_off_hot_gas_recovery(hass, entry):
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"hot_gas_recovery": "not_installed"}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    assert entry.options["hot_gas_recovery"] == "absent"
+
+
+# DHF-TEST: genesis-wp-ha/requirement-14 genesis-wp-ha/ac-153
+async def test_reload_removes_stale_module_entities(hass, entry_with_hot_gas_recovery):
+    entry = entry_with_hot_gas_recovery
+    before = registered(hass, entry)
+    hot_gas = {unique_id(entry, register) for register in gates("hot_gas_recovery")}
+    assert hot_gas and hot_gas <= before
+    assert f"{entry.entry_id}_derived_hc2_return" in before
+
+    await turn_off_hot_gas_recovery(hass, entry)
+
+    assert registered(hass, entry) == before - hot_gas
+
+
+# DHF-TEST: genesis-wp-ha/requirement-15 genesis-wp-ha/ac-154
+async def test_reload_removes_emptied_child_device(hass, entry_with_hot_gas_recovery):
+    entry = entry_with_hot_gas_recovery
+    registry = dr.async_get(hass)
+    main = registry.async_get_device_by_identifier((DOMAIN, entry.entry_id), entry.entry_id)
+    identifier = (DOMAIN, f"{entry.entry_id}_hot_water")
+    child = registry.async_get_child_device_by_identifier(identifier, entry.entry_id)
+    before = {device.id for device in dr.async_entries_for_parent_device(registry, main.id)}
+    assert child.id in before and len(before) > 1
+
+    await turn_off_hot_gas_recovery(hass, entry)
+
+    assert registry.async_get(main.id) is not None
+    assert {device.id for device in dr.async_entries_for_parent_device(registry, main.id)} == before - {child.id}
+
+
+# DHF-TEST: genesis-wp-ha/requirement-12 genesis-wp-ha/ac-155
+async def test_reload_retains_meter_entries_after_partial_read(hass, start_emulator):
+    first_phase = c.REGISTERS[c.ATTR_INPUT_ELECTRIC_METER_L1_0_VOLTAGE][c.KEY_ADDRESS]
+    second_phase = c.REGISTERS[c.ATTR_INPUT_ELECTRIC_METER_L2_0_VOLTAGE][c.KEY_ADDRESS]
+    emu = await start_emulator(
+        PROFILE_615,
+        overrides={("input_registers", first_phase): 0, ("input_registers", second_phase): 2300},
+    )
+    entry = await setup_with_options(hass, emu, {})
+    meter = {unique_id(entry, register) for register in gates("electric_meter")}
+    assert meter and meter <= registered(hass, entry)
+    devices = dr.async_get(hass)
+    identifier = (DOMAIN, f"{entry.entry_id}_electric_meter_and_energy")
+    child = devices.async_get_child_device_by_identifier(identifier, entry.entry_id)
+    assert child is not None
+
+    emu.inject_fault("input_registers", second_phase)
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert meter <= registered(hass, entry)
+    assert devices.async_get(child.id) is not None
+
+
+# DHF-TEST: genesis-wp-ha/requirement-12 genesis-wp-ha/ac-156
+async def test_complete_refresh_confirming_absence_removes_retained_meter(hass, start_emulator, caplog):
+    first_phase = c.REGISTERS[c.ATTR_INPUT_ELECTRIC_METER_L1_0_VOLTAGE][c.KEY_ADDRESS]
+    second_phase = c.REGISTERS[c.ATTR_INPUT_ELECTRIC_METER_L2_0_VOLTAGE][c.KEY_ADDRESS]
+    emu = await start_emulator(
+        PROFILE_615,
+        overrides={("input_registers", first_phase): 0, ("input_registers", second_phase): 2300},
+    )
+    entry = await setup_with_options(hass, emu, {})
+    meter = {unique_id(entry, register) for register in gates("electric_meter")}
+    assert meter and meter <= registered(hass, entry)
+    devices = dr.async_get(hass)
+    identifier = (DOMAIN, f"{entry.entry_id}_electric_meter_and_energy")
+    child = devices.async_get_child_device_by_identifier(identifier, entry.entry_id)
+    assert child is not None
+
+    # The meter disappears, and the setup read misses the second phase: cleanup is deferred.
+    emu.inject_fault("input_registers", second_phase)
+    caplog.clear()
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert "Deferring registry cleanup for electric_meter due to unread evidence" in caplog.text
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert meter <= coordinator.setup_retained_entity_ids
+    assert meter <= registered(hass, entry)
+
+    # A refresh that still misses the evidence changes nothing.
+    await coordinator.async_refresh()
+    assert meter <= registered(hass, entry)
+
+    # A complete read confirms the meter absent: the deferred cleanup finishes without a reload.
+    port = emu.port
+    await emu.stop()
+    confirmed = await start_emulator(
+        PROFILE_615,
+        port=port,
+        overrides={("input_registers", first_phase): 0, ("input_registers", second_phase): 0},
+    )
+    assert confirmed.port == port
+    await refresh(coordinator)
+    await hass.async_block_till_done()
+
+    assert coordinator.thermia.capabilities["electric_meter"].state == "absent"
+    assert hass.data[DOMAIN][entry.entry_id] is coordinator  # no reload
+    assert not meter & registered(hass, entry)
+    assert devices.async_get(child.id) is None
+    assert not coordinator.setup_retained_entity_ids
 
 
 # DHF-REQ: genesis-wp-ha/requirement-14  DHF-TEST: genesis-wp-ha/ac-46
