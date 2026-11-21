@@ -65,6 +65,13 @@ async def test_register_anchors_and_render(hass, start_emulator):
         "entities": {e.entity_id: {"device_id": e.device_id, "disabled_by": e.disabled_by} for e in entities.values()},
         "devices": {d.id: {"identifiers": list(d.identifiers), "name": d.name} for d in [*dr.async_entries_for_config_entry(dr.async_get(hass), entry.entry_id), *sub_devices(hass, entry).values()]},
     }
+    # DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-119
+    return_state = next(
+        state for state in fixture["states"].values()
+        if state["attributes"]["register"] == "derived_hc2_return"
+    )
+    assert return_state["state"] == "unavailable"
+    assert return_state["attributes"]["circuit_flow"] == 18.33
     payload = json.dumps(fixture)
     run_node_harness(ROOT / "tests/frontend/device_card.mjs", CARD, stdin=payload)
     run_node_harness(

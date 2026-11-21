@@ -4,7 +4,7 @@
 // theme tokens (--ha-font-size-*, --ha-space-*, theme color variables), never fixed values.
 import { patch, debug } from './patch.js';
 import { shortLabel } from './labels.js';
-import { GenesisWpDeviceCard, temperatureColor, toCelsius } from './genesis-wp-device-card.js';
+import { FLOW_SPEED, GenesisWpDeviceCard, normalizeFlowSpeed, temperatureColor, toCelsius } from './genesis-wp-device-card.js';
 import { GenesisWpHeatingCurveCard } from './genesis-wp-heating-curve-card.js';
 
 const SECTIONS=['internal_heat_pump','heating_system','additional_heating_circuits','buffer_tank','hot_water','cooling','pool','ksm','electric_meter_and_energy','controller'];
@@ -29,17 +29,18 @@ const FLOW=[['ground','earth',[['input_10','cool'],['input_11','cool']],'input_1
  ['heat_pump','heat-pump',[['input_54'],['input_157'],['input_158']],'input_9'],
  ['buffer_tank','storage-tank',[['input_41','heat']],'input_12'],
  ['house','home-thermometer',[['input_12','heat','supply_hc1'],['input_40','heat','supply_hc2'],['input_13','cool']]]];
+const FLOW_SPEED_STORAGE = 'genesis_wp_flow_speed';
 // UI strings and short labels. English is the fallback for every language.
 const TEXT={
  en:{title:'Heat pump',overview:'Overview',energy_flow:'Energy flow',ground:'Ground loop',heat_pump:'Heat pump',buffer_tank:'Buffer tank',house:'House',
   supply_hc1:'Circuit 1 supply',supply_hc2:'Circuit 2 supply',heating_curve:'Heating curve',
-  measurements:'Measurements',status:'Status',alarms:'Alarms',settings:'Limits and settings',active:'{n} active',
+  measurements:'Measurements',status:'Status',alarms:'Alarms',settings:'Limits and settings',flow_speed:'Flow animation speed',active:'{n} active',
   alarms_ok:'No active alarms',not_active:'Not active',signals_on:'{n} on',scroll:'Scroll sideways for the full diagram',no_alarms:'No alarms',values:'{n} values',entry:'Plant',
   section:{internal_heat_pump:'Heat pump',heating_system:'Heating',additional_heating_circuits:'Circuit 2',buffer_tank:'Buffer tank',
    hot_water:'Hot water',cooling:'Cooling',pool:'Pool',ksm:'Safety module',electric_meter_and_energy:'Energy',controller:'Controller'}},
  de:{title:'W\u00e4rmepumpe',overview:'\u00dcbersicht',energy_flow:'Energiefluss',ground:'Erdsonde',heat_pump:'W\u00e4rmepumpe',buffer_tank:'Pufferspeicher',house:'Haus',
   supply_hc1:'Vorlauf Heizkreis 1',supply_hc2:'Vorlauf Heizkreis 2',heating_curve:'Heizkurve',
-  measurements:'Messwerte',status:'Status',alarms:'Alarme',settings:'Grenzen und Einstellungen',active:'{n} aktiv',
+  measurements:'Messwerte',status:'Status',alarms:'Alarme',settings:'Grenzen und Einstellungen',flow_speed:'Geschwindigkeit der Flussanimation',active:'{n} aktiv',
   alarms_ok:'Keine aktiven Alarme',not_active:'Nicht aktiv',signals_on:'{n} ein',scroll:'Seitlich scrollen f\u00fcr das ganze Schema',no_alarms:'Keine Alarme',values:'{n} Werte',entry:'Anlage',
   section:{internal_heat_pump:'W\u00e4rmepumpe',heating_system:'Heizung',additional_heating_circuits:'Heizkreis 2',buffer_tank:'Pufferspeicher',
    hot_water:'Warmwasser',cooling:'K\u00fchlung',pool:'Pool',ksm:'Sicherheitsmodul',electric_meter_and_energy:'Energie',controller:'Regler'}},
@@ -104,8 +105,19 @@ export class GenesisWpPanel extends HTMLElement {
   super();this.attachShadow({mode:'open'});
   this.shadowRoot.addEventListener('click',e=>this._activate(e));
   this.shadowRoot.addEventListener('change',e=>{const t=e.target;if(t?.dataset&&'entry' in t.dataset)this._selectEntry(t.value);});
+  this.shadowRoot.addEventListener('input', e => {
+   if (e.target?.dataset && 'flowSpeed' in e.target.dataset) this._setFlowSpeed(e.target.value);
+  });
+  try { this._flowSpeed = normalizeFlowSpeed(globalThis.localStorage?.getItem(FLOW_SPEED_STORAGE)); }
+  catch { this._flowSpeed = FLOW_SPEED.default; }
   this.shadowRoot.addEventListener('keydown',e=>{if(['Enter',' '].includes(e.key)&&e.target.closest?.('[data-entity],[data-section],[data-tab]')){e.preventDefault();this._activate(e);}});
   try{this._entry=new URLSearchParams(globalThis.location?.search||'').get('entry')||undefined;}catch{this._entry=undefined;}
+ }
+ // DHF-REQ: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-122
+ _setFlowSpeed(value) {
+  this._flowSpeed = normalizeFlowSpeed(value);
+  try { globalThis.localStorage?.setItem(FLOW_SPEED_STORAGE, String(this._flowSpeed)); } catch {}
+  this._render();
  }
  set hass(v){this._hass=v;this._loadTitles();this._render();}
  set route(v){this._section=v?.path?.split('/').filter(Boolean).filter(p=>p!=='genesis-wp')[0];debug('route',v?.prefix,v?.path,'->',this._section||'overview');this._render();}
@@ -184,8 +196,11 @@ export class GenesisWpPanel extends HTMLElement {
   const extras=Object.entries(CURVE_EXTRAS[selected.category]||{}).flatMap(([k,r])=>{const e=entities.find(e=>e.register===r);return e?[` data-${k}="${esc(e.id)}"`]:[];}).join('');
   const curveHtml=curves.length?`<div class="curves">${curves.map(e=>`<genesis-wp-heating-curve-card data-curve="${esc(e.id)}"${extras}></genesis-wp-heating-curve-card>`).join('')}</div>`:'';
   const graphic=diagram||curveHtml;
-  const groupHtml=groups.map(([name,items],i)=>{
-   const content=`<div class="readings">${items.map(e=>this._row(e)).join('')}</div>`+(name==='alarms'&&!items.length?`<div class="state">${esc(this._t('alarms_ok',alarms.filter(e=>e.state.state==='off').length))}</div>`:'');
+  const groupHtml=groups.map(([name,items])=>{
+   const flowControl = name === 'settings' && diagram
+    ? `<label>${esc(this._t('flow_speed'))} <input type="range" data-flow-speed min="${FLOW_SPEED.min}" max="${FLOW_SPEED.max}" step="${FLOW_SPEED.step}" value="${this._flowSpeed}"></label>`
+    : '';
+   const content=flowControl+`<div class="readings">${items.map(e=>this._row(e)).join('')}</div>`+(name==='alarms'&&!items.length?`<div class="state">${esc(this._t('alarms_ok',alarms.filter(e=>e.state.state==='off').length))}</div>`:'');
    const title=esc(this._t(name));
    return name==='settings'?`<ha-card><details><summary>${title}</summary>${content}</details></ha-card>`:`<ha-card><h2>${title}</h2>${content}</ha-card>`;}).join('');
   const layout=diagram?' stacked':curveHtml?' curve':' single';
@@ -205,8 +220,8 @@ export class GenesisWpPanel extends HTMLElement {
   const menu=this.shadowRoot.querySelector?.('ha-menu-button');if(menu){menu.hass=this._hass;menu.narrow=this._narrow;}
   for(const card of this.shadowRoot.querySelectorAll('[data-curve]')){const config=this._curveConfig(card.dataset);const key=JSON.stringify(config);
    if(card.__config!==key){card.__config=key;card.setConfig?.(config);}card.hass=this._hass;}
-  for(const card of this.shadowRoot.querySelectorAll('[data-diagram]')){const key=card.dataset.diagram+'|'+card.dataset.entry;
-   if(card.__config!==key){card.__config=key;card.setConfig?.({device:card.dataset.diagram,entry:card.dataset.entry,layout:'diagram'});}card.hass=this._hass;
+  for(const card of this.shadowRoot.querySelectorAll('[data-diagram]')){const config={device:card.dataset.diagram,entry:card.dataset.entry,layout:'diagram',flow_speed:this._flowSpeed};const key=JSON.stringify(config);
+   if(card.__config!==key){card.__config=key;card.setConfig?.(config);}card.hass=this._hass;
    const box=card.parentNode;if(box?.classList){this._overflow(box);
     if(!box.__observed&&typeof ResizeObserver!=='undefined'){box.__observed=new ResizeObserver(()=>this._overflow(box));box.__observed.observe(box);}}}
  }

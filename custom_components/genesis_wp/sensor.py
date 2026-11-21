@@ -339,10 +339,15 @@ class HC2ReturnSensor(CoordinatorEntity, SensorEntity):
         self._attr_unique_id = f"{coordinator.entry_id}_derived_hc2_return"
         self._attr_device_info = coordinator.device_info_for(coordinator.flow_estimators["condenser_flow"].loop.pump)
 
+    # DHF-REQ: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-119
     @property
     def capability_attributes(self):
-        """Keep the frontend anchor when the estimate is unavailable."""
-        return {**(super().capability_attributes or {}), "register": "derived_hc2_return"}
+        """Expose the configured flow even while the return estimate is unavailable."""
+        return {
+            **(super().capability_attributes or {}),
+            "register": "derived_hc2_return",
+            "circuit_flow": self.coordinator.circuit_flow,
+        }
 
     @property
     def available(self):
@@ -357,5 +362,4 @@ class HC2ReturnSensor(CoordinatorEntity, SensorEntity):
         return {
             "source": "estimate",
             "heat": self.coordinator.hc2_return.heat,
-            "circuit_flow": self.coordinator.circuit_flow,
         }
