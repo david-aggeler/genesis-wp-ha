@@ -11,6 +11,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.util import slugify
 
 from .harness import ABSENT_615
+from .harness import DERIVED_SENSOR_KEYS
 from .harness import PROFILE_615
 from .harness import WPE_I_KIND
 from .harness import gates
@@ -120,8 +121,8 @@ async def test_unique_ids_use_register_type_and_address(hass, start_emulator):
     absent = gates(*ABSENT_615)  # no entities for absent modules (requirement-12)
     fitted = lambda types: [r for r in types if c.REGISTERS[r][WPE_I_KIND] and r not in absent]  # noqa: E731
     expected = {("sensor", f"{entry.entry_id}_heatpump")}
-    # Derived sensors: entry ID plus a stable derived key, never a library name (requirement-26).
-    expected |= {("sensor", f"{entry.entry_id}_derived_{key}") for key in ("condenser_flow", "brine_flow", "hc2_return")}
+    # Derived sensors use an entry ID and stable derived key.
+    expected |= {("sensor", f"{entry.entry_id}_derived_{key}") for key in DERIVED_SENSOR_KEYS}
     expected |= {
         ("binary_sensor" if c.REGISTERS[r][c.KEY_REG_TYPE] in (c.REG_COIL, c.REG_DISCRETE_INPUT) else "sensor", _unique_id(entry, r))
         for r in fitted(c.REGISTERS)

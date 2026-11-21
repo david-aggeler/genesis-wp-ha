@@ -18,6 +18,21 @@ TEST_CLIENT_TIMEOUT = 15.0
 UNIT = 1
 WPE_I_KIND = "stiebel_wpe_i_07_1"
 
+
+DERIVED_SENSOR_KEYS = (
+    "condenser_flow",
+    "brine_flow",
+    "hc2_return",
+    "starts_today",
+    "hot_water_starts_today",
+    "short_heating_runs_today",
+    "running_hours_today",
+    "heating_run_minimum",
+    "heating_run_mean",
+    "heating_run_maximum",
+    "last_run_length",
+)
+
 # Capabilities the library detects as absent on the 6.1.5 capture, the owner's plant (requirement-12).
 # Hot gas recovery reads input 45 = not fitted since genesis-wp 41d57be (change_request-52).
 ABSENT_615 = ("hot_water", "pool", "active_cooling", "room_sensor", "electric_meter", "hot_gas_recovery")

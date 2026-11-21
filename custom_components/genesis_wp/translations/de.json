@@ -1,14 +1,18 @@
 {
+  "title": "Genesis WP",
   "entity": {
     "sensor": {
       "derived_starts_today": {
-        "name": "Starts heute"
+        "name": "Starts heute",
+        "unit_of_measurement": "Starts"
       },
       "derived_hot_water_starts_today": {
-        "name": "Warmwasserstarts heute"
+        "name": "Warmwasserstarts heute",
+        "unit_of_measurement": "Starts"
       },
       "derived_short_heating_runs_today": {
-        "name": "Kurze Heizläufe heute"
+        "name": "Kurze Heizläufe heute",
+        "unit_of_measurement": "Läufe"
       },
       "derived_running_hours_today": {
         "name": "Laufzeit heute"

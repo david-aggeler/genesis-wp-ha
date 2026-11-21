@@ -13,6 +13,7 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from .harness import ABSENT_615 as ABSENT
+from .harness import DERIVED_SENSOR_KEYS
 from .harness import PROFILE_615
 from .harness import PROFILES
 from .harness import WPE_I_KIND
@@ -63,8 +64,8 @@ async def test_present_unknown_and_ungated_registers_keep_entities(hass, start_e
     assert kept & gates("heating_circuit_2", "buffer_tank", "ksm")  # present
     assert kept & gates("additional_heater", "smart_grid")  # unknown
     expected = {unique_id(entry, r) for r in kept} | {f"{entry.entry_id}_heatpump"}
-    # The derived sensors are not register entities and no capability gates them (requirement-26).
-    expected |= {f"{entry.entry_id}_derived_{key}" for key in ("condenser_flow", "brine_flow", "hc2_return")}
+    # Derived sensors are available independently of the optional modules.
+    expected |= {f"{entry.entry_id}_derived_{key}" for key in DERIVED_SENSOR_KEYS}
     assert registered(hass, entry) == expected
 
 

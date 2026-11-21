@@ -403,7 +403,9 @@ class CompressorRunSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
         self._attr_unique_id = f"{coordinator.entry_id}_{self._register}"
         self._attr_device_info = coordinator.device_info_for(COMPRESSOR_SIGNAL)
         self._attr_native_unit_of_measurement = COMPRESSOR_STATISTICS[key]
-        if self._attr_native_unit_of_measurement is not None:
+        if self._attr_native_unit_of_measurement is None:
+            self._attr_icon = "mdi:counter"
+        else:
             self._attr_device_class = SensorDeviceClass.DURATION
 
     async def async_added_to_hass(self):

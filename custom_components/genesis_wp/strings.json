@@ -155,13 +155,16 @@
   "entity": {
     "sensor": {
       "derived_starts_today": {
-        "name": "Starts today"
+        "name": "Starts today",
+        "unit_of_measurement": "starts"
       },
       "derived_hot_water_starts_today": {
-        "name": "Hot-water starts today"
+        "name": "Hot-water starts today",
+        "unit_of_measurement": "starts"
       },
       "derived_short_heating_runs_today": {
-        "name": "Short heating runs today"
+        "name": "Short heating runs today",
+        "unit_of_measurement": "runs"
       },
       "derived_running_hours_today": {
         "name": "Running hours today"
