@@ -636,7 +636,7 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
   }
   {
     const returnId = idOf('derived_hc2_return');
-    const renderReturn = (estimate, buffer, disableT31 = false) => {
+    const renderReturn = (estimate, buffer, disableT31 = false, disableT32 = false) => {
       const states = structuredClone(heat.states);
       states[returnId].state = estimate;
       states[returnId].attributes.unit_of_measurement = '°C';
@@ -645,6 +645,7 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
       diagram.setConfig({device:'internal_heat_pump',entry:fixture.entry,layout:'diagram'});
       const entities = structuredClone(heat.entities);
       if (disableT31) entities[idOf(41)].disabled_by = 'user';
+      if (disableT32) entities[idOf(40)].disabled_by = 'user';
       diagram.hass = {...heat, entities, states};
       return pipe(diagram, 'room-return');
     };
@@ -654,9 +655,14 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     assert.equal(renderReturn('20', '45'), active);
     assert.equal(renderReturn('20', '45', true), active);
     assert.match(renderReturn('30', '45'), /stroke="#f08a3c" stroke-opacity="1"/);
+    // formal_review-60 B1: with T32 disabled and the HC2 set point (input 147) enabled the Rooms
+    // block stays, and so does its return pipe, colored by the estimate.
+    assert.ok(idOf(147), 'HC2 supply set point in the fixture');
+    assert.equal(renderReturn('20', '30', false, true), active);
     // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-118
     for (const disabled of [false, true]) {
       assert.match(renderReturn('unavailable', '45', disabled), /data-flow="active"[^>]*stroke="currentColor" stroke-opacity="0.75"/);
+      assert.match(renderReturn('unavailable', '45', disabled, true), /data-flow="active"[^>]*stroke="currentColor" stroke-opacity="0.75"/);
     }
   }
   // change_request-50 (owner): the buffer tank's two cold ports are level on opposite walls, the

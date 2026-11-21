@@ -131,7 +131,8 @@ const PARTS = {
     [[40,147],part('rooms',1815,rect(1750,270,130,200,'Rooms (HC2)'))]],
 };
 // [path id, temperature register, flow group, path geometry, phase dash]
-// The register may be [shown when, colored by]. The first register anchors the pipe to a part.
+// The register may be [shown when, colored by]. The first register anchors the pipe to a part;
+// an array of anchors shows the pipe when any of them exists.
 // A missing temperature from the second register uses the no-sensor style.
 const PIPES = {
   hot_water: [['charging',9,'hot_water','M10,80 L390,80 L390,160'],
@@ -173,7 +174,8 @@ const PIPES = {
     ['hc2-port-b',12,'hc2','M1220,290 L1408,290'],
     ['tr9-mixer',12,'rooms','M1432,290 L1528,290'],
     ['hc2-supply',40,'rooms','M1552,290 L1750,290'],
-    ['room-return',[40,'derived_hc2_return'],'rooms','M1815,470 L1815,560 L1320,560'],
+    // Shown whenever the Rooms block is (T32 or the HC2 supply set point), colored by the estimate.
+    ['room-return',[[40,147],'derived_hc2_return'],'rooms','M1815,470 L1815,560 L1320,560'],
     ['bypass',[41,null],'rooms','M1540,560 L1540,304'],
     ['passive-port-a',40,'passive','M160,10 L160,-25 L1420,-25 L1420,276'],
     // Passive cooling: the room return leaves at the T31 port, rises over the plant and enters
@@ -329,7 +331,8 @@ export class GenesisWpDeviceCard extends HTMLElement {
       const front=svg=>svg.includes('class="pump"')||svg.includes('class="heater"');
       const parts=drawn.filter(svg=>!front(svg)).join(''), frontParts=drawn.filter(front).join('');
       const styles=new Map();
-      const pipesSvg=PIPES[category].filter(([,r])=>exists(Array.isArray(r)?r[0]:r)).map(([id,r,group,d,dash])=>{
+      const anchored=r=>{const a=Array.isArray(r)?r[0]:r; return Array.isArray(a)?a.some(exists):exists(a);};
+      const pipesSvg=PIPES[category].filter(([,r])=>anchored(r)).map(([id,r,group,d,dash])=>{
         const sensor=Array.isArray(r)?r[1]:r;
         const state=sensor===null?null:byRegister.get(typeof sensor==='number'?key(sensor):sensor)?.state;
         const celsius=state ? toCelsius(state.state, state.attributes.unit_of_measurement) : null;
