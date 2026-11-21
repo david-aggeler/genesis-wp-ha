@@ -71,13 +71,13 @@ async def test_options_step_lists_modules_with_automatic_default(hass, start_emu
     result = await hass.config_entries.options.async_init(entry.entry_id)
     assert result["type"] is FlowResultType.FORM
 
-    fields = {str(key): key for key in result["data_schema"].schema if str(key) != "show_absent"}
+    fields = {str(key): key for key in result["data_schema"].schema if str(key) not in {"show_absent", "buffer_volume", "circuit_flow"}}
     detected = hass.data[DOMAIN][entry.entry_id].thermia.capabilities
     expected = [name for name in model_capabilities(WPE_I_KIND) if detected[name].state != "absent"]
     assert list(fields) == expected
     assert "hot_water" not in fields and "heating_circuit_3" not in fields  # absent: second page
     for key, select in result["data_schema"].schema.items():
-        if str(key) == "show_absent":
+        if str(key) not in fields:
             continue
         assert key.default() == "automatic"
         assert select.config["options"] == ["automatic", "installed", "not_installed"]
@@ -85,7 +85,7 @@ async def test_options_step_lists_modules_with_automatic_default(hass, start_emu
 
     result = await hass.config_entries.options.async_configure(result["flow_id"], {})
     assert result["type"] is FlowResultType.CREATE_ENTRY
-    assert entry.options == {}
+    assert entry.options == {"buffer_volume": None, "circuit_flow": None}
 
 
 # DHF-REQ: genesis-wp-ha/requirement-14
@@ -105,7 +105,7 @@ async def test_saving_module_options_applies_them(hass, start_emulator):
 
     # Hot water and pool are detected absent: they sit on the second page (requirement-16).
     result = await hass.config_entries.options.async_init(entry_id)
-    result = await hass.config_entries.options.async_configure(result["flow_id"], {"show_absent": True})
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"show_absent": True, "buffer_volume": 300, "circuit_flow": 18.33})
     assert result["step_id"] == "absent_modules"
     result = await hass.config_entries.options.async_configure(
         result["flow_id"], {"hot_water": "installed", "pool": "not_installed"}
@@ -113,7 +113,7 @@ async def test_saving_module_options_applies_them(hass, start_emulator):
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
 
-    assert entry.options == {"hot_water": "present", "pool": "absent"}
+    assert entry.options == {"hot_water": "present", "pool": "absent", "buffer_volume": 300, "circuit_flow": 18.33}
     assert hass.config_entries.async_get_entry(entry_id) is entry
     assert hot_water_entities <= registered(hass, entry)
 
@@ -142,3 +142,20 @@ def test_unknown_module_options_are_dropped(caplog):
     options = {"hot_water": "present", "sauna": "present", "pool": "installed"}
     assert capability_overrides(options) == {"hot_water": "present"}
     assert "sauna" in caplog.text and "pool" in caplog.text
+
+# DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-118
+async def test_hc2_return_options_offer_defaults_and_keep_cleared_fields_blank(hass, start_emulator):
+    entry = await setup_with_options(hass, await start_emulator(PROFILE_615), {})
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    fields = {str(key): key.description for key in result["data_schema"].schema}
+    assert fields["buffer_volume"]["suggested_value"] == 300
+    assert fields["circuit_flow"]["suggested_value"] == 18.33
+    result = await hass.config_entries.options.async_configure(result["flow_id"], {"circuit_flow": 20})
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    assert entry.options["buffer_volume"] is None
+    assert entry.options["circuit_flow"] == 20
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    fields = {str(key): key.description for key in result["data_schema"].schema}
+    assert fields["buffer_volume"].get("suggested_value") is None
+    assert fields["circuit_flow"]["suggested_value"] == 20

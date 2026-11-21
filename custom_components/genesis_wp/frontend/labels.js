@@ -22,7 +22,7 @@ const LABELS = {
     holding_3: 'Max supply', holding_4: 'Min supply', holding_5: 'Room target', coil_9: 'Heating on',
     holding_107: 'Min supply', holding_108: 'Max supply', coil_11: 'Circuit 2 on',
     coil_33: 'Passive cooling', holding_302: 'Passive target',
-    derived_condenser_flow: 'Cond. flow', derived_brine_flow: 'Brine flow',
+    derived_hc2_return: 'HC2 return', derived_condenser_flow: 'Cond. flow', derived_brine_flow: 'Brine flow',
   },
   de: {
     input_1: 'Betriebsart', input_5: 'Drehzahl', input_7: 'Heissgas', input_8: 'Kondensator ein',

@@ -6,12 +6,11 @@ class Registry { constructor() { this.items = new Map(); } get(k) { return this.
 globalThis.window = globalThis;
 globalThis.HTMLElement = class { attachShadow() { this.shadowRoot = {innerHTML:''}; } };
 globalThis.customElements = new Registry();
-const { temperatureColor, toCelsius } = await import(pathToFileURL(process.argv[2]));
+const { temperatureColor } = await import(pathToFileURL(process.argv[2]));
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-65
 assert.equal(customElements.get('genesis-wp-device-card'), undefined);
 globalThis.customElements = new Registry();
 customElements.define('hui-view', class {});
-const toC = st => st ? toCelsius(st.state, st.attributes.unit_of_measurement) : null;
 await new Promise(r=>setTimeout(r,600));
 const Card = customElements.get('genesis-wp-device-card');
 assert.ok(Card);
@@ -106,7 +105,7 @@ for (const [device, register, width] of [['hot_water', 'input_15', 150], ['contr
   const states = structuredClone(hass.states);
   states[byRegister('input_1')].state = 'Heat';
   states[byRegister('input_12')].state = '26.26';
-  const estimates = ['derived_condenser_flow', 'derived_brine_flow'];
+  const estimates = ['derived_condenser_flow', 'derived_brine_flow', 'derived_hc2_return'];
   const calculated = [18, 122, 124, 125, 126, 147].map(address => `input_${address}`);
   for (const register of [...estimates, ...calculated, 'input_17', 'input_68']) {
     states[byRegister(register)].state = '13.7';
@@ -214,7 +213,7 @@ const plantAnchors = [
   'input_315', 'input_319', 'input_67', 'input_413',
   // HC1, buffer tank and HC2
   'holding_5', 'coil_9', 'holding_4', 'holding_3', 'input_18', 'input_12', 'input_41',
-  'holding_107', 'holding_108', 'coil_11', 'input_43', 'input_147', 'input_40',
+  'holding_107', 'holding_108', 'coil_11', 'input_43', 'input_147', 'input_40', 'derived_hc2_return',
 ];
 let card=render('internal_heat_pump');
 for (const key of plantAnchors) {
@@ -635,25 +634,25 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     assert.match(tag, /stroke="currentColor" stroke-opacity="0.75"/);
     assert.doesNotMatch(tag, /data-estimated/);
   }
-  // change_request-50: the owner chose T31's color as a labeled estimate for the room return.
   {
-    const m = out.match(/<path data-path="room-return"([^>]*)>(.*?)<\/path>/);
-    assert.ok(m, 'room-return');
-    assert.match(m[1], /data-flow="active"/);
-    const c41 = toC(heat.states[idOf(41)]);
-    if (c41 !== null) {
-      assert.match(m[1], new RegExp(`data-estimated="input_41"[^>]* stroke="${temperatureColor(c41)}" stroke-opacity="1"`));
-      assert.equal(m[2], '<title>estimated from T31</title>');
-    }
-    // Without a T31 value the room return is neutral and claims no estimate.
-    const gone = {...heat, states:structuredClone(heat.states)};
-    gone.states[idOf(41)].state = 'unavailable';
-    const g = new Card(); g.setConfig({device:'internal_heat_pump',entry:fixture.entry,layout:'diagram'}); g.hass = gone;
-    const tag = html(g).match(/<path data-path="room-return"([^>]*)>(.*?)<\/path>/);
-    assert.match(tag[1], /stroke="currentColor" stroke-opacity="1"/);
-    assert.doesNotMatch(tag[1], /data-estimated/); assert.equal(tag[2], '');
-    // Only the room return is an estimate.
-    assert.deepEqual([...out.matchAll(/data-path="([^"]+)"[^>]*data-estimated=/g)].map(x => x[1]), ['room-return']);
+    const returnId = idOf('derived_hc2_return');
+    const renderReturn = (estimate, buffer) => {
+      const states = structuredClone(heat.states);
+      states[returnId].state = estimate;
+      states[returnId].attributes.unit_of_measurement = '°C';
+      states[idOf(41)].state = buffer;
+      const diagram = new Card();
+      diagram.setConfig({device:'internal_heat_pump',entry:fixture.entry,layout:'diagram'});
+      diagram.hass = {...heat, states};
+      return pipe(diagram, 'room-return');
+    };
+    // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-117
+    const active = renderReturn('20', '30');
+    assert.match(active, /data-flow="active"[^>]*stroke="#e6c84f" stroke-opacity="1"/);
+    assert.equal(renderReturn('20', '45'), active);
+    assert.match(renderReturn('30', '45'), /stroke="#f08a3c" stroke-opacity="1"/);
+    // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-118
+    assert.match(renderReturn('unavailable', '45'), /stroke="currentColor" stroke-opacity="0.75"/);
   }
   // change_request-50 (owner): the buffer tank's two cold ports are level on opposite walls, the
   // heat-pump return on the left wall (x 1160), the room return on the right wall (x 1320).

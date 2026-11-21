@@ -18,6 +18,13 @@ from genesis_wp.derived import BRINE
 from genesis_wp.derived import CONDENSER
 from genesis_wp.derived import FlowEstimate
 from genesis_wp.derived import FlowEstimator
+from genesis_wp.derived import HC2_BUFFER
+from genesis_wp.derived import HC2_COMPRESSOR
+from genesis_wp.derived import HC2_PASSIVE_COOLING
+from genesis_wp.derived import HC2_PUMP
+from genesis_wp.derived import HC2_SUPPLY
+from genesis_wp.derived import HeatingCircuit2ReturnEstimator
+from genesis_wp.derived import NO_RETURN
 from genesis_wp.const import GENESIS_17_MODELS
 from genesis_wp.const import KEY_ADDRESS
 from genesis_wp.const import KEY_REG_TYPE
@@ -56,6 +63,7 @@ from .const import CONF_PROFILE
 from .const import CONF_UNIT
 from .const import CORE_SETTINGS
 from .const import DOMAIN
+from .const import HC2_RETURN_DEFAULTS
 from .const import EMULATOR_DYNAMICS_INTERVAL
 from .const import EMULATOR_HOST
 from .const import MODE_EMULATED
@@ -97,6 +105,8 @@ def capability_overrides(options) -> dict[str, str]:
     """The entry's module choices as library overrides; anything this library version rejects is dropped."""
     overrides = {}
     for name, state in options.items():
+        if name in HC2_RETURN_DEFAULTS:
+            continue
         if name in CAPABILITY_NAMES and state in (PRESENT, ABSENT):
             overrides[name] = state
         else:
@@ -339,6 +349,22 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         # Read the estimators' inputs every update, whether or not their own entities are enabled.
         self.registerAttribute(sorted({r for e in self.flow_estimators.values() for r in flow_registers(e.loop)}))
 
+        self.hc2_return = NO_RETURN
+        self.hc2_estimator = None
+        self.circuit_flow = entry.options.get("circuit_flow", HC2_RETURN_DEFAULTS["circuit_flow"])
+        buffer_volume = entry.options.get("buffer_volume", HC2_RETURN_DEFAULTS["buffer_volume"])
+        hc2_registers = [*HC2_BUFFER, HC2_SUPPLY, HC2_COMPRESSOR, HC2_PUMP, *HC2_PASSIVE_COOLING]
+        self.supports_hc2_return = (
+            "condenser_flow" in self.flow_estimators and all(REGISTERS[r][self.kind] for r in hc2_registers)
+        )
+        if self.supports_hc2_return and buffer_volume is not None and self.circuit_flow is not None:
+            try:
+                self.hc2_estimator = HeatingCircuit2ReturnEstimator(buffer_volume, self.circuit_flow)
+            except ValueError:
+                _LOGGER.warning("Invalid heating circuit 2 return estimation options")
+            else:
+                self.registerAttribute(hc2_registers)
+
         super().__init__(
             hass,
             _LOGGER,
@@ -373,6 +399,8 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         try:
             data = await self.thermia.async_update(only_registers=self.attributes.keys())
         except ThermiaException as error:
+            if self.hc2_estimator is not None:
+                self.hc2_return = self.hc2_estimator.add(self.flow_clock(), {}, None)
             # The library's message names the host, which is topology: keep it out of the log.
             raise UpdateFailed(f"heat pump read failed ({type(error).__name__})") from None
         _LOGGER.debug(
@@ -395,6 +423,9 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             self.flows[key] = estimate
             _LOGGER.debug("%s: %s L/min (%s, calibration %s L/min per %%)", key, estimate.value,
                           estimate.source, estimate.calibration)
+        # DHF-REQ: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-118
+        if self.hc2_estimator is not None:
+            self.hc2_return = self.hc2_estimator.add(now, read, self.flows["condenser_flow"].value)
         current = self.calibrations()
         if self.flow_store is not None and not self._save_pending and current != self._saved_calibrations:
             self._save_pending = True

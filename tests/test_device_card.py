@@ -51,7 +51,7 @@ async def test_register_anchors_and_render(hass, start_emulator):
     for e in er.async_entries_for_config_entry(registry, entry.entry_id):
         if e.unique_id.startswith(f"{entry.entry_id}_derived_"):
             entities[e.unique_id] = e
-    assert sum(1 for e in entities.values() if "_derived_" in e.unique_id) == 2
+    assert sum(1 for e in entities.values() if "_derived_" in e.unique_id) == 3
     for entity in entities.values():
         state = hass.states.get(entity.entity_id)
         assert state is not None

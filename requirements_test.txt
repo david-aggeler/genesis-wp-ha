@@ -5,6 +5,6 @@ pytest-homeassistant-custom-component==0.13.371
 # MIT; the card render check requires Node.js even when the host has no node.
 nodejs-wheel-binaries==24.19.0
 # Same library commit the integration pins; the emulator extra brings the pymodbus server.
-genesis-wp[emulator] @ git+https://github.com/david-aggeler/genesis-wp@9e3f4cf018fa1a5bd244dc042533336a85ef0f5f
+genesis-wp[emulator] @ git+https://github.com/david-aggeler/genesis-wp@5e19e462c20362c43534a1738016cb8971e1bbe4
 modbus-connection[pymodbus]==4.12.3
 pymodbus==3.13.1

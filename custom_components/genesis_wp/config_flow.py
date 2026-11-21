@@ -38,6 +38,7 @@ from .const import DEFAULT_MODEL
 from .const import DEFAULT_PORT
 from .const import DEFAULT_UNIT
 from .const import DOMAIN
+from .const import HC2_RETURN_DEFAULTS
 from .const import HEATPUMP_SENSOR
 from .const import MODE_EMULATED
 from .const import MODULE_AUTOMATIC
@@ -350,7 +351,7 @@ class GenesisOptionsFlow(config_entries.OptionsFlowWithReload):
 
     def __init__(self):
         """Initialize; the first page's choices wait for the optional detected-absent page."""
-        self._options: dict[str, str] = {}
+        self._options: dict[str, str | float | None] = {}
         self._page_names: list[str] = []
 
     def _states(self) -> tuple[dict[str, str], frozenset[str]]:
@@ -365,9 +366,10 @@ class GenesisOptionsFlow(config_entries.OptionsFlowWithReload):
         )
 
     async def async_step_init(self, user_input=None):
-        """One select per offered module; only non-automatic choices are stored."""
+        """Offer module overrides and the plant constants for circuit 2 return estimation."""
         if user_input is not None:
             self._options = module_choices(user_input, self._page_names)
+            self._options.update({key: user_input.get(key) for key in HC2_RETURN_DEFAULTS})
             if user_input.get(SHOW_ABSENT):
                 return await self.async_step_absent_modules()
             return self.async_create_entry(data=self._options)
@@ -376,9 +378,18 @@ class GenesisOptionsFlow(config_entries.OptionsFlowWithReload):
         options = self.config_entry.options
         names, absent = split_modules(self.config_entry.data[CONF_MODEL], states, options)
         self._page_names = names
+        schema = module_schema(names, options, show_absent=bool(absent))
+        fields = {
+            vol.Optional(key, description={"suggested_value": options.get(key, HC2_RETURN_DEFAULTS[key])}):
+                NumberSelector(NumberSelectorConfig(
+                    min=0.01, step="any", mode=NumberSelectorMode.BOX, unit_of_measurement=unit,
+                ))
+            for key, unit in (("buffer_volume", "L"), ("circuit_flow", "L/min"))
+        }
+        schema = schema.extend(fields)
         return self.async_show_form(
             step_id="init",
-            data_schema=module_schema(names, options, show_absent=bool(absent)),
+            data_schema=schema,
             description_placeholders={"detected": describe_states(names + absent, states, overridden)},
         )
 

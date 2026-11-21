@@ -25,6 +25,7 @@ CONF_MODE = "mode"  # absent for a real heat pump
 CONF_PROFILE = "profile"
 CONF_CAPABILITIES = "capabilities"  # emulated: modules switched against the profile, {name: on}
 CONF_CAPABILITIES_SEEN = "capabilities_seen"  # modules the library has seen running, kept across reloads
+HC2_RETURN_DEFAULTS = {"buffer_volume": 300, "circuit_flow": 18.33}
 MODE_EMULATED = "emulated"
 
 # Options flow (requirement-14): per module, automatic follows detection; the others are stored in
