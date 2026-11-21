@@ -139,6 +139,55 @@ async def test_reload_retains_meter_entries_after_partial_read(hass, start_emula
     assert devices.async_get(child.id) is not None
 
 
+# DHF-TEST: genesis-wp-ha/requirement-12 genesis-wp-ha/ac-156
+async def test_complete_refresh_confirming_absence_removes_retained_meter(hass, start_emulator, caplog):
+    first_phase = c.REGISTERS[c.ATTR_INPUT_ELECTRIC_METER_L1_0_VOLTAGE][c.KEY_ADDRESS]
+    second_phase = c.REGISTERS[c.ATTR_INPUT_ELECTRIC_METER_L2_0_VOLTAGE][c.KEY_ADDRESS]
+    emu = await start_emulator(
+        PROFILE_615,
+        overrides={("input_registers", first_phase): 0, ("input_registers", second_phase): 2300},
+    )
+    entry = await setup_with_options(hass, emu, {})
+    meter = {unique_id(entry, register) for register in gates("electric_meter")}
+    assert meter and meter <= registered(hass, entry)
+    devices = dr.async_get(hass)
+    identifier = (DOMAIN, f"{entry.entry_id}_electric_meter_and_energy")
+    child = devices.async_get_child_device_by_identifier(identifier, entry.entry_id)
+    assert child is not None
+
+    # The meter disappears, and the setup read misses the second phase: cleanup is deferred.
+    emu.inject_fault("input_registers", second_phase)
+    caplog.clear()
+    assert await hass.config_entries.async_reload(entry.entry_id)
+    await hass.async_block_till_done()
+    assert "Deferring registry cleanup for electric_meter due to unread evidence" in caplog.text
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert meter <= coordinator.setup_retained_entity_ids
+    assert meter <= registered(hass, entry)
+
+    # A refresh that still misses the evidence changes nothing.
+    await coordinator.async_refresh()
+    assert meter <= registered(hass, entry)
+
+    # A complete read confirms the meter absent: the deferred cleanup finishes without a reload.
+    port = emu.port
+    await emu.stop()
+    confirmed = await start_emulator(
+        PROFILE_615,
+        port=port,
+        overrides={("input_registers", first_phase): 0, ("input_registers", second_phase): 0},
+    )
+    assert confirmed.port == port
+    await refresh(coordinator)
+    await hass.async_block_till_done()
+
+    assert coordinator.thermia.capabilities["electric_meter"].state == "absent"
+    assert hass.data[DOMAIN][entry.entry_id] is coordinator  # no reload
+    assert not meter & registered(hass, entry)
+    assert devices.async_get(child.id) is None
+    assert not coordinator.setup_retained_entity_ids
+
+
 # DHF-REQ: genesis-wp-ha/requirement-14  DHF-TEST: genesis-wp-ha/ac-46
 async def test_options_step_lists_modules_with_automatic_default(hass, start_emulator):
     entry = await setup_with_options(hass, await start_emulator(PROFILE_615), {})

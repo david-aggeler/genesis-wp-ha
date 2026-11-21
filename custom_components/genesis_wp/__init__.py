@@ -531,6 +531,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         """
         if self.setup_capabilities is None or self._reload_scheduled or self.thermia.unread & set(self.evidence):
             return
+        self._resolve_retained_entities()
         appeared = sorted(
             name
             for name, cap in self.thermia.capabilities.items()
@@ -542,6 +543,34 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
                              name, self.thermia.capabilities[name].state)
             self._reload_scheduled = True
             self.hass.config_entries.async_schedule_reload(self.entry_id)
+
+    # DHF-REQ: genesis-wp-ha/requirement-12
+    def _resolve_retained_entities(self):
+        """Finish the cleanup deferred at setup once a complete read confirms the capability absent.
+
+        Called only after an update that read every evidence register. Entries whose capability
+        is no longer absent stay; the absent-to-present reload adds their entities.
+        """
+        if not self.setup_retained_entity_ids:
+            return
+        confirmed = {
+            self.unique_id(register)
+            for cap in self.thermia.capabilities.values()
+            if cap.state == ABSENT
+            for register in cap.gates
+        }
+        removable = self.setup_retained_entity_ids & confirmed
+        if not removable:
+            return
+        registry = er.async_get(self.hass)
+        for entity in er.async_entries_for_config_entry(registry, self.entry_id):
+            if entity.unique_id in removable:
+                registry.async_remove(entity.entity_id)
+                _LOGGER.info("Removed entity with unique ID %s: absence confirmed by a complete read",
+                             entity.unique_id)
+        self.setup_retained_entity_ids = self.setup_retained_entity_ids - removable
+        if self.device_id is not None:
+            _remove_empty_child_devices(self.hass, self.entry_id, self.device_id)
 
     def has_value(self, register) -> bool:
         """True when the last update read this register and it is fitted (not None)."""
