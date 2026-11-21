@@ -49,6 +49,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import ChildDeviceInfo
 from homeassistant.helpers.device_registry import DeviceInfo
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
@@ -239,11 +240,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             module_url="/genesis_wp/genesis-wp-panel.js", require_admin=False,
         )
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    if all(platform in coordinator.setup_entity_ids for platform in PLATFORMS):
+        _remove_stale_entities(hass, entry, coordinator)
     # The entities subscribed their registers while being added; read them now
     # instead of one update interval later.
     await coordinator.async_refresh()
 
     return True
+
+
+# DHF-REQ: genesis-wp-ha/requirement-14
+def _remove_stale_entities(hass, entry, coordinator):
+    """Remove registry entries the configured platforms no longer provide."""
+    registry = er.async_get(hass)
+    for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if entity.unique_id not in coordinator.setup_entity_ids.get(entity.domain, ()):
+            registry.async_remove(entity.entity_id)
+            _LOGGER.info("Removed stale entity with unique ID %s", entity.unique_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
@@ -313,6 +326,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self.kind = entry.data[CONF_MODEL]
         self.entry_id = entry.entry_id
         self.attributes = {}
+        self.setup_entity_ids: dict[str, set[str]] = {}
         # Capability states the entities were created for, set after the first refresh (requirement-12).
         self.setup_capabilities: dict[str, str] | None = None
         self.excluded: frozenset[str] = frozenset()

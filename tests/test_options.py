@@ -67,6 +67,37 @@ async def test_not_installed_module_gets_no_entities(hass, start_emulator):
     assert not smart_grid & registered(hass, entry)
 
 
+@pytest.fixture
+async def entry_with_hot_gas_recovery(hass, start_emulator):
+    options = dict.fromkeys(model_capabilities(WPE_I_KIND), "present")
+    # Hot water shares the child device with hot gas recovery.
+    options["hot_water"] = "absent"
+    return await setup_with_options(hass, await start_emulator(PROFILE_615), options)
+
+
+async def turn_off_hot_gas_recovery(hass, entry):
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    result = await hass.config_entries.options.async_configure(
+        result["flow_id"], {"hot_gas_recovery": "not_installed"}
+    )
+    assert result["type"] is FlowResultType.CREATE_ENTRY
+    await hass.async_block_till_done()
+    assert entry.options["hot_gas_recovery"] == "absent"
+
+
+# DHF-TEST: genesis-wp-ha/requirement-14 genesis-wp-ha/ac-153
+async def test_reload_removes_stale_module_entities(hass, entry_with_hot_gas_recovery):
+    entry = entry_with_hot_gas_recovery
+    before = registered(hass, entry)
+    hot_gas = {unique_id(entry, register) for register in gates("hot_gas_recovery")}
+    assert hot_gas and hot_gas <= before
+    assert f"{entry.entry_id}_derived_hc2_return" in before
+
+    await turn_off_hot_gas_recovery(hass, entry)
+
+    assert registered(hass, entry) == before - hot_gas
+
+
 # DHF-REQ: genesis-wp-ha/requirement-14  DHF-TEST: genesis-wp-ha/ac-46
 async def test_options_step_lists_modules_with_automatic_default(hass, start_emulator):
     entry = await setup_with_options(hass, await start_emulator(PROFILE_615), {})
