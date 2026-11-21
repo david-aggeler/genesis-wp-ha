@@ -218,7 +218,7 @@ const LEG_SOURCE = new Map([
 // Home Assistant can display a flow sensor in any of its volume flow rate units.
 const TO_LITERS_PER_MINUTE = new Map([
   ['L/min',1], ['L/h',1/60], ['L/s',60], ['mL/s',0.06],
-  ['m³/h',1000/60], ['m³/min',1000], ['m³/s',60000], ['ft³/min',28.316846592],
+  ['m\u00b3/h',1000/60], ['m\u00b3/min',1000], ['m\u00b3/s',60000], ['ft\u00b3/min',28.316846592],
   ['gal/h',3.785411784/60], ['gal/min',3.785411784], ['gal/d',3.785411784/1440],
 ]);
 function flowInLitersPerMinute(state) {
