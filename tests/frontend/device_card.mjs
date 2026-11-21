@@ -33,30 +33,54 @@ const pipe = (card, id) => html(card).match(new RegExp(`<path[^>]*data-path="${i
   const states = structuredClone(hass.states);
   states[byRegister('input_1')].state = 'Heat';
   states[byRegister('input_12')].state = '26.26';
-  for (const register of ['derived_condenser_flow', 'derived_brine_flow', 'input_18']) {
+  const estimates = ['derived_condenser_flow', 'derived_brine_flow'];
+  const calculated = [18, 122, 124, 125, 126, 147].map(address => `input_${address}`);
+  for (const register of [...estimates, ...calculated, 'input_17', 'input_68']) {
     states[byRegister(register)].state = '13.7';
   }
-  for (const layout of [undefined, 'diagram']) {
+  const renderWithStates = (device, layout, entities = hass.entities) => {
     const card = new Card();
-    card.setConfig({device:'internal_heat_pump', entry:fixture.entry, layout});
-    card.hass = {...hass, states};
+    card.setConfig({device, entry:fixture.entry, layout});
+    card.hass = {...hass, states, entities};
+    return card;
+  };
+  const positionedChip = (card, register) => html(card).match(new RegExp(
+    `<div class="chip [^"]*"[^>]*data-register="${register}"[^>]*>[\\s\\S]*?</div>`
+  ))?.[0];
+  const checkDashedValue = (card, register, source, layout) => {
+    const positioned = layout === 'diagram';
+    const chip = positioned ? positionedChip(card, register) : tag(card, register);
+    const label = `${register} (${layout ?? 'card'})`;
+    assert.ok(chip, label);
+    const classes = chip.match(/^<\w+ class="([^"]+)"/)[1].split(/\s+/);
+    assert.ok(classes.includes(source), label);
+    assert.match(chip, positioned
+      ? /<svg class="chip-border"[^>]*>\s*<rect\b[^>]*\/?>\s*<\/svg>/
+      : /<rect\b[^>]*>/, label);
+
+    const style = html(card).match(/<style>([\s\S]*?)<\/style>/)[1];
+    const dashRules = [...style.matchAll(/([^{}]+)\{[^{}]*\bstroke-dasharray:\s*6\s+3\s*(?:;|\})/g)];
+    const selectors = dashRules.flatMap(rule => rule[1].trim().split(/\s*,\s*/));
+    assert.ok(selectors.includes(`.${source} rect`), label);
+
+    const value = chip.match(/class="value"[^>]*>([^<]+)<\/(?:span|text)>/)?.[1];
+    assert.ok(value?.includes('13.7'), label);
+    if (source === 'estimated') assert.match(value, /^≈ 13\.7/, label);
+    else assert.doesNotMatch(value, /≈/, label);
+  };
+  for (const layout of [undefined, 'diagram']) {
+    const card = renderWithStates('internal_heat_pump', layout);
     const out = html(card);
-    const chip = key => layout === 'diagram'
-      ? out.match(new RegExp(`<div class="chip [^"]*"[^>]*data-register="${key}"[^>]*>[\\s\\S]*?</div>`))?.[0]
-      : tag(card, key);
+    const contextChip = layout === 'diagram' ? positionedChip(card, 'input_12') : tag(card, 'input_12');
     // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-112
-    assert.match(chip('input_12'), /class="[^"]*context/);
+    assert.match(contextChip, /class="[^"]*context/);
     assert.match(out, /\.context\{opacity:0?\.75\}/);
     assert.doesNotMatch(out, /\.context[^{}]*\{[^{}]*(?:dotted|stroke-dasharray)/);
     // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-113
-    for (const register of ['derived_condenser_flow', 'derived_brine_flow']) {
-      assert.match(chip(register), /class="[^"]*estimated/);
-      assert.match(chip(register), /class="value"[^>]*>≈ 13\.7/);
-    }
+    for (const register of estimates) checkDashedValue(card, register, 'estimated', layout);
     // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-114
-    assert.match(chip('input_18'), /class="[^"]*calculated/);
-    assert.match(chip('input_18'), /class="value"[^>]*>13\.7/);
-    assert.match(out, /stroke-dasharray:6 3/);
+    for (const register of calculated) checkDashedValue(card, register, 'calculated', layout);
+    checkDashedValue(renderWithStates('hot_water', layout), 'input_17', 'calculated', layout);
     // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-115
     assert.match(pipe(card,'bypass'), /data-flow="active"[^>]*stroke="currentColor" stroke-opacity="0.75"/);
     assert.match(pipe(card,'cooling-return'), /data-flow="idle"[^>]*stroke-opacity="0.22"/);
@@ -65,6 +89,15 @@ const pipe = (card, id) => html(card).match(new RegExp(`<path[^>]*data-path="${i
     assert.ok(out.includes('solid: measured; faded chip: other section; dashed: calculated by the controller; ≈: estimated; faded: idle; gray: no sensor'));
     assert.doesNotMatch(out, /dashed: calculated</);
   }
+  // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-114
+  // Input 68 has no drawing position. Exercise its value tag through a supported
+  // card category while keeping the emulator's register identity and state.
+  const chargeTarget = byRegister('input_68');
+  const [deviceId] = Object.entries(hass.devices).find(([, device]) =>
+    device.identifiers.some(([domain, id]) =>
+      domain === 'genesis_wp' && id === `${fixture.entry}_internal_heat_pump`));
+  const entities = {...hass.entities, [chargeTarget]: {...hass.entities[chargeTarget], device_id: deviceId}};
+  checkDashedValue(renderWithStates('internal_heat_pump', undefined, entities), 'input_68', 'calculated');
 }
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-67
 {
