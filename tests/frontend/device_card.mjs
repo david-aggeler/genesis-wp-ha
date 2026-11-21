@@ -33,7 +33,8 @@ const pipe = (card, id) => html(card).match(new RegExp(`<path[^>]*data-path="${i
 for (const [device, register, width] of [['hot_water', 'input_15', 150], ['controller', 'input_55', 260]]) {
   const id = byRegister(register);
   const deviceName = hass.devices[hass.entities[id].device_id].name;
-  const fullName = `${deviceName} ${'Wide label '.repeat(12).trim()} & status`;
+  const wideLabel = `${'W'.repeat(19)}é👩‍🔧${'W'.repeat(20)} & status`;
+  const fullName = `${deviceName} ${wideLabel}`;
   const states = structuredClone(hass.states);
   states[id].attributes.friendly_name = fullName;
   const card = new Card();
@@ -41,14 +42,14 @@ for (const [device, register, width] of [['hot_water', 'input_15', 150], ['contr
   card.hass = {...hass, states, locale:{language:'en'}};
   const rendered = tag(card, register);
   assert.ok(rendered, register);
-  const label = rendered.match(/<text x="6" y="14"[^>]*>([^<]+)<\/text>/)?.[1];
-  assert.ok(label && !label.startsWith(deviceName), register);
-  if (device === 'controller') assert.match(label, /^Wide label .*…$/);
-  else assert.equal(label, 'Top');
+  const label = rendered.match(/<div class="tag-label">([^<]+)<\/div>/)?.[1];
+  assert.equal(label, device === 'controller' ? wideLabel.replace('&', '&amp;') : 'Top', register);
   assert.ok(rendered.includes(`<title>${fullName.replace('&', '&amp;')}</title>`), register);
-  const clipId = rendered.match(/<text x="6" y="14" clip-path="url\(#([^"]+)\)"/)?.[1];
-  assert.ok(clipId, register);
-  assert.ok(rendered.includes(`<clipPath id="${clipId}"><path d="M6 0H${width - 6}V20H6Z"`), register);
+  assert.ok(rendered.includes(`<foreignObject x="6" y="2" width="${width - 12}" height="18">`), register);
+  const rule = html(card).match(/\.tag-label\{([^}]+)}/)?.[1];
+  for (const declaration of ['overflow:hidden', 'white-space:nowrap', 'text-overflow:ellipsis']) {
+    assert.ok(rule?.includes(declaration), declaration);
+  }
 }
 {
   const states = structuredClone(hass.states);
