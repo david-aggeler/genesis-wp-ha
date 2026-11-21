@@ -54,6 +54,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.update_coordinator import UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .const import CARD_URLS
 from .const import CONF_CAPABILITIES
@@ -68,6 +69,11 @@ from .const import HC2_RETURN_DEFAULTS
 from .const import EMULATOR_DYNAMICS_INTERVAL
 from .const import EMULATOR_HOST
 from .const import MODE_EMULATED
+
+from .cycles import RunTracker
+
+COMPRESSOR_SIGNAL = genesis_const.ATTR_DINPUT_COMPRESSOR_CONTROL_SIGNAL
+OPERATING_MODE = genesis_const.ATTR_INPUT_FIRST_PRIORITISED_DEMAND
 
 # Read-only: the write platforms (climate, number, switch) are not forwarded.
 PLATFORMS = ["sensor", "binary_sensor"]
@@ -366,6 +372,10 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self.registerAttribute(
             [r for r in (*self.sw_version_registers, *self.hw_version_registers) if REGISTERS[r][self.kind]]
         )
+        self.run_tracker = None
+        if all(REGISTERS[register][self.kind] for register in (COMPRESSOR_SIGNAL, OPERATING_MODE)):
+            self.run_tracker = RunTracker()
+            self.registerAttribute([COMPRESSOR_SIGNAL, OPERATING_MODE])
         self.evidence = capability_evidence(self.kind)
         self.registerAttribute(self.evidence)
         # DHF-REQ: genesis-wp-ha/requirement-26
@@ -436,6 +446,8 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         try:
             data = await self.thermia.async_update(only_registers=self.attributes.keys())
         except ThermiaException as error:
+            if self.run_tracker is not None:
+                self.run_tracker.add(dt_util.now(), None)
             if self.hc2_estimator is not None:
                 self.hc2_return = self.hc2_estimator.add(self.flow_clock(), {}, None)
             # The library's message names the host, which is topology: keep it out of the log.
@@ -446,6 +458,11 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self._check_capabilities()
         self._store_seen()
         self._estimate_flows(data)
+        if self.run_tracker is not None:
+            unread = self.thermia.unread
+            signal = None if COMPRESSOR_SIGNAL in unread else data.get(COMPRESSOR_SIGNAL)
+            mode = None if OPERATING_MODE in unread else data.get(OPERATING_MODE)
+            self.run_tracker.add(dt_util.now(), signal, mode)
         return data
 
     def _estimate_flows(self, data):
