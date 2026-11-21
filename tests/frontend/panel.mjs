@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 const hass=JSON.parse(readFileSync(0,'utf8'));
 globalThis.window=globalThis;
-globalThis.HTMLElement=class {attachShadow(){let html='';this.shadowRoot={replaced:0,addEventListener(){},querySelector(){return null;},querySelectorAll(){return [];},
+globalThis.HTMLElement=class {attachShadow(){let html='';this.shadowRoot={replaced:0,listeners:{},addEventListener(type,listener){this.listeners[type]=listener;},querySelector(){return null;},querySelectorAll(){return [];},
  get innerHTML(){return html;},set innerHTML(v){html=v;this.replaced++;}};return this.shadowRoot;}};
 globalThis.customElements={items:new Map([['hui-view',class {}]]),get(k){return this.items.get(k);},define(k,v){assert.ok(!this.items.has(k),k);this.items.set(k,v);}};
 const source=process.argv[2];
@@ -237,3 +237,30 @@ p.route={path:'/genesis-wp'}; assert.match(html(),/data-tile=/);
    p.hass=hass;}
 }
 console.log("HARNESS-COMPLETE");
+
+// DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-122
+{
+ const stored = new Map();
+ globalThis.localStorage = {getItem:key=>stored.get(key),setItem:(key,value)=>stored.set(key,value)};
+ const settings = new Panel();
+ const diagram = {dataset:{diagram:'internal_heat_pump',entry:hass.entry},setConfig(config){this.config=config;}};
+ settings.shadowRoot.querySelectorAll = selector => selector === '[data-diagram]' ? [diagram] : [];
+ settings.route = {path:'/genesis-wp/internal_heat_pump'};
+ settings.hass = {...hass, callService(){assert.fail('flow speed must not call a service');}};
+ assert.match(settings.shadowRoot.innerHTML, /<input type="range" data-flow-speed min="0.02" max="1" step="0.01" value="0.16">/);
+ assert.equal(diagram.config.flow_speed, 0.16);
+ settings.shadowRoot.listeners.input({target:{dataset:{flowSpeed:''},value:'0.42'}});
+ assert.equal(diagram.config.flow_speed, 0.42);
+ const restored = new Panel();
+ restored.route = {path:'/genesis-wp/internal_heat_pump'};
+ restored.hass = hass;
+ assert.match(restored.shadowRoot.innerHTML, /data-flow-speed[^>]*value="0.42"/);
+ globalThis.localStorage = {getItem(){throw new Error('denied');},setItem(){throw new Error('denied');}};
+ const privatePanel = new Panel();
+ privatePanel.route = {path:'/genesis-wp/internal_heat_pump'};
+ privatePanel.hass = hass;
+ assert.match(privatePanel.shadowRoot.innerHTML, /data-flow-speed[^>]*value="0.16"/);
+ settings.shadowRoot.listeners.input({target:{dataset:{flowSpeed:''},value:'0.7'}});
+ assert.equal(diagram.config.flow_speed, 0.7);
+ delete globalThis.localStorage;
+}

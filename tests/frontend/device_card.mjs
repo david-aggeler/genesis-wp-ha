@@ -439,9 +439,83 @@ for(const category of ['ksm','electric_meter_and_energy','controller']) {
 
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-71
 assert.equal(services,0); assert.equal(ws,0);
+// DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-119 genesis-wp-ha/ac-120 genesis-wp-ha/ac-121 genesis-wp-ha/ac-122 genesis-wp-ha/ac-123 genesis-wp-ha/ac-124
+{
+  const states = structuredClone(hass.states);
+  const entities = structuredClone(hass.entities);
+  const set = (register, value) => {
+    const id = byRegister(register);
+    assert.ok(id, register);
+    entities[id].disabled_by = null;
+    states[id].state = value;
+    return states[id].attributes;
+  };
+  set('input_1', 'Heat');
+  set('derived_condenser_flow', '20');
+  set('derived_brine_flow', '2');
+  set('derived_hc2_return', '24').circuit_flow = 10;
+  set('dinput_209', 'on');
+  const renderFlow = (flow_speed, darkMode = false) => {
+    const card = new Card();
+    card.setConfig({device:'internal_heat_pump', entry:fixture.entry, flow_speed});
+    card.hass = {...hass, states, entities, themes:{darkMode}};
+    return card;
+  };
+  const markers = (card, leg) => html(card).match(new RegExp(
+    `<g data-chevrons="${leg}"[^>]*>([\\s\\S]*?)</g>`,
+  ))?.[1] || '';
+  const duration = (card, leg) => Number(markers(card, leg).match(/dur="([0-9.]+)s"/)?.[1]);
+  const card = renderFlow(0.5);
+  assert.equal(duration(card, 'condenser-out'), 10);
+  assert.ok(Math.abs(duration(card, 'brine-hx') - 67.7777777778) < 0.0001);
+  assert.ok(Math.abs(duration(card, 'tr9-mixer') - 6.4) < 0.0001);
+  assert.equal(duration(renderFlow(), 'condenser-out'), 31.25);
+  assert.equal(duration(renderFlow(1), 'condenser-out'), 5);
+  assert.match(html(card), /data-chevrons="condenser-out"[^>]*stroke="white" stroke-opacity="0.8"/);
+  assert.match(html(renderFlow(0.5, true)), /data-chevrons="condenser-out"[^>]*stroke="black" stroke-opacity="0.55"/);
+  assert.match(html(card), /data-chevrons="condenser-out"[^>]*stroke-width="1.1"/);
+  assert.match(markers(card, 'condenser-out'), /M-3,-1.7 L0.5,0 L-3,1.7/);
+  assert.match(markers(card, 'room-return'), /path="M1815,470 L1815,560 L1540,560"/);
+  const converted = set('derived_condenser_flow', '1.2');
+  converted.unit_of_measurement = 'm³/h';
+  assert.equal(duration(renderFlow(0.5), 'tr9-mixer'), duration(card, 'tr9-mixer'));
+  converted.unit_of_measurement = 'L/min';
+  set('derived_condenser_flow', 'unavailable');
+  const unknown = renderFlow(0.5);
+  assert.equal(markers(unknown, 'condenser-out'), '');
+  assert.equal(markers(unknown, 'hc2-supply'), '');
+  assert.match(pipe(unknown, 'condenser-out'), /data-flow="active"/);
+  set('derived_condenser_flow', '20');
+  set('dinput_209', 'unavailable');
+  assert.equal(markers(renderFlow(), 'hc2-supply'), '');
+  set('dinput_209', 'on');
+  assert.match(markers(card, 'condenser-out'), /path="M920,290 L1220,290" rotate="auto"/);
+  for (const leg of ['either-way', 'hc2-port-b', 'bypass', 'room-return-buffer', 'suction']) {
+    assert.equal(markers(card, leg), '', leg);
+  }
+  assert.match(pipe(card, 'bypass'), /data-flow="active"[^>]*stroke="currentColor" stroke-opacity="0.75"/);
+  globalThis.matchMedia = query => ({matches:query === '(prefers-reduced-motion: reduce)'});
+  const reduced = renderFlow(0.5);
+  delete globalThis.matchMedia;
+  assert.doesNotMatch(html(reduced), /<animateMotion/);
+  assert.deepEqual(html(reduced).match(/<path data-path[^>]*>/g), html(card).match(/<path data-path[^>]*>/g));
+  set('derived_brine_flow', '0');
+  assert.match(pipe(renderFlow(), 'brine-hx'), /data-flow="idle"[^>]*stroke="currentColor" stroke-opacity="0.22"/);
+  assert.equal(markers(renderFlow(), 'brine-hx'), '');
+  set('dinput_209', 'off');
+  assert.equal(markers(renderFlow(), 'hc2-supply'), '');
+  set('derived_condenser_flow', '0');
+  const stopped = renderFlow();
+  assert.match(pipe(stopped, 'condenser-out'), /data-flow="idle"[^>]*stroke="currentColor" stroke-opacity="0.22"/);
+  assert.equal(markers(stopped, 'condenser-out'), '');
+  const field = Card.getConfigForm().schema.find(item => item.name === 'flow_speed');
+  assert.equal(field.default, 0.16);
+  assert.deepEqual(field.selector, {number:{min:0.02,max:1,step:0.01,mode:'slider'}});
+  assert.equal(services, 0);
+}
 // DHF-TEST: genesis-wp-ha/requirement-20 genesis-wp-ha/ac-77
 const form = Card.getConfigForm();
-assert.deepEqual(form.schema.map(s=>s.name), ['device','title','entry']);
+assert.deepEqual(form.schema.map(s=>s.name), ['device','title','entry','flow_speed']);
 const [deviceField,titleField,entryField] = form.schema;
 assert.equal(deviceField.required,true);
 assert.equal(deviceField.selector.select.mode,'dropdown');
@@ -669,7 +743,7 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
   // heat-pump return on the left wall (x 1160), the room return on the right wall (x 1320).
   {
     const pts = name => [...out.match(new RegExp(`data-path="${name}"[^>]* d="([^"]+)"`))[1].matchAll(/(-?\d+),(-?\d+)/g)].map(([, x, y]) => [Number(x), Number(y)]);
-    const hp = pts('buffer-return')[0], room = pts('room-return').at(-1);
+    const hp = pts('buffer-return')[0], room = pts('room-return-buffer').at(-1);
     assert.deepEqual(hp, [1160, 560], `heat-pump return port ${hp}`);
     assert.deepEqual(room, [1320, 560], `room return port ${room}`);
     // No pipe reaches the tank bottom (y 580) any more.

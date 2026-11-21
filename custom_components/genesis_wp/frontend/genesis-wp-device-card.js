@@ -19,6 +19,17 @@ const CATEGORY_COLORS = {
 };
 const escapeText = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const key = address => `input_${address}`;
+export const FLOW_SPEED = {min:0.02, max:1, step:0.01, default:0.16};
+export function normalizeFlowSpeed(value) {
+  const speed = nonnegativeNumber(value);
+  return speed === null ? FLOW_SPEED.default : Math.min(FLOW_SPEED.max, Math.max(FLOW_SPEED.min, speed));
+}
+
+function nonnegativeNumber(value) {
+  if (typeof value !== 'number' && (typeof value !== 'string' || !value.trim())) return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
 // DHF-REQ: genesis-wp-ha/requirement-27
 const calculated = new Set([17,18,68,122,124,125,126,147].map(key));
 // DHF-REQ: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-113
@@ -175,7 +186,8 @@ const PIPES = {
     ['tr9-mixer',12,'rooms','M1432,290 L1528,290'],
     ['hc2-supply',40,'rooms','M1552,290 L1750,290'],
     // Shown whenever the Rooms block is (T32 or the HC2 supply set point), colored by the estimate.
-    ['room-return',[[40,147],'derived_hc2_return'],'rooms','M1815,470 L1815,560 L1320,560'],
+    ['room-return',[[40,147],'derived_hc2_return'],'rooms','M1815,470 L1815,560 L1540,560'],
+    ['room-return-buffer',[[40,147],'derived_hc2_return'],'rooms','M1540,560 L1320,560'],
     ['bypass',[41,null],'rooms','M1540,560 L1540,304'],
     ['passive-port-a',40,'passive','M160,10 L160,-25 L1420,-25 L1420,276'],
     // Passive cooling: the room return leaves at the T31 port, rises over the plant and enters
@@ -194,6 +206,59 @@ function active(group, mode, passiveEnabled) {
     hot_water:['Hot water','Anti legionella'].includes(mode), cooling:mode==='Cool', pool:mode==='Pool',
     buffer:['Heat','Defrost'].includes(mode), hc2:!passive, passive, rooms:true})[group];
 }
+// DHF-REQ: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-119 genesis-wp-ha/ac-120 genesis-wp-ha/ac-121
+// Only legs with a known source are listed. Mixer split legs and the refrigerant loop
+// have no source for their share in this drawing.
+const LEG_SOURCE = new Map([
+  ['condenser-out','condenser'], ['condenser-in','condenser'], ['buffer-return','condenser'],
+  ['brine-in','brine'], ['brine-hx','brine'], ['brine-out','brine'],
+  ['tr9-mixer','hc2'], ['hc2-supply','hc2'], ['room-return','hc2'],
+]);
+
+// Home Assistant can display a flow sensor in any of its volume flow rate units.
+const TO_LITERS_PER_MINUTE = new Map([
+  ['L/min',1], ['L/h',1/60], ['L/s',60], ['mL/s',0.06],
+  ['m³/h',1000/60], ['m³/min',1000], ['m³/s',60000], ['ft³/min',28.316846592],
+  ['gal/h',3.785411784/60], ['gal/min',3.785411784], ['gal/d',3.785411784/1440],
+]);
+function flowInLitersPerMinute(state) {
+  const value = nonnegativeNumber(state?.state);
+  const factor = TO_LITERS_PER_MINUTE.get(state?.attributes.unit_of_measurement);
+  if (value === null || factor === undefined) return null;
+  return nonnegativeNumber(value * factor);
+}
+
+function legShare(id, flows) {
+  const flow = flows[LEG_SOURCE.get(id)];
+  if (flow === 0) return 0;
+  if (!(flow > 0) || !(flows.condenser > 0)) return null;
+  const share = flow / flows.condenser;
+  return Number.isFinite(share) ? share : null;
+}
+
+// All animated legs are polylines in the direction of flow. The distance between
+// successive vertices gives their SVG length, including when rendering without a DOM.
+function pathLength(path) {
+  const points = path.split(' ').map(point => point.slice(1).split(',').map(Number));
+  return points.slice(1).reduce((length, [x,y], index) => {
+    const [previousX,previousY] = points[index];
+    return length + Math.hypot(x - previousX, y - previousY);
+  }, 0);
+}
+
+// DHF-REQ: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-119 genesis-wp-ha/ac-123 genesis-wp-ha/ac-124
+function chevrons(id, path, share, speed, darkMode) {
+  const length = pathLength(path);
+  const duration = length / (60 * speed * Math.max(share, 0.15));
+  const count = Math.max(1, Math.round(length / 46));
+  const stroke = darkMode ? 'black' : 'white';
+  const opacity = darkMode ? 0.55 : 0.8;
+  const markers = Array.from({length:count}, (_, index) =>
+    `<path d="M-3,-1.7 L0.5,0 L-3,1.7"><animateMotion dur="${duration}s" repeatCount="indefinite" path="${path}" rotate="auto" begin="${-duration * index / count}s"/></path>`,
+  ).join('');
+  return `<g data-chevrons="${id}" fill="none" stroke="${stroke}" stroke-opacity="${opacity}" stroke-width="1.1">${markers}</g>`;
+}
+
 export class GenesisWpDeviceCard extends HTMLElement {
   setConfig(config) {
     if (!config || !CATEGORIES.includes(config.device)) throw new Error(`device must be one of: ${CATEGORIES.join(', ')}`);
@@ -215,7 +280,7 @@ export class GenesisWpDeviceCard extends HTMLElement {
   }
   set hass(value) { this._hass=value; this._render(); }
   getCardSize() { return 8; }
-  // DHF-REQ: genesis-wp-ha/requirement-20
+  // DHF-REQ: genesis-wp-ha/requirement-20 genesis-wp-ha/requirement-27 genesis-wp-ha/ac-122
   static getConfigForm() {
     return {
       schema: [
@@ -223,8 +288,10 @@ export class GenesisWpDeviceCard extends HTMLElement {
           options:CATEGORIES.map(value=>({value,label:LABELS[value]}))}}},
         {name:'title', selector:{text:{}}},
         {name:'entry', selector:{config_entry:{integration:'genesis_wp'}}},
+        {name:'flow_speed', default:FLOW_SPEED.default,
+          selector:{number:{min:FLOW_SPEED.min,max:FLOW_SPEED.max,step:FLOW_SPEED.step,mode:'slider'}}},
       ],
-      computeLabel: ({name}) => ({device:'Plant section',title:'Title',entry:'Config entry'})[name],
+      computeLabel: ({name}) => ({device:'Plant section',title:'Title',entry:'Config entry',flow_speed:'Flow animation speed'})[name],
     };
   }
   // DHF-REQ: genesis-wp-ha/requirement-20
@@ -332,11 +399,25 @@ export class GenesisWpDeviceCard extends HTMLElement {
       const parts=drawn.filter(svg=>!front(svg)).join(''), frontParts=drawn.filter(front).join('');
       const styles=new Map();
       const anchored=r=>{const a=Array.isArray(r)?r[0]:r; return Array.isArray(a)?a.some(exists):exists(a);};
+      const readState = register => byRegister.get(register)?.state;
+      const fr2 = readState('dinput_209')?.state;
+      const flows = {
+        condenser: flowInLitersPerMinute(readState('derived_condenser_flow')),
+        brine: flowInLitersPerMinute(readState('derived_brine_flow')),
+        hc2: fr2 === 'on' ? nonnegativeNumber(readState('derived_hc2_return')?.attributes.circuit_flow)
+          : fr2 === 'off' ? 0 : null,
+      };
+      const reduced = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      const speed = normalizeFlowSpeed(this._config.flow_speed);
+      const darkMode = this._hass.themes?.darkMode;
+      const motion = new Map();
       const pipesSvg=PIPES[category].filter(([,r])=>anchored(r)).map(([id,r,group,d,dash])=>{
         const sensor=Array.isArray(r)?r[1]:r;
         const state=sensor===null?null:byRegister.get(typeof sensor==='number'?key(sensor):sensor)?.state;
         const celsius=state ? toCelsius(state.state, state.attributes.unit_of_measurement) : null;
-        const flow=active(group,mode,passiveEnabled);
+        const share = legShare(id, flows);
+        const flow = active(group,mode,passiveEnabled) && share !== 0;
+        if (flow && share > 0 && !reduced) motion.set(id, chevrons(id,d,share,speed,darkMode));
         const color=flow&&celsius!==null?temperatureColor(celsius):'currentColor';
         const noSensor = Array.isArray(r) && celsius === null;
         const opacity = flow ? (noSensor ? 0.75 : 1) : 0.22;
@@ -349,7 +430,11 @@ export class GenesisWpDeviceCard extends HTMLElement {
         const s=joined.find(j=>j.flow)||{flow:false,color:'currentColor',opacity:0.22};
         return `<circle class="junction" data-junction="${ids[0]}" data-flow="${s.flow?'active':'idle'}" cx="${x}" cy="${y}" r="${r}" fill="${s.color}" fill-opacity="${s.opacity}"/>`;
       }).join('');
-      const pipes=pipesSvg+junctions;
+      // Fixed slots keep other legs' animations in place when a source starts or stops.
+      const markers = PIPES[category].filter(([id]) => LEG_SOURCE.has(id)).map(([id]) =>
+        `<g>${motion.get(id) || ''}</g>`,
+      ).join('');
+      const pipes = pipesSvg + junctions + `<g class="flow-motion" aria-hidden="true" pointer-events="none">${markers}</g>`;
       const positioned=new Set();
       const diagram=this._config.layout==='diagram';
       const [vx,vy,vw,vh]=VIEWS[category].split(' ').map(Number);
@@ -388,7 +473,7 @@ export class GenesisWpDeviceCard extends HTMLElement {
       }
     }
     const diagram=this._config.layout==='diagram';
-    patch(this.shadowRoot, `<style>[role=button]{cursor:pointer}[role=button]:focus-visible{outline:2px solid var(--primary-color)}:host{display:block;color:var(--primary-text-color)}ha-card{padding:16px}h2{font-size:var(--ha-font-size-xl);font-weight:var(--ha-font-weight-normal)}.mode{color:var(--secondary-text-color)}svg{display:block;width:100%;height:auto}text{fill:currentColor;font-family:inherit;font-size:11px}.tag-label{font-size:11px;line-height:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.own rect,.context rect{fill:var(--card-background-color);stroke:var(--tag-color);stroke-width:1.5}.context{opacity:.75}.calculated rect,.estimated rect{stroke-dasharray:6 3}.style-legend{font-size:8px}.alarms{color:var(--error-color,#d46161);padding:8px}.value{font-size:13px;font-weight:bold}.chip rect{rx:10px}.stage{position:relative}.stage .drawing{position:absolute;inset:0;width:100%;height:100%}.stage .drawing text{font-size:12px}div.chip{position:absolute;box-sizing:border-box;display:flex;flex-direction:column;padding:0 var(--ha-space-1);border:1.5px solid var(--tag-color);border-radius:var(--ha-border-radius-sm,4px);background:var(--card-background-color);overflow:hidden;cursor:pointer;line-height:1.1}.part-label{position:absolute;white-space:nowrap;line-height:1;font-size:var(--ha-font-size-s);color:var(--primary-text-color);pointer-events:none}div.chip.calculated,div.chip.estimated{border-color:transparent;overflow:visible}.chip-border{position:absolute;inset:-1.5px;width:calc(100% + 3px);height:calc(100% + 3px);pointer-events:none}.chip-border rect{x:.75px;y:.75px;width:calc(100% - 1.5px);height:calc(100% - 1.5px);fill:none}div.chip .label{font-size:var(--ha-font-size-s);color:var(--secondary-text-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}div.chip .value{font-size:var(--ha-font-size-s);font-weight:var(--ha-font-weight-medium);white-space:nowrap;overflow:hidden}.legend{display:flex;flex-wrap:wrap;gap:var(--ha-space-1) var(--ha-space-4);margin-top:var(--ha-space-2);font-size:var(--ha-font-size-s);color:var(--secondary-text-color)}.scale{display:inline-flex;align-items:center;gap:var(--ha-space-1)}.bar{display:inline-block;width:160px;height:8px;border-radius:4px}.fault{color:var(--error-color,#d46161)}.fault rect{stroke:var(--error-color,#d46161)}</style>${diagram?'<div class="diagram"':'<ha-card'} style="--tag-color:${CATEGORY_COLORS[category]}">${diagram?'':`<h2>${escapeText(title)}</h2><div class="mode">${escapeText(mode)}</div>`}${body}${diagram?'</div>':'</ha-card>'}`);
+    patch(this.shadowRoot, `<style>@media (prefers-reduced-motion:reduce){.flow-motion{display:none}}[role=button]{cursor:pointer}[role=button]:focus-visible{outline:2px solid var(--primary-color)}:host{display:block;color:var(--primary-text-color)}ha-card{padding:16px}h2{font-size:var(--ha-font-size-xl);font-weight:var(--ha-font-weight-normal)}.mode{color:var(--secondary-text-color)}svg{display:block;width:100%;height:auto}text{fill:currentColor;font-family:inherit;font-size:11px}.tag-label{font-size:11px;line-height:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.own rect,.context rect{fill:var(--card-background-color);stroke:var(--tag-color);stroke-width:1.5}.context{opacity:.75}.calculated rect,.estimated rect{stroke-dasharray:6 3}.style-legend{font-size:8px}.alarms{color:var(--error-color,#d46161);padding:8px}.value{font-size:13px;font-weight:bold}.chip rect{rx:10px}.stage{position:relative}.stage .drawing{position:absolute;inset:0;width:100%;height:100%}.stage .drawing text{font-size:12px}div.chip{position:absolute;box-sizing:border-box;display:flex;flex-direction:column;padding:0 var(--ha-space-1);border:1.5px solid var(--tag-color);border-radius:var(--ha-border-radius-sm,4px);background:var(--card-background-color);overflow:hidden;cursor:pointer;line-height:1.1}.part-label{position:absolute;white-space:nowrap;line-height:1;font-size:var(--ha-font-size-s);color:var(--primary-text-color);pointer-events:none}div.chip.calculated,div.chip.estimated{border-color:transparent;overflow:visible}.chip-border{position:absolute;inset:-1.5px;width:calc(100% + 3px);height:calc(100% + 3px);pointer-events:none}.chip-border rect{x:.75px;y:.75px;width:calc(100% - 1.5px);height:calc(100% - 1.5px);fill:none}div.chip .label{font-size:var(--ha-font-size-s);color:var(--secondary-text-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}div.chip .value{font-size:var(--ha-font-size-s);font-weight:var(--ha-font-weight-medium);white-space:nowrap;overflow:hidden}.legend{display:flex;flex-wrap:wrap;gap:var(--ha-space-1) var(--ha-space-4);margin-top:var(--ha-space-2);font-size:var(--ha-font-size-s);color:var(--secondary-text-color)}.scale{display:inline-flex;align-items:center;gap:var(--ha-space-1)}.bar{display:inline-block;width:160px;height:8px;border-radius:4px}.fault{color:var(--error-color,#d46161)}.fault rect{stroke:var(--error-color,#d46161)}</style>${diagram?'<div class="diagram"':'<ha-card'} style="--tag-color:${CATEGORY_COLORS[category]}">${diagram?'':`<h2>${escapeText(title)}</h2><div class="mode">${escapeText(mode)}</div>`}${body}${diagram?'</div>':'</ha-card>'}`);
   }
 }
 registerCard('genesis-wp-device-card', GenesisWpDeviceCard, {
