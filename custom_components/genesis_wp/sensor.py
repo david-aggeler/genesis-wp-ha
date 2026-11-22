@@ -386,12 +386,17 @@ class HeatSensor(CoordinatorEntity, SensorEntity):
 
     _attr_has_entity_name = True
     _attr_suggested_display_precision = 2
+    _unrecorded_attributes = frozenset({"register"})
 
     def __init__(self, coordinator, key):
         super().__init__(coordinator)
         self._attr_translation_key = f"derived_{key}"
         self._attr_unique_id = f"{coordinator.entry_id}_{self._attr_translation_key}"
         self._attr_device_info = coordinator.device_info_for(COMPRESSOR_SIGNAL)
+
+    @property
+    def capability_attributes(self):
+        return {**(super().capability_attributes or {}), "register": self._attr_translation_key}
 
 
 # DHF-REQ: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-137
