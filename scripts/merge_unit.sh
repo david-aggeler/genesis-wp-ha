@@ -51,12 +51,48 @@ ahead=$(git rev-list --count "$MAIN_REF..$sha") || refuse "cannot count the comm
 
 main_before=$(git rev-parse --verify "$MAIN_REF")
 subject="Merge $branch (change_request-${branch#cr-})"
-if ! git merge --quiet --no-ff --no-edit -m "$subject" "$sha" >&2; then
-	# MERGE_HEAD was absent above, so one now belongs to this merge.
-	[ -e "$(git rev-parse --git-path MERGE_HEAD)" ] || refuse "merge of $branch into $MAIN failed; no merge started"
-	git merge --abort || refuse "merge of $branch into $MAIN failed; git merge --abort failed, MERGE_HEAD left in place"
-	refuse "merge of $branch into $MAIN failed; merge aborted"
+manifest=custom_components/genesis_wp/manifest.json
+
+abort_merge() {
+	# MERGE_HEAD was absent before this invocation, so one now belongs to this merge.
+	[ -e "$(git rev-parse --git-path MERGE_HEAD)" ] || refuse "$1; no merge started"
+	git merge --abort || refuse "$1; git merge --abort failed, MERGE_HEAD left in place"
+	refuse "$1; merge aborted"
+}
+
+if ! git merge --quiet --no-ff --no-commit -m "$subject" "$sha" >&2; then
+	abort_merge "merge of $branch into $MAIN failed"
 fi
+
+# DHF-REQ: genesis-wp-ha/requirement-32
+reachable=$(git rev-list --count "$main_before" "$sha") || abort_merge "cannot count commits for $branch"
+if ! python3 - "$manifest" "$((reachable + 1))" <<'PY'
+import json
+from pathlib import Path
+import re
+import sys
+
+version = Path("VERSION").read_bytes().removesuffix(b"\n")
+if not re.fullmatch(rb"[0-9]+\.[0-9]+\.[0-9]+", version):
+    sys.exit("VERSION must contain MAJOR.MINOR.PATCH")
+
+manifest = Path(sys.argv[1])
+stamp = version + b"." + sys.argv[2].encode("ascii")
+original = manifest.read_bytes()
+updated, count = re.subn(
+    rb'("version"\s*:\s*")[^"\\]*(")',
+    lambda match: match[1] + stamp + match[2],
+    original,
+)
+if count != 1 or json.loads(updated).get("version") != stamp.decode("ascii"):
+    sys.exit(f"{manifest}: expected one manifest version to stamp")
+manifest.write_bytes(updated)
+PY
+then
+	abort_merge "cannot stamp $manifest from VERSION"
+fi
+git add -- "$manifest" || abort_merge "cannot stage $manifest"
+git commit --quiet -m "$subject" >&2 || abort_merge "cannot commit merge of $branch"
 
 merged=$(git rev-parse --verify HEAD)
 actual=$(git log -1 --format=%s "$merged")
@@ -66,6 +102,21 @@ if [ "$actual" != "$subject" ]; then
 	problem="subject is '$actual', want '$subject'"
 elif [ "$parents" != "$merged $main_before $sha" ]; then
 	problem="merge commit $merged has parents '${parents#"$merged"}', want '$main_before $sha'"
+elif ! git show "$merged:$manifest" | python3 -c '
+import json
+import re
+import subprocess
+import sys
+
+commit = sys.argv[1]
+version = subprocess.check_output(["git", "show", f"{commit}:VERSION"]).removesuffix(b"\n")
+count = subprocess.check_output(["git", "rev-list", "--count", commit]).strip()
+sys.exit(
+    not re.fullmatch(rb"[0-9]+\.[0-9]+\.[0-9]+", version)
+    or json.load(sys.stdin).get("version") != (version + b"." + count).decode("ascii")
+)
+' "$merged"; then
+	problem="manifest version at $merged does not match VERSION and its commit count"
 fi
 if [ -n "$problem" ]; then
 	git reset --quiet --keep "$main_before" && refuse "$problem; $MAIN reset to $main_before"

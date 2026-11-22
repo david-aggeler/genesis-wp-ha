@@ -6,6 +6,7 @@ import ast
 import json
 import re
 from pathlib import Path
+from awesomeversion import AwesomeVersion
 
 PACKAGE = Path(__file__).parents[1] / "custom_components" / "genesis_wp"
 # hassfest rejects spaces, so the PEP 508 direct reference is written without them.
@@ -47,3 +48,13 @@ def test_integration_title_has_no_placeholder():
     for path in files:
         title = json.loads(path.read_text())["title"]
         assert title and "{" not in title, f"{path.name}: {title}"  # HA formats the title with no context
+
+
+# DHF-TEST: genesis-wp-ha/requirement-32
+# DHF-TEST: genesis-wp-ha/ac-181
+def test_manifest_version_matches_version_of_record():
+    version = json.loads((PACKAGE / "manifest.json").read_text())["version"]
+    version_of_record = (PACKAGE.parents[1] / "VERSION").read_text().removesuffix("\n")
+    assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version_of_record)
+    assert re.fullmatch(rf"{re.escape(version_of_record)}\.[0-9]+", version)
+    assert AwesomeVersion(version).valid

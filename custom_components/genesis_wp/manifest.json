@@ -17,5 +17,5 @@
   "requirements": [
     "genesis-wp[emulator]@git+https://github.com/david-aggeler/genesis-wp@cd26945fa0e437906c3e946fc9edbdf5da13387c"
   ],
-  "version": "0.1.0"
+  "version": "0.4.0.359"
 }
