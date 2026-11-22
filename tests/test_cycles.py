@@ -268,3 +268,75 @@ async def test_snapshot_without_storage_version_does_not_prevent_setup(hass, has
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.LOADED
     assert read("starts_today").state == "0"
+
+
+# DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-163
+async def test_hot_water_last_run_has_kind_and_no_heating_band(cycles):
+    _, run, read, _, _, _ = cycles
+    await run(40, hot_water=True)
+    state = read("last_run_length")
+    assert float(state.state) == 40
+    assert state.attributes["kind"] == "hot_water"
+    assert "band" not in state.attributes
+
+
+# DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-164
+async def test_run_on_corrected_previous_date_stays_out_of_the_new_day(cycles):
+    sample, _, read, _, _, _ = cycles
+    await sample(False, 725)  # 00:05 local on the next day
+    await sample(True, clock_correction=-10)  # 23:55 on the previous date
+    await sample(False, 4)  # 23:59 on the previous date
+    await sample(False, 2)  # 00:01 on the next day again
+    assert read("starts_today").state == "0"
+    assert read("last_run_length").state == "unknown"
+
+
+async def _flush_pending_writes(hass):
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_FINAL_WRITE)
+    await hass.async_block_till_done()
+
+
+# DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-165
+async def test_removal_during_setup_retry_leaves_no_statistics(hass, hass_storage, cycles):
+    _, _, _, _, emu, entry = cycles
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    hass_storage.pop(_run_store_key(entry), None)
+    await emu.stop()
+    assert not await hass.config_entries.async_setup(entry.entry_id)
+    assert entry.state is ConfigEntryState.SETUP_RETRY
+    assert await hass.config_entries.async_remove(entry.entry_id)
+    await _flush_pending_writes(hass)
+    assert _run_store_key(entry) not in hass_storage
+
+
+# DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-166
+async def test_removal_after_failed_unload_leaves_no_statistics(hass, hass_storage, cycles, monkeypatch):
+    _, run, _, _, _, entry = cycles
+    await run(20)  # arms a delayed save
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+
+    async def refuse_unload(*_args):
+        return False
+
+    monkeypatch.setattr(hass.config_entries, "async_unload_platforms", refuse_unload)
+    await hass.config_entries.async_remove(entry.entry_id)
+    await _flush_pending_writes(hass)
+    assert _run_store_key(entry) not in hass_storage
+    hass.data[DOMAIN].pop(entry.entry_id, None)
+    await coordinator.async_shutdown()
+    await coordinator.async_close()
+
+
+# DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-167
+async def test_snapshot_with_unmatched_hot_water_run_restores_empty(hass, hass_storage, cycles):
+    _, run, read, _, _, entry = cycles
+    await run(20)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    hass_storage[_run_store_key(entry)] = {
+        "key": _run_store_key(entry), "version": 1,
+        "data": {"day": "2026-01-15", "starts": 1, "hot_water_starts": 0, "runs": [["hot_water", 40.0]]},
+    }
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert read("starts_today").state == "0"
+    assert read("last_run_length").state == "unknown"

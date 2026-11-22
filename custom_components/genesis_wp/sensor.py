@@ -18,7 +18,7 @@ from homeassistant.const import UnitOfVolumeFlowRate
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import COMPRESSOR_SIGNAL
-from .cycles import mean_band, run_band
+from .cycles import HOT_WATER, mean_band, run_band
 
 from .register_entity import RegisterAnchor
 
@@ -423,7 +423,8 @@ class CompressorRunSensor(CoordinatorEntity, SensorEntity):
             return None
         if self._key == "heating_run_mean":
             return {"band": mean_band(value)}
-        attributes = {"band": run_band(value)}
-        if self._key == "last_run_length":
-            attributes["kind"] = self._tracker.daily.runs[-1][0]
-        return attributes
+        if self._key != "last_run_length":
+            return {"band": run_band(value)}
+        kind = self._tracker.daily.runs[-1][0]
+        # The run-length scale judges heating runs only; a hot-water run has none (design_decision-2, ac-163).
+        return {"kind": kind} if kind == HOT_WATER else {"band": run_band(value), "kind": kind}

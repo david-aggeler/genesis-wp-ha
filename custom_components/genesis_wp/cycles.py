@@ -75,6 +75,10 @@ class DailyRuns:
             for run in runs
         ):
             return None
+        # Every completed run needs a counted start of its own kind (ac-167).
+        hot_water_runs = sum(run[0] == HOT_WATER for run in runs)
+        if hot_water_runs > hot_water_starts or len(runs) - hot_water_runs > starts - hot_water_starts:
+            return None
         durations = [(kind, float(minutes)) for kind, minutes in runs]
         if not isfinite(sum(minutes for _, minutes in durations)):
             return None
@@ -93,23 +97,25 @@ class RunTracker:
 
     def add(self, now_local: datetime, signal: bool | None, mode: str | None = None) -> bool:
         """Record a sample and report whether the daily snapshot changed."""
-        # Only a later date rolls the day over. A backward clock correction across midnight
-        # keeps the current day, so its counted start and completed runs stay (ac-160).
+        # Only a later date rolls the day over. A sample on an earlier date (a backward clock
+        # correction) keeps the current day and its counts (ac-160); a run that ends on that
+        # earlier date belongs to a past day and is left out (ac-164).
         day = now_local.date()
         changed = self.daily is None or day > self.daily.day
         if changed:
             self.daily = DailyRuns(day)
-        day = self.daily.day
+        current = day == self.daily.day
         if signal is True and self._previous is False:
             kind = HOT_WATER if mode == "Hot water" else HEATING
             self._open_run = (day, monotonic(), kind)
-            self.daily.count_start(kind)
-            changed = True
+            if current:
+                self.daily.count_start(kind)
+                changed = True
         elif signal is not True:
-            if signal is False and self._open_run is not None:
+            if signal is False and self._open_run is not None and current:
                 start_day, started_at, kind = self._open_run
                 minutes = (monotonic() - started_at) / 60
-                if start_day != day:
+                if start_day != day:  # started on an earlier date: the run counts on its end day (ac-134)
                     self.daily.count_start(kind)
                 self.daily.runs.append((kind, minutes))
                 changed = True
