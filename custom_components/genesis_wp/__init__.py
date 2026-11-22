@@ -74,8 +74,10 @@ from .const import EMULATOR_DYNAMICS_INTERVAL
 from .const import EMULATOR_HOST
 from .const import MODE_EMULATED
 
+from .balance import DailyHeat
 from .cycles import RunTracker
 
+POWER_OUTPUT = genesis_const.ATTR_INPUT_CURRENT_POWER_OUTPUT
 COMPRESSOR_SIGNAL = genesis_const.ATTR_DINPUT_COMPRESSOR_CONTROL_SIGNAL
 OPERATING_MODE = genesis_const.ATTR_INPUT_FIRST_PRIORITISED_DEMAND
 
@@ -510,6 +512,12 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self.supports_hc2_return = (
             "condenser_flow" in self.flow_estimators and all(REGISTERS[r][self.kind] for r in hc2_registers)
         )
+        self.produced_heat = DailyHeat() if REGISTERS[POWER_OUTPUT][self.kind] else None
+        self.rooms_heat = DailyHeat() if self.supports_hc2_return else None
+        if self.produced_heat is not None:
+            self.registerAttribute(POWER_OUTPUT)
+        if self.rooms_heat is not None:
+            self.registerAttribute(HC2_PUMP)
         if self.supports_hc2_return and buffer_volume is not None and self.circuit_flow is not None:
             try:
                 self.hc2_estimator = HeatingCircuit2ReturnEstimator(buffer_volume, self.circuit_flow)
@@ -583,6 +591,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             self._track_run(None)
             if self.hc2_estimator is not None:
                 self.hc2_return = self.hc2_estimator.add(self.flow_clock(), {}, None)
+            self._track_heat(None, None, False)
             # The library's message names the host, which is topology: keep it out of the log.
             raise UpdateFailed(f"heat pump read failed ({type(error).__name__})") from None
         _LOGGER.debug(
@@ -591,12 +600,25 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self._check_capabilities()
         self._store_seen()
         self._estimate_flows(data)
+        unread = self.thermia.unread
+        self._track_heat(
+            None if POWER_OUTPUT in unread else data.get(POWER_OUTPUT),
+            self.hc2_return.heat,
+            HC2_PUMP not in unread and data.get(HC2_PUMP) is True,
+        )
         if self.run_tracker is not None:
-            unread = self.thermia.unread
             signal = None if COMPRESSOR_SIGNAL in unread else data.get(COMPRESSOR_SIGNAL)
             mode = None if OPERATING_MODE in unread else data.get(OPERATING_MODE)
             self._track_run(signal, mode)
         return data
+
+    def _track_heat(self, power, heat, pump_on):
+        """Accumulate heat once per coordinator refresh."""
+        now = dt_util.now()
+        if self.produced_heat is not None:
+            self.produced_heat.add(now, power)
+        if self.rooms_heat is not None:
+            self.rooms_heat.add(now, heat, pump_on)
 
     def _estimate_flows(self, data):
         """Feed each loop's estimator; registers not read this update count as missing, never as 0."""

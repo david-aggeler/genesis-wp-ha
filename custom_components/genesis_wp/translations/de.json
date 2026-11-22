@@ -2,6 +2,15 @@
   "title": "Genesis WP",
   "entity": {
     "sensor": {
+      "derived_heat_to_rooms": {
+        "name": "Wärme an die Räume"
+      },
+      "derived_heat_produced_today": {
+        "name": "Wärmeerzeugung heute"
+      },
+      "derived_heat_to_rooms_today": {
+        "name": "Wärme an die Räume heute"
+      },
       "derived_starts_today": {
         "name": "Starts heute",
         "unit_of_measurement": "Starts"
