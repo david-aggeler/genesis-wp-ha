@@ -227,6 +227,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     store = flow_calibration_store(hass, entry.entry_id)
     calibrations = await store.async_load() or {}
     coordinator = GenesisDataUpdateCoordinator(hass, entry, connection, emulator, store, calibrations)
+    await coordinator.async_restore_runs()
     await coordinator.async_refresh()
 
     if not coordinator.last_update_success:
@@ -293,6 +294,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     if unload_ok:
         coordinator = hass.data[DOMAIN].pop(entry.entry_id)
         await coordinator.async_save_calibrations()
+        await coordinator.async_save_runs()
         await coordinator.async_close()
         if not hass.data[DOMAIN]:
             async_remove_panel(hass, "genesis-wp")
@@ -301,9 +303,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry):
-    """Discard the entry's stored flow calibration: it is only valid for the plant it was learned on."""
+    """Discard observations and calibration owned by the removed entry."""
     # DHF-REQ: genesis-wp-ha/requirement-26  (ac-111)
     await flow_calibration_store(hass, entry.entry_id).async_remove()
+    await compressor_run_store(hass, entry.entry_id).async_remove()
 
 
 # DHF-REQ: genesis-wp-ha/requirement-26
@@ -315,6 +318,11 @@ FLOW_CALIBRATION_SAVE_DELAY = 300  # [s]
 def flow_calibration_store(hass: HomeAssistant, entry_id: str) -> Store:
     """The entry's stored calibrations, ``{loop key: L/min per %}``."""
     return Store(hass, FLOW_CALIBRATION_VERSION, f"{DOMAIN}.flow_calibration.{entry_id}")
+
+
+def compressor_run_store(hass: HomeAssistant, entry_id: str) -> Store:
+    """The entry's daily compressor observations."""
+    return Store(hass, 1, f"{DOMAIN}.compressor_runs.{entry_id}")
 
 
 def seeded_estimator(key: str, loop, seed) -> FlowEstimator:
@@ -373,8 +381,10 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             [r for r in (*self.sw_version_registers, *self.hw_version_registers) if REGISTERS[r][self.kind]]
         )
         self.run_tracker = None
+        self._run_store = None
         if all(REGISTERS[register][self.kind] for register in (COMPRESSOR_SIGNAL, OPERATING_MODE)):
             self.run_tracker = RunTracker()
+            self._run_store = compressor_run_store(hass, entry.entry_id)
             self.registerAttribute([COMPRESSOR_SIGNAL, OPERATING_MODE])
         self.evidence = capability_evidence(self.kind)
         self.registerAttribute(self.evidence)
@@ -434,6 +444,21 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self._saved_calibrations = current
         self._save_pending = False
 
+    async def async_restore_runs(self):
+        """Restore the current local day's snapshot before the first refresh."""
+        if self._run_store is not None:
+            snapshot = await self._run_store.async_load()
+            self.run_tracker.restore(dt_util.now(), snapshot)
+
+    async def async_save_runs(self):
+        """Flush compressor observations when the entry unloads."""
+        if self._run_store is not None and self.run_tracker.daily is not None:
+            await self._run_store.async_save(self.run_tracker.daily.as_dict())
+
+    def _track_run(self, signal, mode=None):
+        if self.run_tracker is not None and self.run_tracker.add(dt_util.now(), signal, mode):
+            self._run_store.async_delay_save(self.run_tracker.daily.as_dict, 30)
+
     async def async_close(self):
         """Close the client, then stop the entry's emulator if it has one."""
         await self.thermia.close()
@@ -446,8 +471,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         try:
             data = await self.thermia.async_update(only_registers=self.attributes.keys())
         except ThermiaException as error:
-            if self.run_tracker is not None:
-                self.run_tracker.add(dt_util.now(), None)
+            self._track_run(None)
             if self.hc2_estimator is not None:
                 self.hc2_return = self.hc2_estimator.add(self.flow_clock(), {}, None)
             # The library's message names the host, which is topology: keep it out of the log.
@@ -462,7 +486,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             unread = self.thermia.unread
             signal = None if COMPRESSOR_SIGNAL in unread else data.get(COMPRESSOR_SIGNAL)
             mode = None if OPERATING_MODE in unread else data.get(OPERATING_MODE)
-            self.run_tracker.add(dt_util.now(), signal, mode)
+            self._track_run(signal, mode)
         return data
 
     def _estimate_flows(self, data):

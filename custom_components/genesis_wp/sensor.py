@@ -15,10 +15,7 @@ from homeassistant.components.sensor import SensorStateClass
 from homeassistant.const import UnitOfTemperature
 from homeassistant.const import UnitOfTime
 from homeassistant.const import UnitOfVolumeFlowRate
-from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.helpers.restore_state import RestoredExtraData
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt as dt_util
 
 from . import COMPRESSOR_SIGNAL
 from .cycles import mean_band, run_band
@@ -388,7 +385,7 @@ COMPRESSOR_STATISTICS = {
 
 
 # DHF-REQ: genesis-wp-ha/requirement-28
-class CompressorRunSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
+class CompressorRunSensor(CoordinatorEntity, SensorEntity):
     """A read-only statistic backed by the entry's shared daily compressor runs."""
 
     _attr_has_entity_name = True
@@ -407,19 +404,6 @@ class CompressorRunSensor(CoordinatorEntity, SensorEntity, RestoreEntity):
             self._attr_icon = "mdi:counter"
         else:
             self._attr_device_class = SensorDeviceClass.DURATION
-
-    async def async_added_to_hass(self):
-        # Save the shared snapshot with each statistic so disabling one sensor does not
-        # disable restore for the whole entry.
-        if (extra := await self.async_get_last_extra_data()) is not None:
-            self._tracker.restore(dt_util.now(), extra.as_dict())
-        await super().async_added_to_hass()
-
-    @property
-    def extra_restore_state_data(self):
-        if self._tracker.daily is not None:
-            return RestoredExtraData(self._tracker.daily.as_dict())
-        return None
 
     @property
     def capability_attributes(self):

@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from math import isfinite
 from statistics import mean
+from sys import float_info
+from time import monotonic
 
 RUN_BANDS = ((60, "good"), (30, "acceptable"), (10, "short"), (6, "very_short"), (0, "short_cycle"))
 MEAN_BANDS = ((120, "good"), (60, "acceptable"), (30, "warning"), (0, "bad"))
@@ -56,8 +58,8 @@ class DailyRuns:
         }
 
     @classmethod
-    def from_dict(cls, day: date, data: dict) -> "DailyRuns | None":
-        if data.get("day") != day.isoformat():
+    def from_dict(cls, day: date, data: object) -> "DailyRuns | None":
+        if not isinstance(data, dict) or data.get("day") != day.isoformat():
             return None
         starts, hot_water_starts, runs = (data.get(key) for key in ("starts", "hot_water_starts", "runs"))
         if (
@@ -69,11 +71,14 @@ class DailyRuns:
         if any(
             not isinstance(run, list) or len(run) != 2
             or run[0] not in (HEATING, HOT_WATER)
-            or type(run[1]) not in (int, float) or run[1] < 0 or not isfinite(run[1])
+            or type(run[1]) not in (int, float) or not 0 <= run[1] <= float_info.max
             for run in runs
         ):
             return None
-        return cls(day, starts, hot_water_starts, [(kind, minutes) for kind, minutes in runs])
+        durations = [(kind, float(minutes)) for kind, minutes in runs]
+        if not isfinite(sum(minutes for _, minutes in durations)):
+            return None
+        return cls(day, starts, hot_water_starts, durations)
 
 
 # DHF-REQ: genesis-wp-ha/requirement-28
@@ -83,34 +88,36 @@ class RunTracker:
     def __init__(self):
         self.daily: DailyRuns | None = None
         self._previous: bool | None = None
-        self._open_run: tuple[datetime, str] | None = None
-        self._can_restore = True
+        self._open_run: tuple[date, float, str] | None = None
         self.values: dict[str, int | float | None] = {}
 
-    def add(self, now_local: datetime, signal: bool | None, mode: str | None = None) -> None:
+    def add(self, now_local: datetime, signal: bool | None, mode: str | None = None) -> bool:
+        """Record a sample and report whether the daily snapshot changed."""
         day = now_local.date()
-        if self.daily is None or self.daily.day != day:
+        changed = self.daily is None or self.daily.day != day
+        if changed:
             self.daily = DailyRuns(day)
         if signal is True and self._previous is False:
             kind = HOT_WATER if mode == "Hot water" else HEATING
-            self._open_run = (now_local, kind)
+            self._open_run = (day, monotonic(), kind)
             self.daily.count_start(kind)
-            self._can_restore = False
+            changed = True
         elif signal is not True:
             if signal is False and self._open_run is not None:
-                started_at, kind = self._open_run
-                minutes = (now_local.timestamp() - started_at.timestamp()) / 60
-                if minutes >= 0:
-                    if started_at.date() != day:
-                        self.daily.count_start(kind)
-                    self.daily.runs.append((kind, minutes))
+                start_day, started_at, kind = self._open_run
+                minutes = (monotonic() - started_at) / 60
+                if start_day != day:
+                    self.daily.count_start(kind)
+                self.daily.runs.append((kind, minutes))
+                changed = True
             self._open_run = None
         self._previous = signal
-        self.values = self.daily.values()
+        if changed:
+            self.values = self.daily.values()
+        return changed
 
-    def restore(self, now_local: datetime, data: dict) -> None:
-        """Restore completed observations only, since downtime breaks signal continuity."""
-        if self._can_restore and (daily := DailyRuns.from_dict(now_local.date(), data)) is not None:
+    def restore(self, now_local: datetime, data: object) -> None:
+        """Seed daily observations before polling begins."""
+        if (daily := DailyRuns.from_dict(now_local.date(), data)) is not None:
             self.daily = daily
             self.values = daily.values()
-            self._can_restore = False

@@ -1,12 +1,13 @@
 """Compressor run statistics through emulator refreshes and Home Assistant states."""
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from functools import partial
 from zoneinfo import ZoneInfo
 
 import pytest
 
 from custom_components import genesis_wp
+from custom_components.genesis_wp import cycles as cycle_tracking
 from custom_components.genesis_wp.const import DOMAIN
 from genesis_wp.emulator import Emulator
 from homeassistant.helpers import entity_registry as er
@@ -19,6 +20,7 @@ from .helpers import setup_entry
 async def cycles(hass, start_emulator, monkeypatch):
     """Drive emulator register samples and the local clock independently."""
     now = datetime(2026, 1, 15, 12, tzinfo=ZoneInfo("Europe/Zurich"))
+    elapsed = 0.0
     signal = False
     mode = 4
     original = Emulator._action
@@ -34,13 +36,15 @@ async def cycles(hass, start_emulator, monkeypatch):
 
     monkeypatch.setattr(Emulator, "_action", action)
     monkeypatch.setattr(dt_util, "now", lambda: now)
+    monkeypatch.setattr(cycle_tracking, "monotonic", lambda: elapsed)
     monkeypatch.setattr(genesis_wp, "ThermiaGenesis", partial(genesis_wp.ThermiaGenesis, delay=0))
     emu = await start_emulator()
     entry = await setup_entry(hass, emu)
 
-    async def sample(on, minutes=0, hot_water=False):
-        nonlocal now, signal, mode
-        now += timedelta(minutes=minutes)
+    async def sample(on, minutes=0, hot_water=False, clock_correction=0):
+        nonlocal now, elapsed, signal, mode
+        now += timedelta(minutes=minutes + clock_correction)
+        elapsed += minutes * 60
         signal = on
         mode = 3 if hot_water else 4
         await hass.data[DOMAIN][entry.entry_id].async_refresh()
@@ -61,13 +65,13 @@ async def cycles(hass, start_emulator, monkeypatch):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
 
-    yield sample, run, read, reload, emu
+    yield sample, run, read, reload, emu, entry
     assert emu.writes == []
 
 
 # DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-130
 async def test_starts_count_only_signal_edges(cycles):
-    sample, run, read, _, _ = cycles
+    sample, run, read, _, _, _ = cycles
     await run(8)
     await sample(True, hot_water=True)
     await sample(True, 20)
@@ -80,7 +84,7 @@ async def test_starts_count_only_signal_edges(cycles):
 
 # DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-131
 async def test_heating_lengths_and_total_runtime(cycles):
-    _, run, read, _, _ = cycles
+    _, run, read, _, _, _ = cycles
     for minutes in (8, 25, 70):
         await run(minutes)
     await run(40, hot_water=True)
@@ -96,24 +100,24 @@ async def test_heating_lengths_and_total_runtime(cycles):
 # DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-132
 @pytest.mark.parametrize(("minutes", "band"), [(5.9, "short_cycle"), (6, "very_short"),
                                              (10, "short"), (30, "acceptable"), (60, "good")])
-def test_run_bands(minutes, band):
-    from custom_components.genesis_wp.cycles import run_band
-
-    assert run_band(minutes) == band
+async def test_run_bands(cycles, minutes, band):
+    _, run, read, _, _, _ = cycles
+    await run(minutes)
+    assert read("last_run_length").attributes["band"] == band
 
 
 # DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-132
 @pytest.mark.parametrize(("minutes", "band"), [(29.9, "bad"), (30, "warning"),
                                              (60, "acceptable"), (120, "good")])
-def test_mean_bands(minutes, band):
-    from custom_components.genesis_wp.cycles import mean_band
-
-    assert mean_band(minutes) == band
+async def test_mean_bands(cycles, minutes, band):
+    _, run, read, _, _, _ = cycles
+    await run(minutes)
+    assert read("heating_run_mean").attributes["band"] == band
 
 
 # DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-133
 async def test_only_heating_runs_under_ten_minutes_count_as_short(cycles):
-    _, run, read, _, _ = cycles
+    _, run, read, _, _, _ = cycles
     for minutes in (5, 9.9, 10):
         await run(minutes)
     await run(4, hot_water=True)
@@ -122,7 +126,7 @@ async def test_only_heating_runs_under_ten_minutes_count_as_short(cycles):
 
 # DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-134
 async def test_run_crossing_midnight_is_attributed_to_its_end_day(cycles):
-    sample, run, read, _, _ = cycles
+    sample, run, read, _, _, _ = cycles
     await run(5)
     await run(70)
     await sample(True, 625)  # 23:40 local
@@ -139,7 +143,7 @@ async def test_run_crossing_midnight_is_attributed_to_its_end_day(cycles):
 # DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-135
 @pytest.mark.parametrize(("days", "starts", "mean"), [(0, "5", 35), (1, "1", 40)])
 async def test_restore_uses_only_current_local_day(cycles, days, starts, mean):
-    sample, run, read, reload, _ = cycles
+    sample, run, read, reload, _, _ = cycles
     for minutes in (20, 30, 50):
         await run(minutes)
     # Count an interrupted start without contributing a completed duration.
@@ -154,7 +158,7 @@ async def test_restore_uses_only_current_local_day(cycles, days, starts, mean):
 
 # DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-136
 async def test_unavailable_signal_discards_length_and_keeps_start(cycles):
-    sample, run, read, _, emu = cycles
+    sample, run, read, _, emu, _ = cycles
     await run(25)
     await sample(True)
     emu.inject_fault("discrete_inputs", 199)
@@ -165,3 +169,46 @@ async def test_unavailable_signal_discards_length_and_keeps_start(cycles):
     assert read("short_heating_runs_today").state == "0"
     for metric in ("minimum", "mean", "maximum"):
         assert float(read(f"heating_run_{metric}").state) == 25
+
+
+# DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-157
+async def test_reenabled_sensor_restores_latest_history(hass, cycles):
+    _, run, read, reload, _, _ = cycles
+    await run(20)
+    entity_id = read("starts_today").entity_id
+    registry = er.async_get(hass)
+    registry.async_update_entity(entity_id, disabled_by=er.RegistryEntryDisabler.USER)
+    await reload(0)
+    assert hass.states.get(entity_id) is None
+    await run(40)
+    registry.async_update_entity(entity_id, disabled_by=None)
+    await reload(0)
+    assert read("starts_today").state == "2"
+    assert float(read("heating_run_mean").state) == 30
+
+
+# DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-158
+async def test_replacement_entry_does_not_restore_reused_entity_id(hass, cycles):
+    _, run, read, _, emu, entry = cycles
+    await run(20)
+    entity_id = read("starts_today").entity_id
+    await hass.config_entries.async_remove(entry.entry_id)
+    replacement = await setup_entry(hass, emu)
+    registry = er.async_get(hass)
+    assert registry.async_get(entity_id).config_entry_id == replacement.entry_id
+    assert hass.states.get(entity_id).state == "0"
+
+
+# DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-159
+async def test_clock_correction_does_not_change_elapsed_run_length(cycles):
+    sample, _, read, _, _, _ = cycles
+    await sample(True)
+    await sample(False, 20, clock_correction=30)
+    assert float(read("last_run_length").state) == 20
+
+
+def test_restore_rejects_unrepresentable_duration():
+    day = date(2026, 1, 15)
+    snapshot = {"day": day.isoformat(), "starts": 1, "hot_water_starts": 0,
+                "runs": [["heating", 10**400]]}
+    assert cycle_tracking.DailyRuns.from_dict(day, snapshot) is None
