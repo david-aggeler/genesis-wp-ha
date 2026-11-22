@@ -858,7 +858,7 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     };
     const checkCorners = svg => {
       const corners = new Map();
-      for (const [tag, id, d] of svg.matchAll(/<path data-path="([^"]+)"[^>]* d="([^"]+)"/g)) {
+      for (const [tag, id, d] of svg.matchAll(/<path data-path="([^"]+)"[^>]* d="([^"]+)"[^>]*>/g)) {
         assert.doesNotMatch(tag, /stroke-linecap="(?:round|square)"/);
         const points = [...d.matchAll(/(-?\d+),(-?\d+)/g)].map(([, x, y]) => [+x, +y]);
         for (const [point, neighbor] of [[points[0], points[1]], [points.at(-1), points.at(-2)]]) {
