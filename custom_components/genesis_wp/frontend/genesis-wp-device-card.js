@@ -252,13 +252,19 @@ function active(group, mode, passiveEnabled) {
     hot_water:['Hot water','Anti legionella'].includes(mode), cooling:mode==='Cool', pool:mode==='Pool',
     buffer:['Heat','Defrost'].includes(mode), hc2:!passive, passive, rooms:true})[group];
 }
-// DHF-REQ: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-119 genesis-wp-ha/ac-120 genesis-wp-ha/ac-121
-// Only legs with a known source are listed. Mixer split legs and the refrigerant loop
-// have no source for their share in this drawing.
+// DHF-REQ: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-119 genesis-wp-ha/ac-120
+// Whole-circuit flow sources.
 const LEG_SOURCE = new Map([
   ['condenser-out','condenser'], ['condenser-in','condenser'], ['buffer-return','condenser'],
   ['brine-in','brine'], ['brine-hx','brine'], ['brine-out','brine'],
   ['hc2-supply','hc2'], ['room-return','hc2'],
+]);
+
+// DHF-REQ: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-194 genesis-wp-ha/ac-195
+const MIXER_LEG_SOURCE = new Map([
+  ['hc2-port-b','hot_port_flow'], ['tr9-mixer','hot_port_flow'],
+  ['room-return-buffer','buffer_return_flow'], ['bypass','bypass_flow'],
+  ['either-way','either_way_flow'],
 ]);
 
 // Home Assistant can display a flow sensor in any of its volume flow rate units.
@@ -274,11 +280,10 @@ function flowInLitersPerMinute(state) {
   return nonnegativeNumber(value * factor);
 }
 
-function legShare(id, flows) {
-  const flow = flows[LEG_SOURCE.get(id)];
+function legShare(flow, condenser) {
   if (flow === 0) return 0;
-  if (!(flow > 0) || !(flows.condenser > 0)) return null;
-  const share = flow / flows.condenser;
+  if (flow == null || !(condenser > 0)) return null;
+  const share = Math.abs(flow) / condenser;
   return Number.isFinite(share) ? share : null;
 }
 
@@ -465,10 +470,11 @@ export class GenesisWpDeviceCard extends HTMLElement {
       const anchored=r=>{const a=Array.isArray(r)?r[0]:r; return Array.isArray(a)?a.some(exists):exists(a);};
       const readState = register => byRegister.get(register)?.state;
       const fr2 = readState('dinput_209')?.state;
+      const returnAttributes = readState('derived_hc2_return')?.attributes;
       const flows = {
         condenser: flowInLitersPerMinute(readState('derived_condenser_flow')),
         brine: flowInLitersPerMinute(readState('derived_brine_flow')),
-        hc2: fr2 === 'on' ? nonnegativeNumber(readState('derived_hc2_return')?.attributes.circuit_flow)
+        hc2: fr2 === 'on' ? nonnegativeNumber(returnAttributes?.circuit_flow)
           : fr2 === 'off' ? 0 : null,
       };
       const reduced = (this._motionPreference ?? globalThis.matchMedia?.(REDUCED_MOTION))?.matches;
@@ -479,11 +485,21 @@ export class GenesisWpDeviceCard extends HTMLElement {
         const sensor=Array.isArray(r)?r[1]:r;
         const state=sensor===null?null:byRegister.get(typeof sensor==='number'?key(sensor):sensor)?.state;
         const celsius=state ? toCelsius(state.state, state.attributes.unit_of_measurement) : null;
-        const share = legShare(id, flows);
+        const mixerAttribute = MIXER_LEG_SOURCE.get(id);
+        const estimate = returnAttributes?.[mixerAttribute];
+        const legFlow = mixerAttribute
+          ? (Number.isFinite(estimate) ? estimate : null)
+          : flows[LEG_SOURCE.get(id)];
+        const share = legShare(legFlow, flows.condenser);
         const flow = active(group,mode,passiveEnabled) && share !== 0;
-        if (flow && share > 0 && !reduced) motion.set(id, chevrons(id,d,share,speed,darkMode));
-        const color=flow&&celsius!==null?temperatureColor(celsius):'currentColor';
-        const noSensor = Array.isArray(r) && celsius === null;
+        if (flow && share > 0 && !reduced) {
+          const path = id === 'either-way' && legFlow < 0
+            ? pipePoints(d).reverse().map((point, index) => `${index ? 'L' : 'M'}${point.join(',')}`).join(' ')
+            : d;
+          motion.set(id, chevrons(id,path,share,speed,darkMode));
+        }
+        const noSensor = (mixerAttribute !== undefined && legFlow !== null) || (Array.isArray(r) && celsius === null);
+        const color=flow&&!noSensor&&celsius!==null?temperatureColor(celsius):'currentColor';
         const opacity = flow ? (noSensor ? 0.75 : 1) : 0.22;
         styles.set(id,{flow,color,opacity,dash:Boolean(dash)});
         return `<path data-path="${id}" data-flow="${flow?'active':'idle'}" d="${d}" fill="none" stroke="${color}" stroke-opacity="${opacity}" stroke-width="${PIPE_WIDTH}"${dash?` stroke-dasharray="${dash}"`:''}></path>`;
@@ -506,7 +522,7 @@ export class GenesisWpDeviceCard extends HTMLElement {
         return `<rect class="pipe-corner" data-corner="${ids.join(' ')}" x="${x}" y="${y}" width="${half}" height="${half}" fill="${style.color}" fill-opacity="${style.opacity}"/>`;
       }).join('');
       // Fixed slots keep other legs' animations in place when a source starts or stops.
-      const markers = PIPES[category].filter(([id]) => LEG_SOURCE.has(id)).map(([id]) =>
+      const markers = PIPES[category].filter(([id]) => LEG_SOURCE.has(id) || MIXER_LEG_SOURCE.has(id)).map(([id]) =>
         `<g>${motion.get(id) || ''}</g>`,
       ).join('');
       // Keep optional geometry inside fixed siblings so the motion wrapper keeps its index.
