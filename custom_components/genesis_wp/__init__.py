@@ -513,11 +513,8 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             "condenser_flow" in self.flow_estimators and all(REGISTERS[r][self.kind] for r in hc2_registers)
         )
         self.produced_heat = DailyHeat() if REGISTERS[POWER_OUTPUT][self.kind] else None
-        self.rooms_heat = DailyHeat() if self.supports_hc2_return else None
         if self.produced_heat is not None:
             self.registerAttribute(POWER_OUTPUT)
-        if self.rooms_heat is not None:
-            self.registerAttribute(HC2_PUMP)
         if self.supports_hc2_return and buffer_volume is not None and self.circuit_flow is not None:
             try:
                 self.hc2_estimator = HeatingCircuit2ReturnEstimator(buffer_volume, self.circuit_flow)
@@ -525,6 +522,11 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("Invalid heating circuit 2 return estimation options")
             else:
                 self.registerAttribute(hc2_registers)
+        # DHF-REQ: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-178
+        # Room heat exists only where an estimator can supply it.
+        self.rooms_heat = DailyHeat() if self.hc2_estimator is not None else None
+        if self.rooms_heat is not None:
+            self.registerAttribute([HC2_PUMP, OPERATING_MODE])
 
         super().__init__(
             hass,
@@ -601,9 +603,12 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self._store_seen()
         self._estimate_flows(data)
         unread = self.thermia.unread
+        # DHF-REQ: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-174
+        # Hot-water hours count as FR2 time but are never covered (requirement-29).
+        hot_water = OPERATING_MODE not in unread and data.get(OPERATING_MODE) == "Hot water"
         self._track_heat(
             None if POWER_OUTPUT in unread else data.get(POWER_OUTPUT),
-            self.hc2_return.heat,
+            None if hot_water else self.hc2_return.heat,
             HC2_PUMP not in unread and data.get(HC2_PUMP) is True,
         )
         if self.run_tracker is not None:
@@ -620,6 +625,13 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         if self.rooms_heat is not None:
             self.rooms_heat.add(now, heat, pump_on)
 
+    @property
+    def rooms_heat_estimable(self) -> bool:
+        """False once heating circuit 2 or its buffer tank is confirmed absent."""
+        return self.hc2_estimator is not None and not any(
+            self.thermia.capability_state(name) == ABSENT for name in ("buffer_tank", "heating_circuit_2")
+        )
+
     def _estimate_flows(self, data):
         """Feed each loop's estimator; registers not read this update count as missing, never as 0."""
         if not self.flow_estimators:
@@ -634,7 +646,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
                           estimate.source, estimate.calibration)
         # DHF-REQ: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-118
         if self.hc2_estimator is not None:
-            if any(self.thermia.capability_state(name) == ABSENT for name in ("buffer_tank", "heating_circuit_2")):
+            if not self.rooms_heat_estimable:
                 self.hc2_estimator.add(now, {}, None)
                 self.hc2_return = NO_RETURN
             else:

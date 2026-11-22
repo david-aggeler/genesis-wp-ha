@@ -8,6 +8,8 @@ from zoneinfo import ZoneInfo
 import pytest
 from genesis_wp.const import ATTR_INPUT_CURRENT_POWER_OUTPUT
 from genesis_wp.derived import HC2_PASSIVE_COOLING, HC2_PUMP, ReturnEstimate
+from homeassistant.components.sensor.recorder import reset_detected
+from homeassistant.const import EVENT_STATE_CHANGED
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import restore_state
 from homeassistant.util import dt as dt_util
@@ -67,7 +69,7 @@ async def test_room_power_follows_emulator_estimate(hass, start_emulator, monkey
 @pytest.fixture
 async def balance(hass, start_emulator, monkeypatch):
     now = datetime(2026, 1, 15, 20, tzinfo=ZoneInfo("Europe/Zurich"))
-    power, heat = 0.0, None
+    power, heat, mode, fr2 = 0.0, None, None, True
     monkeypatch.setattr(dt_util, "now", lambda: now)
     library_factory = genesis_wp.ThermiaGenesis
 
@@ -77,7 +79,10 @@ async def balance(hass, start_emulator, monkeypatch):
 
         async def read(*args, **kwargs):
             data = await update(*args, **kwargs)
-            return {**data, ATTR_INPUT_CURRENT_POWER_OUTPUT: power, HC2_PUMP: True}
+            data = {**data, ATTR_INPUT_CURRENT_POWER_OUTPUT: power, HC2_PUMP: fr2}
+            if mode is not None:
+                data[genesis_wp.OPERATING_MODE] = mode
+            return data
 
         client.async_update = read
         return client
@@ -93,10 +98,10 @@ async def balance(hass, start_emulator, monkeypatch):
         nonlocal now
         now += timedelta(seconds=seconds)
 
-    async def refresh(produced, rooms, seconds=60):
-        nonlocal power, heat
+    async def refresh(produced, rooms, seconds=60, operating=None, pump=True):
+        nonlocal power, heat, mode, fr2
         advance(seconds)
-        power, heat = produced, rooms
+        power, heat, mode, fr2 = produced, rooms, operating, pump
         await hass.data[DOMAIN][entry.entry_id].async_refresh()
 
     return entry, refresh, advance
@@ -130,6 +135,19 @@ async def test_rooms_today_counts_only_valid_pairs(hass, balance):
     assert state.attributes["coverage"] == pytest.approx(75)
 
 
+
+# DHF-TEST: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-139
+async def test_coverage_counts_fr2_running_time_only(hass, balance):
+    entry, refresh, _ = balance
+    for _ in range(29):
+        await refresh(3, None)
+    for _ in range(91):
+        await refresh(3, 2)
+    for _ in range(60):
+        await refresh(3, None, pump=False)
+    state = state_for(hass, entry, "heat_to_rooms_today")
+    assert float(state.state) == pytest.approx(3)
+    assert state.attributes["coverage"] == pytest.approx(75)
 # DHF-TEST: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-140
 async def test_daily_counters_restore_and_roll_over(hass, balance):
     entry, refresh, advance = balance
@@ -221,3 +239,123 @@ async def test_daily_counters_ignore_invalid_restore_data(hass, balance, snapsho
     await refresh(3, 3)
     for key in keys:
         assert float(state_for(hass, entry, key).state) == pytest.approx(0.05)
+
+
+async def _reload(hass, entry):
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+
+
+# DHF-TEST: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-173
+async def test_reload_during_rollback_does_not_recount(hass, balance):
+    entry, refresh, advance = balance
+    keys = ("heat_produced_today", "heat_to_rooms_today")
+    await refresh(3, 3, 300)
+    await refresh(3, 3)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    advance(-30)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    await refresh(3, 3)
+    for key in keys:
+        assert float(state_for(hass, entry, key).state) == pytest.approx(0.075)
+
+
+# DHF-TEST: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-174
+async def test_hot_water_with_fr2_on_adds_no_covered_time(hass, balance):
+    entry, refresh, _ = balance
+    await refresh(3, 2, 300)
+    for _ in range(10):
+        await refresh(3, 2)
+    for _ in range(10):
+        await refresh(3, 2, operating="Hot water")
+    state = state_for(hass, entry, "heat_to_rooms_today")
+    assert float(state.state) == pytest.approx(2 * 600 / 3600)
+    # FR2 ran 1500 s (the opening 300 s gap, 600 s heating, 600 s hot water); 600 s are covered.
+    assert state.attributes["coverage"] == pytest.approx(40)
+
+
+# DHF-TEST: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-175
+async def test_restored_coverage_is_a_bounded_percentage(hass, balance):
+    entry, refresh, _ = balance
+    await refresh(3, 3, 300)
+    state = state_for(hass, entry, "heat_to_rooms_today")
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    restore_state.async_get(hass).last_states[state.entity_id] = restore_state.StoredState.from_dict({
+        "state": state.as_dict(),
+        "last_seen": dt_util.now(),
+        "extra_data": {"day": "2026-01-15", "energy": 0, "covered_seconds": 1e307, "pump_seconds": 1e307},
+    })
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    coverage = state_for(hass, entry, "heat_to_rooms_today").attributes["coverage"]
+    assert coverage is None or (math.isfinite(coverage) and 0 <= coverage <= 100)
+
+
+# DHF-TEST: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-176
+async def test_missing_sample_during_rollback_breaks_the_pair(hass, balance):
+    entry, refresh, _ = balance
+    await refresh(3, None, 300)
+    await refresh(3, None)
+    await refresh(None, None, -30)
+    await refresh(3, None)
+    assert float(state_for(hass, entry, "heat_produced_today").state) == pytest.approx(0.05)
+
+
+# DHF-TEST: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-177
+async def test_rollover_energy_reaches_statistics(hass, balance):
+    entry, refresh, _ = balance
+    entity_id = state_for(hass, entry, "heat_produced_today").entity_id
+    await refresh(0.6, None, 4 * 3600 - 90)
+    await refresh(0.6, None)
+    assert float(state_for(hass, entry, "heat_produced_today").state) == pytest.approx(0.01)
+    states = []
+    hass.bus.async_listen(
+        EVENT_STATE_CHANGED,
+        lambda event: event.data["entity_id"] == entity_id and states.append(event.data["new_state"]),
+    )
+    # The new day's first contribution (00:00:00 to 00:01:30) exceeds the old day's final 0.01 kWh.
+    await refresh(3, None, 120)
+    await hass.async_block_till_done()
+    previous, added = 0.01, 0.0
+    for state in states:
+        value = float(state.state)
+        if reset_detected(hass, entity_id, value, previous, state):
+            added += value
+        else:
+            added += value - previous
+        previous = value
+    final = float(state_for(hass, entry, "heat_produced_today").state)
+    assert final > 0.01
+    assert added == pytest.approx(final)
+
+
+# DHF-TEST: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-178
+async def test_room_energy_has_no_value_when_hc2_is_absent(hass, balance, monkeypatch):
+    entry, refresh, _ = balance
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    monkeypatch.setattr(
+        type(coordinator.thermia), "capability_state",
+        lambda self, name: genesis_wp.ABSENT if name == "heating_circuit_2" else "present",
+    )
+    await refresh(3, 3, 300)
+    await refresh(3, 3)
+    assert state_for(hass, entry, "heat_to_rooms_today").state in ("unavailable", "unknown")
+
+
+# DHF-TEST: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-178
+async def test_room_energy_absent_without_estimator(hass, start_emulator, monkeypatch):
+    monkeypatch.setattr(genesis_wp, "ThermiaGenesis", partial(genesis_wp.ThermiaGenesis, delay=0))
+    emu = await start_emulator(PROFILE_615)
+    entry = MockConfigEntry(
+        domain=DOMAIN, data=entry_data(emu), options={"buffer_volume": 300, "circuit_flow": -1}
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    entity_id = er.async_get(hass).async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_derived_heat_to_rooms_today"
+    )
+    state = hass.states.get(entity_id) if entity_id else None
+    assert state is None or state.state in ("unavailable", "unknown")

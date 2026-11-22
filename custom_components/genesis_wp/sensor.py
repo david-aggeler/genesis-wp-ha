@@ -17,6 +17,7 @@ from homeassistant.const import UnitOfEnergy, UnitOfPower
 from homeassistant.const import UnitOfTemperature
 from homeassistant.const import UnitOfTime
 from homeassistant.const import UnitOfVolumeFlowRate
+from homeassistant.core import callback
 from homeassistant.helpers.restore_state import RestoredExtraData
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -81,11 +82,11 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             sensors.append(ThermiaSettingSensor(coordinator, register))
     sensors.extend(FlowSensor(coordinator, key) for key in coordinator.flow_estimators)
     if coordinator.supports_hc2_return:
-        sensors.extend((
-            HC2ReturnSensor(coordinator),
-            RoomHeatSensor(coordinator),
-            DailyHeatSensor(coordinator, "heat_to_rooms_today", coordinator.rooms_heat, report_coverage=True),
-        ))
+        sensors.extend((HC2ReturnSensor(coordinator), RoomHeatSensor(coordinator)))
+    if coordinator.rooms_heat is not None:
+        sensors.append(
+            DailyHeatSensor(coordinator, "heat_to_rooms_today", coordinator.rooms_heat, report_coverage=True)
+        )
     if coordinator.produced_heat is not None:
         sensors.append(DailyHeatSensor(coordinator, "heat_produced_today", coordinator.produced_heat))
     if coordinator.run_tracker is not None:
@@ -431,6 +432,7 @@ class DailyHeatSensor(HeatSensor, RestoreSensor):
         super().__init__(coordinator, key)
         self._tracker = tracker
         self._report_coverage = report_coverage
+        self._publish_zero = False
 
     async def async_added_to_hass(self):
         if (restored := await self.async_get_last_extra_data()) is not None:
@@ -443,7 +445,30 @@ class DailyHeatSensor(HeatSensor, RestoreSensor):
 
     @property
     def native_value(self):
+        if self._publish_zero:
+            return 0.0
         return self._tracker.energy
+
+    # DHF-REQ: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-178
+    @property
+    def available(self):
+        if self._report_coverage and not self.coordinator.rooms_heat_estimable:
+            return False
+        return super().available
+
+    # DHF-REQ: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-177
+    @callback
+    def _handle_coordinator_update(self):
+        """Publish 0 before the first new-day value, so statistics see the meter reset.
+
+        total_increasing detects a reset only from a drop; a new-day value above the old
+        day's final one would otherwise be recorded as the difference only.
+        """
+        if self._tracker.take_rollover():
+            self._publish_zero = True
+            self.async_write_ha_state()
+            self._publish_zero = False
+        super()._handle_coordinator_update()
 
     @property
     def extra_state_attributes(self):

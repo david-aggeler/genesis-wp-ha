@@ -30,26 +30,35 @@ class DailyHeat:
         self.energy = self.covered_seconds = self.pump_seconds = 0.0
         self._last = None
         self._restored = False
+        self.counted_until = None
+        self.rolled_over = False
 
-    # DHF-REQ: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-171
+    # DHF-REQ: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-171 genesis-wp-ha/ac-176
     def add(self, now: datetime, power: float | None, pump_on: bool = False):
-        """Add the part of the sample interval that falls on the current local date."""
+        """Add the part of the sample interval that falls on the current local date.
+
+        Time up to ``counted_until`` is never counted twice: a sample at or before it (a clock
+        step back) only becomes the start of the next pair, so a missing reading still breaks it.
+        """
         day = now.date()
         sample = HeatSample(now.timestamp(), power if valid_measurement(power) else None, pump_on)
         previous = self._last
-        # Keep the latest accepted sample and its day until the clock catches up.
-        if previous is not None and sample.timestamp <= previous.timestamp:
+        self._last = sample
+        if self.counted_until is not None and sample.timestamp <= self.counted_until:
             return
         if day != self.day:
+            self.rolled_over = self.day is not None
             self.day = day
             self.energy = self.covered_seconds = self.pump_seconds = 0.0
-        self._last = sample
         if previous is None:
+            self.counted_until = sample.timestamp
             return
 
         elapsed = sample.timestamp - previous.timestamp
         midnight = datetime.combine(day, time.min, now.tzinfo).timestamp()
-        seconds = sample.timestamp - max(previous.timestamp, midnight)
+        start = max(previous.timestamp, midnight, self.counted_until or previous.timestamp)
+        self.counted_until = sample.timestamp
+        seconds = sample.timestamp - start
         # Both endpoints must report FR2 on. Long gaps can reduce coverage,
         # but supply no measured energy.
         pump_running = previous.pump_on and sample.pump_on
@@ -58,17 +67,24 @@ class DailyHeat:
         if elapsed > 120 or previous.power is None or sample.power is None:
             return
 
-        # Clip a midnight-crossing trapezoid by interpolating power at midnight.
+        # Clip a trapezoid at midnight or at counted time by interpolating power at its start.
         start_power = sample.power + (previous.power - sample.power) * (seconds / elapsed)
         self.energy += (start_power + sample.power) * seconds / 7200
         if pump_running:
             self.covered_seconds += seconds
 
+    # DHF-REQ: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-175
     @property
     def coverage(self):
-        if self.pump_seconds:
-            return 100 * self.covered_seconds / self.pump_seconds
-        return None
+        if not self.pump_seconds:
+            return None
+        share = 100 * min(1.0, self.covered_seconds / self.pump_seconds)
+        return share if isfinite(share) else None
+
+    def take_rollover(self) -> bool:
+        """True once after the counters restarted for a new local day."""
+        rolled, self.rolled_over = self.rolled_over, False
+        return rolled
 
     def snapshot(self):
         return {
@@ -76,9 +92,10 @@ class DailyHeat:
             "energy": self.energy,
             "covered_seconds": self.covered_seconds,
             "pump_seconds": self.pump_seconds,
+            "counted_until": self.counted_until,
         }
 
-    # DHF-REQ: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-172
+    # DHF-REQ: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-172 genesis-wp-ha/ac-173
     def restore(self, snapshot):
         """Add same-day totals without joining the previous session's sample interval."""
         if self._restored:
@@ -89,7 +106,13 @@ class DailyHeat:
         energy = snapshot.get("energy")
         covered = snapshot.get("covered_seconds")
         pump = snapshot.get("pump_seconds")
-        if all(valid_measurement(value) for value in (energy, covered, pump)) and covered <= pump:
-            self.energy += energy
-            self.covered_seconds += covered
-            self.pump_seconds += pump
+        if not (all(valid_measurement(value) for value in (energy, covered, pump)) and covered <= pump):
+            return
+        totals = (self.energy + energy, self.covered_seconds + covered, self.pump_seconds + pump)
+        if not all(isfinite(value) for value in totals):
+            return
+        self.energy, self.covered_seconds, self.pump_seconds = totals
+        # The previous session counted up to here; a clock corrected back must not recount it.
+        counted = snapshot.get("counted_until")
+        if valid_measurement(counted) and counted > (self.counted_until or 0):
+            self.counted_until = float(counted)
