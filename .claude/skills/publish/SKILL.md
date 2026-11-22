@@ -25,9 +25,9 @@ The procedure carries user_need-1 and its requirements:
 
 | Requirement | Rule |
 |---|---|
-| requirement-32 | version MAJOR.MINOR.PATCH.BUILD, stamped by the merge |
-| requirement-33 | what a release consists of; no package index |
-| requirement-34 | release retention |
+| requirement-32 | version MAJOR.MINOR.PATCH.BUILD, stamped by the merge (ac-179 to ac-181) |
+| requirement-33 | what a release consists of (ac-189 to ac-192); no package index |
+| requirement-34 | release retention: three named bounds (ac-186 to ac-188) |
 
 The skill installs nothing anywhere. homelab owns rollout to DEV and PROD.
 
@@ -179,7 +179,7 @@ Do these in order, and report anything partial.
 
 1. Set the release_notes record to `status: released`.
 2. Call `create_baseline` named `genesis-wp-ha vX.Y.Z` and capture its ref.
-3. `admin_get_product_version` genesis-wp-ha X.Y.Z. If the row exists, `admin_update_product_version`: set GitTag `vX.Y.Z`, keep its body and append `Git tag: vX.Y.Z (<SHA>)`, `Library: genesis-wp <lib-tag> (<lib SHA>)` and `SoR baseline: <ref>`. If it does not exist, create it first.
+3. `admin_get_product_version` genesis-wp-ha X.Y.Z. If the row does not exist, create it first. Then `admin_update_product_version`, which takes only body, release_notes and new_version. Keep the body and append `Git tag: vX.Y.Z (<SHA>)`, `Library: genesis-wp <lib-tag> (<lib SHA>)` and `SoR baseline: <ref>`, and set release_notes to the release_notes record's link. Never pass new_version: a version is never renamed.
 4. `admin_advance_product_version_status` X.Y.Z → released.
 5. `admin_create_product_version` for the next version, X.Y.(Z+1) unless the owner named another, as in_development. Never rename a row (keel issue-271). This step is explicit because advancing the status does not open the next row.
 6. Bump `VERSION` to the next version through a change_request at the start of the next lane. Builds after the release then stop carrying the released core.
