@@ -5,7 +5,7 @@ description: >
   gold release notes, integration gate on a clean main, annotated vX.Y.Z tag and GitHub release on
   origin, gold product_version released and the next one opened, old GitHub releases pruned,
   homelab told the tag and SHA. No PyPI or other package index unless the owner decides otherwise. Use when the user says "/publish",
-  "publish a version", "publish vX.Y.Z", "cut a release", "release the integration", "tag a release".
+  "publish a version", "publish vX.Y.Z", "publish the next round as X.Y.Z", "cut a release", "release the integration", "tag a release".
 allowed-tools: mcp__gold__search_release_notes, mcp__gold__list_release_notes, mcp__gold__get_release_notes, mcp__gold__create_release_notes, mcp__gold__update_release_notes, mcp__gold__get_template_for, mcp__gold__admin_list_product_versions, mcp__gold__admin_get_product_version, mcp__gold__admin_update_product_version, mcp__gold__admin_advance_product_version_status, mcp__gold__admin_create_product_version, mcp__gold__create_baseline, mcp__gold__list_change_request, mcp__gold__get_change_request, mcp__gold__list_issue
 disable-model-invocation: true
 ---
@@ -79,7 +79,7 @@ A draft for the target tag must be deleted by hand, with the owner's OK, before 
    git log --format='%h %s' <prev-tag>..HEAD | rg -o 'change_request-\d+' | sort -u
    ```
 
-4. Suggest the version:
+4. **The version is chosen at publish time.** The owner usually names it in the request ("publish the next verification round as 0.4.2"); use that. `VERSION` is never bumped ahead of a publish. Only if no version was named, suggest one:
    - any kind: feature change_request: a minor bump;
    - otherwise: a patch bump.
 
@@ -199,7 +199,6 @@ Do these in order, and report anything partial.
 3. `admin_get_product_version` genesis-wp-ha X.Y.Z. If the row does not exist, create it first. Then `admin_update_product_version`, which takes only body, release_notes and new_version. Keep the body and append `Git tag: vX.Y.Z (<SHA>)`, `Library: genesis-wp <lib-tag> (<lib SHA>)` and `SoR baseline: <ref>`, and set release_notes to the release_notes record's link. Never pass new_version: a version is never renamed.
 4. `admin_advance_product_version_status` X.Y.Z → released.
 5. `admin_create_product_version` for the next version, X.Y.(Z+1) unless the owner named another, as in_development. Never rename a row (keel issue-271). This step is explicit because advancing the status does not open the next row.
-6. Bump `VERSION` to the next version with a bookkeeping commit as in Step 1.6, at the start of the next lane. Builds after the release then stop carrying the released core.
 
 ## Step 7: Prune old GitHub releases
 
