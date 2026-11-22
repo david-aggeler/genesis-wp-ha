@@ -1,0 +1,34 @@
+{
+  "title": "Genesis WP",
+  "entity": {
+    "sensor": {
+      "derived_starts_today": {
+        "name": "Starts heute",
+        "unit_of_measurement": "Starts"
+      },
+      "derived_hot_water_starts_today": {
+        "name": "Warmwasserstarts heute",
+        "unit_of_measurement": "Starts"
+      },
+      "derived_short_heating_runs_today": {
+        "name": "Kurze Heizläufe heute",
+        "unit_of_measurement": "Läufe"
+      },
+      "derived_running_hours_today": {
+        "name": "Laufzeit heute"
+      },
+      "derived_heating_run_minimum": {
+        "name": "Kürzester Heizlauf"
+      },
+      "derived_heating_run_mean": {
+        "name": "Mittlere Heizlaufdauer"
+      },
+      "derived_heating_run_maximum": {
+        "name": "Längster Heizlauf"
+      },
+      "derived_last_run_length": {
+        "name": "Letzte Laufdauer"
+      }
+    }
+  }
+}

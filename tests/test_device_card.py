@@ -8,6 +8,7 @@ from homeassistant.setup import async_setup_component
 
 from .helpers import setup_entry
 from .node_harness import run_node_harness
+from .harness import DERIVED_SENSOR_KEYS
 from .harness import PROFILE_615
 from .test_devices import register_entities, sub_devices
 
@@ -47,11 +48,13 @@ async def test_register_anchors_and_render(hass, start_emulator):
     await hass.async_block_till_done()
     entities = register_entities(hass, entry)
     assert entities
-    # Derived flow sensors (requirement-26) carry a frontend anchor like the register entities.
+    # Derived sensors carry a frontend anchor like the register entities.
     for e in er.async_entries_for_config_entry(registry, entry.entry_id):
         if e.unique_id.startswith(f"{entry.entry_id}_derived_"):
             entities[e.unique_id] = e
-    assert sum(1 for e in entities.values() if "_derived_" in e.unique_id) == 3
+    assert {e.unique_id for e in entities.values() if "_derived_" in e.unique_id} == {
+        f"{entry.entry_id}_derived_{key}" for key in DERIVED_SENSOR_KEYS
+    }
     for entity in entities.values():
         state = hass.states.get(entity.entity_id)
         assert state is not None

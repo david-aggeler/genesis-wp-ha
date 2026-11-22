@@ -1,4 +1,5 @@
 """The genesis_wp integration: read-only heat pumps on the Thermia Genesis platform."""
+import asyncio
 import logging
 import time
 from datetime import timedelta
@@ -43,7 +44,10 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST
 from homeassistant.const import CONF_PORT
 from homeassistant.const import EntityCategory
+from homeassistant.const import EVENT_HOMEASSISTANT_FINAL_WRITE
 from homeassistant.core import HomeAssistant
+from homeassistant.core import callback
+from homeassistant.helpers.event import async_call_later
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
@@ -54,6 +58,7 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.update_coordinator import UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .const import CARD_URLS
 from .const import CONF_CAPABILITIES
@@ -68,6 +73,11 @@ from .const import HC2_RETURN_DEFAULTS
 from .const import EMULATOR_DYNAMICS_INTERVAL
 from .const import EMULATOR_HOST
 from .const import MODE_EMULATED
+
+from .cycles import RunTracker
+
+COMPRESSOR_SIGNAL = genesis_const.ATTR_DINPUT_COMPRESSOR_CONTROL_SIGNAL
+OPERATING_MODE = genesis_const.ATTR_INPUT_FIRST_PRIORITISED_DEMAND
 
 # Read-only: the write platforms (climate, number, switch) are not forwarded.
 PLATFORMS = ["sensor", "binary_sensor"]
@@ -221,9 +231,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     store = flow_calibration_store(hass, entry.entry_id)
     calibrations = await store.async_load() or {}
     coordinator = GenesisDataUpdateCoordinator(hass, entry, connection, emulator, store, calibrations)
+    await coordinator.async_restore_runs()
     await coordinator.async_refresh()
 
     if not coordinator.last_update_success:
+        # The abandoned coordinator leaves no pending statistics write; a retry reuses the store.
+        coordinator.discard_pending_runs()
         await coordinator.async_close()
         raise ConfigEntryNotReady
 
@@ -287,6 +300,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
     if unload_ok:
         coordinator = hass.data[DOMAIN].pop(entry.entry_id)
         await coordinator.async_save_calibrations()
+        await coordinator.async_save_runs()
+        hass.data.get(DATA_RUN_STORES, {}).pop(entry.entry_id, None)
         await coordinator.async_close()
         if not hass.data[DOMAIN]:
             async_remove_panel(hass, "genesis-wp")
@@ -295,9 +310,12 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry):
-    """Discard the entry's stored flow calibration: it is only valid for the plant it was learned on."""
+    """Discard observations and calibration owned by the removed entry."""
     # DHF-REQ: genesis-wp-ha/requirement-26  (ac-111)
     await flow_calibration_store(hass, entry.entry_id).async_remove()
+    # The shared instance, when a retrying setup or a failed unload left one, cancels its pending write.
+    await compressor_run_store(hass, entry.entry_id).async_remove()
+    hass.data[DATA_RUN_STORES].pop(entry.entry_id, None)
 
 
 # DHF-REQ: genesis-wp-ha/requirement-26
@@ -309,6 +327,98 @@ FLOW_CALIBRATION_SAVE_DELAY = 300  # [s]
 def flow_calibration_store(hass: HomeAssistant, entry_id: str) -> Store:
     """The entry's stored calibrations, ``{loop key: L/min per %}``."""
     return Store(hass, FLOW_CALIBRATION_VERSION, f"{DOMAIN}.flow_calibration.{entry_id}")
+
+
+COMPRESSOR_RUN_SAVE_DELAY = 30  # [s]
+DATA_RUN_STORES = f"{DOMAIN}_compressor_run_stores"
+
+
+# DHF-REQ: genesis-wp-ha/requirement-28
+class CompressorRunStore:
+    """The single owner of one entry's stored daily compressor observations.
+
+    Every coordinator of the entry (setup retries included) and its removal share this
+    instance, so a pending write is always cancellable. It owns its debounce timer and
+    final-write listener instead of Store.async_delay_save, whose callbacks only the
+    arming Store instance can cancel. Once closed or removed it writes nothing
+    (ac-161, ac-165, ac-166).
+    """
+
+    def __init__(self, hass: HomeAssistant, entry_id: str):
+        self._hass = hass
+        self._store = Store(hass, 1, f"{DOMAIN}.compressor_runs.{entry_id}")
+        self._data_func = None
+        self._unsub_timer = None
+        self._unsub_final_write = None
+        self.closed = False
+        # Serializes writes with deletion: removal waits for a write already in flight (ac-166).
+        self._lock = asyncio.Lock()
+
+    async def async_load(self):
+        return await self._store.async_load()
+
+    @callback
+    def async_delay_save(self, data_func) -> None:
+        """Write ``data_func()`` after the delay; armed once while a write is pending (issue-24)."""
+        if self.closed:
+            return
+        self._data_func = data_func
+        if self._unsub_timer is None:
+            self._unsub_timer = async_call_later(self._hass, COMPRESSOR_RUN_SAVE_DELAY, self._async_timer)
+        if self._unsub_final_write is None:
+            self._unsub_final_write = self._hass.bus.async_listen_once(
+                EVENT_HOMEASSISTANT_FINAL_WRITE, self._async_final_write
+            )
+
+    async def _async_timer(self, _now) -> None:
+        self._unsub_timer = None
+        await self._async_write()
+
+    async def _async_final_write(self, _event) -> None:
+        self._unsub_final_write = None
+        await self._async_write()
+
+    async def _async_write(self) -> None:
+        async with self._lock:
+            if self.closed or self._data_func is None:
+                return
+            data, self._data_func = self._data_func(), None
+            await self._store.async_save(data)
+
+    @callback
+    def async_cancel(self) -> None:
+        """Drop a pending write; the store stays open."""
+        self._data_func = None
+        for unsub in (self._unsub_timer, self._unsub_final_write):
+            if unsub is not None:
+                unsub()
+        self._unsub_timer = self._unsub_final_write = None
+
+    async def async_close(self, data) -> None:
+        """Write ``data`` (when given) now and accept no later writes."""
+        if self.closed:
+            return
+        # Closed before the first await, so a refresh during the flush cannot re-arm a write.
+        self.closed = True
+        self.async_cancel()
+        if data is not None:
+            async with self._lock:
+                await self._store.async_save(data)
+
+    async def async_remove(self) -> None:
+        """Cancel pending writes, accept no later ones, and delete the stored observations."""
+        self.closed = True
+        self.async_cancel()
+        async with self._lock:
+            await self._store.async_remove()
+
+
+def compressor_run_store(hass: HomeAssistant, entry_id: str) -> CompressorRunStore:
+    """The entry's run store, shared until the entry unloads or is removed."""
+    stores = hass.data.setdefault(DATA_RUN_STORES, {})
+    if entry_id not in stores:
+        stores[entry_id] = CompressorRunStore(hass, entry_id)
+    return stores[entry_id]
 
 
 def seeded_estimator(key: str, loop, seed) -> FlowEstimator:
@@ -366,6 +476,12 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self.registerAttribute(
             [r for r in (*self.sw_version_registers, *self.hw_version_registers) if REGISTERS[r][self.kind]]
         )
+        self.run_tracker = None
+        self._run_store = None
+        if all(REGISTERS[register][self.kind] for register in (COMPRESSOR_SIGNAL, OPERATING_MODE)):
+            self.run_tracker = RunTracker()
+            self._run_store = compressor_run_store(hass, entry.entry_id)
+            self.registerAttribute([COMPRESSOR_SIGNAL, OPERATING_MODE])
         self.evidence = capability_evidence(self.kind)
         self.registerAttribute(self.evidence)
         # DHF-REQ: genesis-wp-ha/requirement-26
@@ -424,6 +540,34 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self._saved_calibrations = current
         self._save_pending = False
 
+    async def async_restore_runs(self):
+        """Restore the current local day's snapshot before the first refresh."""
+        if self._run_store is None:
+            return
+        try:
+            snapshot = await self._run_store.async_load()
+        except Exception as error:  # noqa: BLE001 - a bad snapshot must not block setup (ac-162)
+            _LOGGER.warning("Compressor statistics snapshot unreadable, starting empty (%s)",
+                            type(error).__name__)
+            return
+        self.run_tracker.restore(dt_util.now(), snapshot)
+
+    async def async_save_runs(self):
+        """Flush compressor observations when the entry unloads; later updates schedule no writes."""
+        if self._run_store is not None:
+            daily = self.run_tracker.daily
+            await self._run_store.async_close(daily.as_dict() if daily is not None else None)
+
+    @callback
+    def discard_pending_runs(self):
+        """Drop a pending statistics write and keep the store open."""
+        if self._run_store is not None:
+            self._run_store.async_cancel()
+
+    def _track_run(self, signal, mode=None):
+        if self.run_tracker is not None and self.run_tracker.add(dt_util.now(), signal, mode):
+            self._run_store.async_delay_save(self.run_tracker.daily.as_dict)
+
     async def async_close(self):
         """Close the client, then stop the entry's emulator if it has one."""
         await self.thermia.close()
@@ -436,6 +580,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         try:
             data = await self.thermia.async_update(only_registers=self.attributes.keys())
         except ThermiaException as error:
+            self._track_run(None)
             if self.hc2_estimator is not None:
                 self.hc2_return = self.hc2_estimator.add(self.flow_clock(), {}, None)
             # The library's message names the host, which is topology: keep it out of the log.
@@ -446,6 +591,11 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self._check_capabilities()
         self._store_seen()
         self._estimate_flows(data)
+        if self.run_tracker is not None:
+            unread = self.thermia.unread
+            signal = None if COMPRESSOR_SIGNAL in unread else data.get(COMPRESSOR_SIGNAL)
+            mode = None if OPERATING_MODE in unread else data.get(OPERATING_MODE)
+            self._track_run(signal, mode)
         return data
 
     def _estimate_flows(self, data):

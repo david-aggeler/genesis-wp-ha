@@ -13,8 +13,12 @@ from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.sensor import SensorStateClass
 from homeassistant.const import UnitOfTemperature
+from homeassistant.const import UnitOfTime
 from homeassistant.const import UnitOfVolumeFlowRate
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+from . import COMPRESSOR_SIGNAL
+from .cycles import HOT_WATER, mean_band, run_band
 
 from .register_entity import RegisterAnchor
 
@@ -75,6 +79,8 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     sensors.extend(FlowSensor(coordinator, key) for key in coordinator.flow_estimators)
     if coordinator.supports_hc2_return:
         sensors.append(HC2ReturnSensor(coordinator))
+    if coordinator.run_tracker is not None:
+        sensors.extend(CompressorRunSensor(coordinator, key) for key in COMPRESSOR_STATISTICS)
     async_add_entities(sensors, False)
     coordinator.setup_entity_ids["sensor"] = {sensor.unique_id for sensor in sensors}
 
@@ -364,3 +370,61 @@ class HC2ReturnSensor(CoordinatorEntity, SensorEntity):
             "source": "estimate",
             "heat": self.coordinator.hc2_return.heat,
         }
+
+
+COMPRESSOR_STATISTICS = {
+    "starts_today": None,
+    "hot_water_starts_today": None,
+    "short_heating_runs_today": None,
+    "running_hours_today": UnitOfTime.HOURS,
+    "heating_run_minimum": UnitOfTime.MINUTES,
+    "heating_run_mean": UnitOfTime.MINUTES,
+    "heating_run_maximum": UnitOfTime.MINUTES,
+    "last_run_length": UnitOfTime.MINUTES,
+}
+
+
+# DHF-REQ: genesis-wp-ha/requirement-28
+class CompressorRunSensor(CoordinatorEntity, SensorEntity):
+    """A read-only statistic backed by the entry's shared daily compressor runs."""
+
+    _attr_has_entity_name = True
+    _unrecorded_attributes = frozenset({"register"})
+
+    def __init__(self, coordinator, key):
+        super().__init__(coordinator)
+        self._key = key
+        self._register = f"derived_{key}"
+        self._tracker = coordinator.run_tracker
+        self._attr_translation_key = self._register
+        self._attr_unique_id = f"{coordinator.entry_id}_{self._register}"
+        self._attr_device_info = coordinator.device_info_for(COMPRESSOR_SIGNAL)
+        self._attr_native_unit_of_measurement = COMPRESSOR_STATISTICS[key]
+        if self._attr_native_unit_of_measurement is None:
+            self._attr_icon = "mdi:counter"
+        else:
+            self._attr_device_class = SensorDeviceClass.DURATION
+
+    @property
+    def capability_attributes(self):
+        return {**(super().capability_attributes or {}), "register": self._register}
+
+    @property
+    def native_value(self):
+        value = self._tracker.values.get(self._key)
+        if value is None or self._attr_native_unit_of_measurement is None:
+            return value
+        return round(value, 2 if self._key == "running_hours_today" else 1)
+
+    @property
+    def extra_state_attributes(self):
+        value = self._tracker.values.get(self._key)
+        if value is None or self._attr_native_unit_of_measurement != UnitOfTime.MINUTES:
+            return None
+        if self._key == "heating_run_mean":
+            return {"band": mean_band(value)}
+        if self._key != "last_run_length":
+            return {"band": run_band(value)}
+        kind = self._tracker.daily.runs[-1][0]
+        # The run-length scale judges heating runs only; a hot-water run has none (design_decision-2, ac-163).
+        return {"kind": kind} if kind == HOT_WATER else {"band": run_band(value), "kind": kind}
