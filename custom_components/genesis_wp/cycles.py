@@ -12,6 +12,11 @@ MEAN_BANDS = ((120, "good"), (60, "acceptable"), (30, "warning"), (0, "bad"))
 SHORT_RUN_BANDS = frozenset({"short_cycle", "very_short"})
 HEATING = "heating"
 HOT_WATER = "hot_water"
+# Far above any real day (one start per 30 s poll is 2880); bounds restored counts so the
+# published state stays within Home Assistant's 255-character limit (ac-169).
+MAX_DAILY_STARTS = 100_000
+# Local dates kept, so a corrected clock jump across midnight finds its day again (ac-168).
+KEPT_DAYS = 2
 
 
 def run_band(minutes: float) -> str:
@@ -64,7 +69,7 @@ class DailyRuns:
         starts, hot_water_starts, runs = (data.get(key) for key in ("starts", "hot_water_starts", "runs"))
         if (
             type(starts) is not int or type(hot_water_starts) is not int
-            or not 0 <= hot_water_starts <= starts or not isinstance(runs, list)
+            or not 0 <= hot_water_starts <= starts <= MAX_DAILY_STARTS or not isinstance(runs, list)
             or len(runs) > starts
         ):
             return None
@@ -91,31 +96,42 @@ class RunTracker:
 
     def __init__(self):
         self.daily: DailyRuns | None = None
+        self._days: dict[date, DailyRuns] = {}
         self._previous: bool | None = None
         self._open_run: tuple[date, float, str] | None = None
         self.values: dict[str, int | float | None] = {}
 
+    def _select(self, day: date) -> bool:
+        """Publish the observations of ``day``; report whether the published day changed.
+
+        Observations are kept per local date (the latest ``KEPT_DAYS``), so a clock step in
+        either direction across midnight returns to that date's counts (ac-160, ac-164, ac-168).
+        """
+        if day not in self._days:
+            self._days[day] = DailyRuns(day)
+            for old in sorted(self._days)[:-KEPT_DAYS]:
+                del self._days[old]
+        daily = self._days.get(day)
+        if daily is None:  # older than every kept date: observe it without publishing
+            daily = DailyRuns(day)
+        changed = daily is not self.daily
+        self.daily = daily
+        return changed
+
     def add(self, now_local: datetime, signal: bool | None, mode: str | None = None) -> bool:
-        """Record a sample and report whether the daily snapshot changed."""
-        # Only a later date rolls the day over. A sample on an earlier date (a backward clock
-        # correction) keeps the current day and its counts (ac-160); a run that ends on that
-        # earlier date belongs to a past day and is left out (ac-164).
+        """Record a sample on its local date and report whether the published snapshot changed."""
         day = now_local.date()
-        changed = self.daily is None or day > self.daily.day
-        if changed:
-            self.daily = DailyRuns(day)
-        current = day == self.daily.day
+        changed = self._select(day)
         if signal is True and self._previous is False:
             kind = HOT_WATER if mode == "Hot water" else HEATING
             self._open_run = (day, monotonic(), kind)
-            if current:
-                self.daily.count_start(kind)
-                changed = True
+            self.daily.count_start(kind)
+            changed = True
         elif signal is not True:
-            if signal is False and self._open_run is not None and current:
+            if signal is False and self._open_run is not None:
                 start_day, started_at, kind = self._open_run
                 minutes = (monotonic() - started_at) / 60
-                if start_day != day:  # started on an earlier date: the run counts on its end day (ac-134)
+                if start_day != day:  # started on another date: the run counts on its end day (ac-134)
                     self.daily.count_start(kind)
                 self.daily.runs.append((kind, minutes))
                 changed = True
@@ -128,5 +144,6 @@ class RunTracker:
     def restore(self, now_local: datetime, data: object) -> None:
         """Seed daily observations before polling begins."""
         if (daily := DailyRuns.from_dict(now_local.date(), data)) is not None:
+            self._days = {daily.day: daily}
             self.daily = daily
             self.values = daily.values()

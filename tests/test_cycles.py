@@ -366,9 +366,16 @@ async def test_removal_waits_for_a_save_already_in_flight(hass, hass_storage, cy
     monkeypatch.setattr(hass.config_entries, "async_unload_platforms", refuse_unload)
     hass.bus.async_fire(EVENT_HOMEASSISTANT_FINAL_WRITE)  # dispatches the pending save
     await writing.wait()
+    run_store = genesis_wp.compressor_run_store(hass, entry.entry_id)
+    original_remove, removing = run_store.async_remove, asyncio.Event()
+
+    async def tracked_remove():
+        removing.set()  # runs on into the store's lock without yielding first
+        await original_remove()
+
+    monkeypatch.setattr(run_store, "async_remove", tracked_remove)
     removal = hass.async_create_task(hass.config_entries.async_remove(entry.entry_id))
-    for _ in range(5):
-        await asyncio.sleep(0)
+    await removing.wait()
     release.set()
     await removal
     await _flush_pending_writes(hass)
@@ -376,3 +383,28 @@ async def test_removal_waits_for_a_save_already_in_flight(hass, hass_storage, cy
     hass.data[DOMAIN].pop(entry.entry_id, None)
     await coordinator.async_shutdown()
     await coordinator.async_close()
+
+
+# DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-168
+async def test_corrected_forward_jump_across_midnight_keeps_the_start(cycles):
+    sample, _, read, _, _, _ = cycles
+    await sample(True, 711)  # 23:51 local
+    await sample(False, 1)  # 23:52, one completed run
+    await sample(False, clock_correction=10)  # 00:02 on the next date
+    assert read("starts_today").state == "0"
+    await sample(False, 1, clock_correction=-10)  # 23:53 on the original date
+    assert read("starts_today").state == "1"
+
+
+# DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-169
+async def test_snapshot_with_unpublishable_start_count_restores_empty(hass, hass_storage, cycles):
+    _, run, read, _, _, entry = cycles
+    await run(20)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    hass_storage[_run_store_key(entry)] = {
+        "key": _run_store_key(entry), "version": 1,
+        "data": {"day": "2026-01-15", "starts": 10**255, "hot_water_starts": 0, "runs": []},
+    }
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert read("starts_today").state == "0"
