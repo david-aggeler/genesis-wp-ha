@@ -9,6 +9,7 @@ import pytest
 from genesis_wp.const import ATTR_INPUT_CURRENT_POWER_OUTPUT
 from genesis_wp.derived import HC2_PASSIVE_COOLING, HC2_PUMP, ReturnEstimate
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import restore_state
 from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -165,3 +166,58 @@ async def test_daily_counters_restore_and_roll_over(hass, balance):
     await hass.async_block_till_done()
     assert float(produced().state) == 0
     assert float(rooms().state) == 0
+
+
+# DHF-TEST: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-171
+@pytest.mark.parametrize("cross_midnight", [False, True])
+async def test_daily_counters_survive_clock_rollback(hass, balance, cross_midnight):
+    entry, refresh, _ = balance
+    keys = ("heat_produced_today", "heat_to_rooms_today")
+    await refresh(3, 3, 4 * 3600 - 90 if cross_midnight else 300)
+    await refresh(3, 3)
+    if cross_midnight:
+        await refresh(3, 3)
+    for key in keys:
+        assert float(state_for(hass, entry, key).state) == pytest.approx(
+            0.025 if cross_midnight else 0.05
+        )
+
+    await refresh(3, 3, -45 if cross_midnight else -30)
+    for key in keys:
+        assert float(state_for(hass, entry, key).state) == pytest.approx(
+            0.025 if cross_midnight else 0.05
+        )
+
+    await refresh(3, 3, 75 if cross_midnight else 60)
+    for key in keys:
+        assert float(state_for(hass, entry, key).state) == pytest.approx(
+            0.05 if cross_midnight else 0.075
+        )
+
+
+# DHF-TEST: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-172
+@pytest.mark.parametrize("snapshot", [
+    [1],
+    {"day": "2026-01-15", "energy": 10**400, "covered_seconds": 0, "pump_seconds": 0},
+], ids=["array", "oversized-integer"])
+async def test_daily_counters_ignore_invalid_restore_data(hass, balance, snapshot):
+    entry, refresh, _ = balance
+    keys = ("heat_produced_today", "heat_to_rooms_today")
+    await refresh(3, 3, 300)
+    states = [state_for(hass, entry, key) for key in keys]
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    stored = restore_state.async_get(hass).last_states
+    for state in states:
+        stored[state.entity_id] = restore_state.StoredState.from_dict({
+            "state": state.as_dict(),
+            "last_seen": dt_util.now(),
+            "extra_data": snapshot,
+        })
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    for key in keys:
+        assert float(state_for(hass, entry, key).state) == 0
+    await refresh(3, 3)
+    for key in keys:
+        assert float(state_for(hass, entry, key).state) == pytest.approx(0.05)

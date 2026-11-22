@@ -6,7 +6,12 @@ from math import isfinite
 
 
 def valid_measurement(value):
-    return type(value) in (int, float) and isfinite(value) and value >= 0
+    if type(value) not in (int, float) or value < 0:
+        return False
+    try:
+        return isfinite(value)
+    except OverflowError:
+        return False
 
 
 @dataclass(frozen=True)
@@ -26,11 +31,15 @@ class DailyHeat:
         self._last = None
         self._restored = False
 
+    # DHF-REQ: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-171
     def add(self, now: datetime, power: float | None, pump_on: bool = False):
         """Add the part of the sample interval that falls on the current local date."""
         day = now.date()
         sample = HeatSample(now.timestamp(), power if valid_measurement(power) else None, pump_on)
         previous = self._last
+        # Keep the latest accepted sample and its day until the clock catches up.
+        if previous is not None and sample.timestamp <= previous.timestamp:
+            return
         if day != self.day:
             self.day = day
             self.energy = self.covered_seconds = self.pump_seconds = 0.0
@@ -39,8 +48,6 @@ class DailyHeat:
             return
 
         elapsed = sample.timestamp - previous.timestamp
-        if elapsed <= 0:
-            return
         midnight = datetime.combine(day, time.min, now.tzinfo).timestamp()
         seconds = sample.timestamp - max(previous.timestamp, midnight)
         # Both endpoints must report FR2 on. Long gaps can reduce coverage,
@@ -71,12 +78,13 @@ class DailyHeat:
             "pump_seconds": self.pump_seconds,
         }
 
+    # DHF-REQ: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-172
     def restore(self, snapshot):
         """Add same-day totals without joining the previous session's sample interval."""
         if self._restored:
             return
         self._restored = True
-        if self.day is None or snapshot.get("day") != self.day.isoformat():
+        if not isinstance(snapshot, dict) or self.day is None or snapshot.get("day") != self.day.isoformat():
             return
         energy = snapshot.get("energy")
         covered = snapshot.get("covered_seconds")
