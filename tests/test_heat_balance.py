@@ -10,6 +10,7 @@ from genesis_wp.const import ATTR_INPUT_CURRENT_POWER_OUTPUT
 from genesis_wp.derived import HC2_PASSIVE_COOLING, HC2_PUMP, ReturnEstimate
 from homeassistant.components.sensor.recorder import reset_detected
 from homeassistant.const import EVENT_STATE_CHANGED
+from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import restore_state
 from homeassistant.util import dt as dt_util
@@ -311,9 +312,14 @@ async def test_rollover_energy_reaches_statistics(hass, balance):
     await refresh(0.6, None)
     assert float(state_for(hass, entry, "heat_produced_today").state) == pytest.approx(0.01)
     states = []
+    # A callback runs on the event loop in write order; a plain function would run as an
+    # executor job, and the reset 0 could be recorded after the new-day value (issue-29).
     hass.bus.async_listen(
         EVENT_STATE_CHANGED,
-        lambda event: event.data["entity_id"] == entity_id and states.append(event.data["new_state"]),
+        callback(
+            lambda event: event.data["entity_id"] == entity_id
+            and states.append(event.data["new_state"])
+        ),
     )
     # The new day's first contribution (00:00:00 to 00:01:30) exceeds the old day's final 0.01 kWh.
     await refresh(3, None, 120)
@@ -328,6 +334,8 @@ async def test_rollover_energy_reaches_statistics(hass, balance):
         previous = value
     final = float(state_for(hass, entry, "heat_produced_today").state)
     assert final > 0.01
+    # The reset is published first, then the new day's value.
+    assert [float(state.state) for state in states] == [0.0, pytest.approx(final)]
     assert added == pytest.approx(final)
 
 
