@@ -183,6 +183,7 @@ The rule covers the **repo working tree**: code, tests, packaging, `manifest.jso
 - **Agent instructions.** `CLAUDE.md` (and its `AGENTS.md` symlink) and project-local skills under `.claude/skills/` without `x-openbrain-*` frontmatter. Edit, commit and push them directly.
 - **Catalog items.** Materialized skills, templates, methods, runbooks and executors are owned by OpenBrain. Fix them at the source.
 - **Local, gitignored state**, such as `openbrain-client.local.yaml` and `.logs/`.
+- **The release version bump** (owner, 2026-11-22): the publish skill's bookkeeping commit that changes only `VERSION` and the manifest `"version"` value. Everything else in a release, the library pin included, goes through a CR.
 
 Workflow entry points: `/change-request` (manual, owner-driven), `/automated-change-request` and `/run-queue` (autonomous tail).
 

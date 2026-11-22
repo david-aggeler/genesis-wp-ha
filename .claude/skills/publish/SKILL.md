@@ -84,27 +84,44 @@ A draft for the target tag must be deleted by hand, with the owner's OK, before 
    - otherwise: a patch bump.
 
    The owner may name any version above the latest tag. Ask: "Next version would be vX.Y.Z (N change_requests since <prev>). Use that?"
-5. **Release prep is a change_request.** If `VERSION` differs from the chosen `X.Y.Z`, or the manifest does not pin the library tag from wpe-1, file one change_request for both changes:
-   - set `VERSION`;
+5. **Library pin first, through a change_request.** If the manifest does not pin the library tag from wpe-1, file a pin-bump change_request:
    - pin `genesis-wp @ git+https://github.com/david-aggeler/genesis-wp@<tag>` in `manifest.json` and `requirements_test.txt`;
    - force-reinstall the venv (CLAUDE.md, *Tests*).
 
-   Approve it, then drain it through run-queue so its merge stamps the manifest. Restart at Step 0 afterward. Every repo change goes through a change_request, and this one is no exception.
-6. Check the pin. The library tag must resolve to the SHA wpe-1 sent:
+   Drain it through run-queue, then restart at Step 0. The pin is code and goes through a change_request.
+6. **The version bump is release bookkeeping, with no change_request** (owner, 2026-11-22). If `VERSION` differs from the chosen `X.Y.Z`, or HEAD's manifest stamp is not current, make one commit on main from this skill. It writes:
+   - `VERSION` = `X.Y.Z`;
+   - the manifest `"version"` = `X.Y.Z.<git rev-list --count HEAD + 1>`, which is this commit's own count. Rewrite only that value.
+
+   ```zsh
+   n=$(( $(git rev-list --count HEAD) + 1 ))
+   print X.Y.Z > VERSION
+   .venv/bin/python - X.Y.Z.$n <<'PY'
+   import re, sys
+   p = "custom_components/genesis_wp/manifest.json"
+   s = open(p).read()
+   s, k = re.subn(r'("version":\s*")[^"]*(")', lambda m: m.group(1) + sys.argv[1] + m.group(2), s, count=1)
+   assert k == 1
+   open(p, "w").write(s)
+   PY
+   git add VERSION custom_components/genesis_wp/manifest.json && git commit -m "Release bookkeeping: vX.Y.Z" && git push origin main
+   ```
+
+   Then restart at Step 0. Only VERSION and the manifest version may change in this commit.
+7. Check the pin. The library tag must resolve to the SHA wpe-1 sent:
 
    ```zsh
    git ls-remote https://github.com/david-aggeler/genesis-wp "refs/tags/<lib-tag>^{}"
    ```
 
-7. Check the stamp. HEAD must be a merge commit, and its manifest version must be `X.Y.Z.<git rev-list --count HEAD>`:
+8. Check the stamp. HEAD's manifest version must be `X.Y.Z.<git rev-list --count HEAD>`. HEAD is either a stamped merge or the bookkeeping commit from 1.6:
 
    ```zsh
-   git rev-list --parents -n 1 HEAD               # three ids: a merge
    .venv/bin/python -c 'import json; print(json.load(open("custom_components/genesis_wp/manifest.json"))["version"])'
    git rev-list --count HEAD
    ```
 
-   A hand commit after the last merge, such as an agent-instructions edit, leaves the stamp one merge behind. In that case land the release-prep change_request from 1.5 first, so the release commit is a stamped merge.
+   A hand commit after the last stamp, such as an agent-instructions edit, leaves the stamp behind. In that case make the bookkeeping commit from 1.6, so the release commit carries its own count.
 
 ## Step 2: Write the release notes in gold
 
@@ -182,7 +199,7 @@ Do these in order, and report anything partial.
 3. `admin_get_product_version` genesis-wp-ha X.Y.Z. If the row does not exist, create it first. Then `admin_update_product_version`, which takes only body, release_notes and new_version. Keep the body and append `Git tag: vX.Y.Z (<SHA>)`, `Library: genesis-wp <lib-tag> (<lib SHA>)` and `SoR baseline: <ref>`, and set release_notes to the release_notes record's link. Never pass new_version: a version is never renamed.
 4. `admin_advance_product_version_status` X.Y.Z → released.
 5. `admin_create_product_version` for the next version, X.Y.(Z+1) unless the owner named another, as in_development. Never rename a row (keel issue-271). This step is explicit because advancing the status does not open the next row.
-6. Bump `VERSION` to the next version through a change_request at the start of the next lane. Builds after the release then stop carrying the released core.
+6. Bump `VERSION` to the next version with a bookkeeping commit as in Step 1.6, at the start of the next lane. Builds after the release then stop carrying the released core.
 
 ## Step 7: Prune old GitHub releases
 
@@ -240,7 +257,7 @@ For a failure, name the step that failed and what is already live.
 - Release without the owner's explicit yes in this chat.
 - Release on a library commit pin instead of a released genesis-wp tag.
 - Skip or pipe the gate, or release from a dirty tree, a branch, a worktree, a shallow clone or an unstamped HEAD.
-- Change repo files outside a change_request. VERSION and the pin go through one.
+- Change repo files outside a change_request, except the Step 1.6 bookkeeping commit (VERSION and the manifest version only). The library pin goes through one.
 - Force-push, push to upstream or cjne, or move or delete a tag, upstream tags included.
 - Touch the real heat pump. Releasing never needs the device.
 - Edit genesis-wp files or release the library on its behalf.
