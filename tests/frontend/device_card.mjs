@@ -846,6 +846,47 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     const joined = ['either-way','hc2-port-b','condenser-out'].map(id => style(oh, id)).filter(Boolean);
     assert.ok(joined.length && joined.every(s => s.flow === 'idle'), JSON.stringify(joined));
     assert.deepEqual(dot(oh), {flow:'idle', color:'currentColor', opacity:'0.22'});
+    // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-170
+    const cover = (svg, x, y) => {
+      for (const [tag] of svg.matchAll(/<rect\b[^>]*>/g)) {
+        const attr = name => tag.match(new RegExp(`(?:^| )${name}="([^"]+)"`))?.[1];
+        if (+attr('x') === x - 2.5 && +attr('y') === y - 2.5 &&
+            +attr('width') === 5 && +attr('height') === 5) {
+          return {color: attr('fill'), opacity: attr('fill-opacity')};
+        }
+      }
+    };
+    const checkCorners = svg => {
+      const corners = new Map();
+      for (const [tag, id, d] of svg.matchAll(/<path data-path="([^"]+)"[^>]* d="([^"]+)"/g)) {
+        assert.doesNotMatch(tag, /stroke-linecap="(?:round|square)"/);
+        const points = [...d.matchAll(/(-?\d+),(-?\d+)/g)].map(([, x, y]) => [+x, +y]);
+        for (const [point, neighbor] of [[points[0], points[1]], [points.at(-1), points.at(-2)]]) {
+          const ends = corners.get(String(point)) || [];
+          ends.push({id, dx: neighbor[0] - point[0], dy: neighbor[1] - point[1]});
+          corners.set(String(point), ends);
+        }
+      }
+      for (const [point, ends] of corners) {
+        if (ends.length !== 2) continue;
+        const [a, b] = ends;
+        if (a.id === b.id || a.dx * b.dx + a.dy * b.dy !== 0) continue;
+        const [x, y] = point.split(',').map(Number);
+        if (svg.match(new RegExp(`<circle class="junction"[^>]* cx="${x}" cy="${y}"`))) continue;
+        assert.ok(cover(svg, x, y), `missing pipe corner at ${point} (${a.id}, ${b.id})`);
+      }
+    };
+    checkCorners(out);
+    for (const category of categories.filter(name => name !== 'internal_heat_pump')) {
+      checkCorners(html(render(category)));
+    }
+    const condenserReturn = style(out, 'condenser-in');
+    assert.equal(condenserReturn.flow, 'active');
+    assert.deepEqual(cover(out, 1100, 390), {
+      color: condenserReturn.color, opacity: condenserReturn.opacity,
+    });
+    assert.equal(style(oh, 'condenser-in').flow, 'idle');
+    assert.deepEqual(cover(oh, 1100, 390), {color: 'currentColor', opacity: '0.22'});
     // No static text-colored dot remains in the drawing.
     assert.doesNotMatch(out, /<circle cx="1220" cy="290"[^>]*fill="currentColor"/);
   }
