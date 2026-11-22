@@ -154,6 +154,15 @@
   },
   "entity": {
     "sensor": {
+      "derived_heat_to_rooms": {
+        "name": "Heat to the rooms"
+      },
+      "derived_heat_produced_today": {
+        "name": "Heat produced today"
+      },
+      "derived_heat_to_rooms_today": {
+        "name": "Heat to the rooms today"
+      },
       "derived_starts_today": {
         "name": "Starts today",
         "unit_of_measurement": "starts"

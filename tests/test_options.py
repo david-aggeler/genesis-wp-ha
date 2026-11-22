@@ -6,6 +6,7 @@ import pytest
 
 from custom_components.genesis_wp import capability_overrides
 from custom_components.genesis_wp.config_flow import model_capabilities
+from custom_components.genesis_wp.const import HC2_RETURN_DEFAULTS
 from custom_components.genesis_wp.const import DOMAIN
 from genesis_wp import const as c
 from homeassistant.data_entry_flow import FlowResultType
@@ -79,7 +80,8 @@ async def entry_with_hot_gas_recovery(hass, start_emulator):
 async def turn_off_hot_gas_recovery(hass, entry):
     result = await hass.config_entries.options.async_init(entry.entry_id)
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"hot_gas_recovery": "not_installed"}
+        # The form pre-fills the estimator constants; a user leaves them as shown.
+        result["flow_id"], {"hot_gas_recovery": "not_installed", **HC2_RETURN_DEFAULTS}
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()

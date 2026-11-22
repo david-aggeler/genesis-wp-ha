@@ -9,12 +9,16 @@ from genesis_wp.const import REG_INPUT
 from genesis_wp.const import KEY_REG_TYPE
 from genesis_wp.const import REG_HOLDING
 from genesis_wp.const import REGISTERS
+from homeassistant.components.sensor import RestoreSensor
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.sensor import SensorStateClass
+from homeassistant.const import UnitOfEnergy, UnitOfPower
 from homeassistant.const import UnitOfTemperature
 from homeassistant.const import UnitOfTime
 from homeassistant.const import UnitOfVolumeFlowRate
+from homeassistant.core import callback
+from homeassistant.helpers.restore_state import RestoredExtraData
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import COMPRESSOR_SIGNAL
@@ -78,7 +82,13 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
             sensors.append(ThermiaSettingSensor(coordinator, register))
     sensors.extend(FlowSensor(coordinator, key) for key in coordinator.flow_estimators)
     if coordinator.supports_hc2_return:
-        sensors.append(HC2ReturnSensor(coordinator))
+        sensors.extend((HC2ReturnSensor(coordinator), RoomHeatSensor(coordinator)))
+    if coordinator.rooms_heat is not None:
+        sensors.append(
+            DailyHeatSensor(coordinator, "heat_to_rooms_today", coordinator.rooms_heat, report_coverage=True)
+        )
+    if coordinator.produced_heat is not None:
+        sensors.append(DailyHeatSensor(coordinator, "heat_produced_today", coordinator.produced_heat))
     if coordinator.run_tracker is not None:
         sensors.extend(CompressorRunSensor(coordinator, key) for key in COMPRESSOR_STATISTICS)
     async_add_entities(sensors, False)
@@ -370,6 +380,101 @@ class HC2ReturnSensor(CoordinatorEntity, SensorEntity):
             "source": "estimate",
             "heat": self.coordinator.hc2_return.heat,
         }
+
+
+class HeatSensor(CoordinatorEntity, SensorEntity):
+    """A heat balance measurement on the internal heat pump device."""
+
+    _attr_has_entity_name = True
+    _attr_suggested_display_precision = 2
+    _unrecorded_attributes = frozenset({"register"})
+
+    def __init__(self, coordinator, key):
+        super().__init__(coordinator)
+        self._attr_translation_key = f"derived_{key}"
+        self._attr_unique_id = f"{coordinator.entry_id}_{self._attr_translation_key}"
+        self._attr_device_info = coordinator.device_info_for(COMPRESSOR_SIGNAL)
+
+    @property
+    def capability_attributes(self):
+        return {**(super().capability_attributes or {}), "register": self._attr_translation_key}
+
+
+# DHF-REQ: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-137
+class RoomHeatSensor(HeatSensor):
+    """Instantaneous heating circuit 2 heat from the library estimator."""
+
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_native_unit_of_measurement = UnitOfPower.KILO_WATT
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "heat_to_rooms")
+
+    @property
+    def native_value(self):
+        return self.coordinator.hc2_return.heat
+
+    @property
+    def available(self):
+        return super().available and self.native_value is not None
+
+
+# DHF-REQ: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-140
+class DailyHeatSensor(HeatSensor, RestoreSensor):
+    """A restorable local-day energy counter."""
+
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+
+    def __init__(self, coordinator, key, tracker, *, report_coverage=False):
+        super().__init__(coordinator, key)
+        self._tracker = tracker
+        self._report_coverage = report_coverage
+        self._publish_zero = False
+
+    async def async_added_to_hass(self):
+        if (restored := await self.async_get_last_extra_data()) is not None:
+            self._tracker.restore(restored.as_dict())
+        await super().async_added_to_hass()
+
+    @property
+    def extra_restore_state_data(self):
+        return RestoredExtraData(self._tracker.snapshot())
+
+    @property
+    def native_value(self):
+        if self._publish_zero:
+            return 0.0
+        return self._tracker.energy
+
+    # DHF-REQ: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-178
+    @property
+    def available(self):
+        if self._report_coverage and not self.coordinator.rooms_heat_estimable:
+            return False
+        return super().available
+
+    # DHF-REQ: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-177
+    @callback
+    def _handle_coordinator_update(self):
+        """Publish 0 before the first new-day value, so statistics see the meter reset.
+
+        total_increasing detects a reset only from a drop; a new-day value above the old
+        day's final one would otherwise be recorded as the difference only.
+        """
+        if self._tracker.take_rollover():
+            self._publish_zero = True
+            self.async_write_ha_state()
+            self._publish_zero = False
+        super()._handle_coordinator_update()
+
+    @property
+    def extra_state_attributes(self):
+        if self._report_coverage:
+            return {"coverage": self._tracker.coverage}
+        return None
 
 
 COMPRESSOR_STATISTICS = {
