@@ -202,7 +202,9 @@ const JUNCTIONS = {
 const PIPE_WIDTH = 5;
 
 // DHF-REQ: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-170
-// A pair of perpendicular pipe ends needs a fill only in the outer quadrant.
+// A pair of perpendicular pipe ends leaves the outer quadrant unpainted. Each corner keeps
+// the outer-quadrant origin for translucent fills and the elbow through the shared point
+// for opaque ones: one miter-joined stroke has no interior antialiasing boundary.
 function pipeCorners(pipes, junctions) {
   const endpoints = new Map();
   const half = PIPE_WIDTH / 2;
@@ -223,7 +225,12 @@ function pipeCorners(pipes, junctions) {
       // The legs occupy the sides toward their neighbors. Fill the opposite sides.
       const x = a.x - (a.dx + b.dx > 0 ? half : 0);
       const y = a.y - (a.dy + b.dy > 0 ? half : 0);
-      corners.push([x, y, [a.id, b.id]]);
+      const along = ({x, y, dx, dy}) => {
+        const reach = Math.min(PIPE_WIDTH, Math.abs(dx) + Math.abs(dy));
+        return `${x + Math.sign(dx) * reach},${y + Math.sign(dy) * reach}`;
+      };
+      const elbow = `M${along(a)} L${a.x},${a.y} L${along(b)}`;
+      corners.push([x, y, [a.id, b.id], elbow]);
     }
   }
   return corners;
@@ -478,7 +485,7 @@ export class GenesisWpDeviceCard extends HTMLElement {
         const color=flow&&celsius!==null?temperatureColor(celsius):'currentColor';
         const noSensor = Array.isArray(r) && celsius === null;
         const opacity = flow ? (noSensor ? 0.75 : 1) : 0.22;
-        styles.set(id,{flow,color,opacity});
+        styles.set(id,{flow,color,opacity,dash:Boolean(dash)});
         return `<path data-path="${id}" data-flow="${flow?'active':'idle'}" d="${d}" fill="none" stroke="${color}" stroke-opacity="${opacity}" stroke-width="${PIPE_WIDTH}"${dash?` stroke-dasharray="${dash}"`:''}></path>`;
       }).join('');
       const junctions=(JUNCTIONS[category]||[]).map(([x,y,r,ids])=>{
@@ -486,11 +493,17 @@ export class GenesisWpDeviceCard extends HTMLElement {
         if (!s) return '';
         return `<circle class="junction" data-junction="${ids[0]}" data-flow="${s.flow?'active':'idle'}" cx="${x}" cy="${y}" r="${r}" fill="${s.color}" fill-opacity="${s.opacity}"/>`;
       }).join('');
-      const corners = CORNERS[category].map(([x,y,ids]) => {
+      const corners = CORNERS[category].map(([x,y,ids,elbow]) => {
         if (!ids.every(id => styles.has(id))) return '';
         const style = joinedPipeStyle(ids, styles);
+        // An opaque solid elbow may overlap both legs; the overlap is invisible and leaves
+        // no seam at fractional pixel alignment. Translucent or dashed legs would show the
+        // overlap, so they keep the abutting outer-quadrant fill.
+        if (style.opacity === 1 && !ids.some(id => styles.get(id).dash)) {
+          return `<path class="pipe-corner" data-corner="${ids.join(' ')}" d="${elbow}" fill="none" stroke="${style.color}" stroke-width="${PIPE_WIDTH}" stroke-linejoin="miter"></path>`;
+        }
         const half = PIPE_WIDTH / 2;
-        return `<rect x="${x}" y="${y}" width="${half}" height="${half}" fill="${style.color}" fill-opacity="${style.opacity}"/>`;
+        return `<rect class="pipe-corner" data-corner="${ids.join(' ')}" x="${x}" y="${y}" width="${half}" height="${half}" fill="${style.color}" fill-opacity="${style.opacity}"/>`;
       }).join('');
       // Fixed slots keep other legs' animations in place when a source starts or stops.
       const markers = PIPES[category].filter(([id]) => LEG_SOURCE.has(id)).map(([id]) =>

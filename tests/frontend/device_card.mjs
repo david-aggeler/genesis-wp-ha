@@ -847,6 +847,22 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     assert.ok(joined.length && joined.every(s => s.flow === 'idle'), JSON.stringify(joined));
     assert.deepEqual(dot(oh), {flow:'idle', color:'currentColor', opacity:'0.22'});
     // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-170
+    // An opaque corner is one miter-joined elbow stroke through the shared point, reaching
+    // into both legs, so no antialiased boundary lies inside the corner (formal_review-85 B1).
+    const elbow = (svg, x, y) => {
+      for (const [tag] of svg.matchAll(/<path class="pipe-corner"[^>]*>/g)) {
+        const attr = name => tag.match(new RegExp(`(?:^| )${name}="([^"]+)"`))?.[1];
+        const points = [...attr('d').matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map(([, px, py]) => [+px, +py]);
+        if (points.length === 3 && points[1][0] === x && points[1][1] === y) {
+          assert.equal(attr('stroke-linejoin'), 'miter');
+          assert.equal(attr('stroke-width'), '5');
+          assert.equal(attr('stroke-opacity'), undefined);
+          assert.doesNotMatch(tag, /stroke-linecap|stroke-dasharray/);
+          const reach = [points[0], points[2]].map(([px, py]) => Math.abs(px - x) + Math.abs(py - y));
+          return {color: attr('stroke'), reach};
+        }
+      }
+    };
     const cover = (svg, x, y) => {
       for (const [tag] of svg.matchAll(/<rect\b[^>]*>/g)) {
         const attr = name => tag.match(new RegExp(`(?:^| )${name}="([^"]+)"`))?.[1];
@@ -876,6 +892,11 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
         if (svg.match(new RegExp(`<circle class="junction"[^>]* cx="${x}" cy="${y}"`))) continue;
         const outerX = x - Math.sign(a.dx + b.dx);
         const outerY = y - Math.sign(a.dy + b.dy);
+        const joint = elbow(svg, x, y);
+        if (joint) {
+          assert.ok(joint.reach.every(r => r > 2.5), `elbow at ${point} reaches past the corner square`);
+          continue;
+        }
         assert.ok(cover(svg, outerX, outerY), `missing pipe corner at ${point} (${a.id}, ${b.id})`);
       }
     };
@@ -901,9 +922,9 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     assert.equal(hotWaterReturn.flow, 'active');
     assert.equal(style(hotWater, 'buffer-return').flow, 'idle');
     for (const [svg, active] of [[out, condenserReturn], [hotWater, hotWaterReturn]]) {
-      assert.deepEqual(cover(svg, 1101, 389), {
-        color: active.color, opacity: active.opacity, bounds: cornerBounds,
-      });
+      assert.equal(active.opacity, '1');
+      assert.deepEqual(elbow(svg, 1100, 390), {color: active.color, reach: [5, 5]});
+      assert.equal(cover(svg, 1101, 389), undefined, 'an opaque corner draws no abutting fill');
     }
     assert.equal(style(oh, 'condenser-in').flow, 'idle');
     assert.deepEqual(cover(oh, 1101, 389), {
