@@ -263,7 +263,10 @@ async def test_snapshot_without_storage_version_does_not_prevent_setup(hass, has
     _, run, read, _, _, entry = cycles
     await run(20)
     assert await hass.config_entries.async_unload(entry.entry_id)
-    hass_storage[_run_store_key(entry)] = {"key": _run_store_key(entry), "data": {"day": "2026-01-15"}}
+    hass_storage[_run_store_key(entry)] = {  # valid payload; only the storage version is missing
+        "key": _run_store_key(entry),
+        "data": {"day": "2026-01-15", "starts": 1, "hot_water_starts": 0, "runs": [["heating", 20.0]]},
+    }
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     assert entry.state is ConfigEntryState.LOADED
@@ -340,3 +343,36 @@ async def test_snapshot_with_unmatched_hot_water_run_restores_empty(hass, hass_s
     await hass.async_block_till_done()
     assert read("starts_today").state == "0"
     assert read("last_run_length").state == "unknown"
+
+
+# DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-166
+async def test_removal_waits_for_a_save_already_in_flight(hass, hass_storage, cycles, monkeypatch):
+    _, run, _, _, _, entry = cycles
+    await run(20)  # arms a delayed save
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    store = genesis_wp.compressor_run_store(hass, entry.entry_id)._store
+    original, writing, release = store.async_save, asyncio.Event(), asyncio.Event()
+
+    async def held_save(data):
+        writing.set()
+        await release.wait()
+        await original(data)
+
+    monkeypatch.setattr(store, "async_save", held_save)
+
+    async def refuse_unload(*_args):
+        return False
+
+    monkeypatch.setattr(hass.config_entries, "async_unload_platforms", refuse_unload)
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_FINAL_WRITE)  # dispatches the pending save
+    await writing.wait()
+    removal = hass.async_create_task(hass.config_entries.async_remove(entry.entry_id))
+    for _ in range(5):
+        await asyncio.sleep(0)
+    release.set()
+    await removal
+    await _flush_pending_writes(hass)
+    assert _run_store_key(entry) not in hass_storage
+    hass.data[DOMAIN].pop(entry.entry_id, None)
+    await coordinator.async_shutdown()
+    await coordinator.async_close()

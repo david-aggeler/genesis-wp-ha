@@ -1,4 +1,5 @@
 """The genesis_wp integration: read-only heat pumps on the Thermia Genesis platform."""
+import asyncio
 import logging
 import time
 from datetime import timedelta
@@ -350,6 +351,8 @@ class CompressorRunStore:
         self._unsub_timer = None
         self._unsub_final_write = None
         self.closed = False
+        # Serializes writes with deletion: removal waits for a write already in flight (ac-166).
+        self._lock = asyncio.Lock()
 
     async def async_load(self):
         return await self._store.async_load()
@@ -376,10 +379,11 @@ class CompressorRunStore:
         await self._async_write()
 
     async def _async_write(self) -> None:
-        if self.closed or self._data_func is None:
-            return
-        data, self._data_func = self._data_func(), None
-        await self._store.async_save(data)
+        async with self._lock:
+            if self.closed or self._data_func is None:
+                return
+            data, self._data_func = self._data_func(), None
+            await self._store.async_save(data)
 
     @callback
     def async_cancel(self) -> None:
@@ -392,16 +396,21 @@ class CompressorRunStore:
 
     async def async_close(self, data) -> None:
         """Write ``data`` (when given) now and accept no later writes."""
-        self.async_cancel()
-        if data is not None and not self.closed:
-            await self._store.async_save(data)
+        if self.closed:
+            return
+        # Closed before the first await, so a refresh during the flush cannot re-arm a write.
         self.closed = True
+        self.async_cancel()
+        if data is not None:
+            async with self._lock:
+                await self._store.async_save(data)
 
     async def async_remove(self) -> None:
         """Cancel pending writes, accept no later ones, and delete the stored observations."""
         self.closed = True
         self.async_cancel()
-        await self._store.async_remove()
+        async with self._lock:
+            await self._store.async_remove()
 
 
 def compressor_run_store(hass: HomeAssistant, entry_id: str) -> CompressorRunStore:
