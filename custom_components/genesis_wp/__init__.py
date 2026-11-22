@@ -382,6 +382,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         )
         self.run_tracker = None
         self._run_store = None
+        self._runs_closed = False
         if all(REGISTERS[register][self.kind] for register in (COMPRESSOR_SIGNAL, OPERATING_MODE)):
             self.run_tracker = RunTracker()
             self._run_store = compressor_run_store(hass, entry.entry_id)
@@ -446,17 +447,30 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def async_restore_runs(self):
         """Restore the current local day's snapshot before the first refresh."""
-        if self._run_store is not None:
+        if self._run_store is None:
+            return
+        try:
             snapshot = await self._run_store.async_load()
-            self.run_tracker.restore(dt_util.now(), snapshot)
+        except Exception as error:  # noqa: BLE001 - a bad snapshot must not block setup (ac-162)
+            _LOGGER.warning("Compressor statistics snapshot unreadable, starting empty (%s)",
+                            type(error).__name__)
+            return
+        self.run_tracker.restore(dt_util.now(), snapshot)
 
     async def async_save_runs(self):
-        """Flush compressor observations when the entry unloads."""
-        if self._run_store is not None and self.run_tracker.daily is not None:
+        """Flush compressor observations when the entry unloads; later updates schedule no writes."""
+        if self._run_store is None:
+            return
+        # Closed first: an update still in flight must not re-arm a delayed save that could
+        # recreate the storage after entry removal (ac-161).
+        self._runs_closed = True
+        if self.run_tracker.daily is not None:
             await self._run_store.async_save(self.run_tracker.daily.as_dict())
 
     def _track_run(self, signal, mode=None):
-        if self.run_tracker is not None and self.run_tracker.add(dt_util.now(), signal, mode):
+        if self.run_tracker is None or self._runs_closed:
+            return
+        if self.run_tracker.add(dt_util.now(), signal, mode):
             self._run_store.async_delay_save(self.run_tracker.daily.as_dict, 30)
 
     async def async_close(self):

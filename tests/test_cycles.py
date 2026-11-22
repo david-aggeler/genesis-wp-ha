@@ -1,5 +1,6 @@
 """Compressor run statistics through emulator refreshes and Home Assistant states."""
 
+import asyncio
 from datetime import date, datetime, timedelta
 from functools import partial
 from zoneinfo import ZoneInfo
@@ -10,6 +11,8 @@ from custom_components import genesis_wp
 from custom_components.genesis_wp import cycles as cycle_tracking
 from custom_components.genesis_wp.const import DOMAIN
 from genesis_wp.emulator import Emulator
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.const import EVENT_HOMEASSISTANT_FINAL_WRITE
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
@@ -212,3 +215,56 @@ def test_restore_rejects_unrepresentable_duration():
     snapshot = {"day": day.isoformat(), "starts": 1, "hot_water_starts": 0,
                 "runs": [["heating", 10**400]]}
     assert cycle_tracking.DailyRuns.from_dict(day, snapshot) is None
+
+
+# DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-160
+async def test_backward_clock_correction_across_midnight_keeps_the_start(cycles):
+    sample, _, read, _, _, _ = cycles
+    await sample(False, 724)  # 00:04 local on the next day
+    await sample(True, 1)  # 00:05
+    await sample(True, clock_correction=-10)  # 23:55 on the previous date
+    await sample(False, 1, clock_correction=10)  # 00:06 on the start date
+    assert read("starts_today").state == "1"
+    assert float(read("last_run_length").state) == 1
+
+
+def _run_store_key(entry):
+    return f"{DOMAIN}.compressor_runs.{entry.entry_id}"
+
+
+# DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-161
+async def test_refresh_finishing_after_removal_writes_no_statistics(hass, hass_storage, cycles, monkeypatch):
+    _, run, _, _, _, entry = cycles
+    await run(20)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    original = coordinator.thermia.async_update
+    reading, release = asyncio.Event(), asyncio.Event()
+
+    async def held_update(**kwargs):
+        data = await original(**kwargs)
+        reading.set()
+        await release.wait()
+        return {**data, genesis_wp.COMPRESSOR_SIGNAL: True}  # a start: the tracker changes
+
+    monkeypatch.setattr(coordinator.thermia, "async_update", held_update)
+    refresh = hass.async_create_task(coordinator.async_refresh())
+    await reading.wait()
+    assert await hass.config_entries.async_remove(entry.entry_id)
+    assert _run_store_key(entry) not in hass_storage
+    release.set()
+    await refresh
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_FINAL_WRITE)  # flushes every pending delayed save
+    await hass.async_block_till_done()
+    assert _run_store_key(entry) not in hass_storage
+
+
+# DHF-TEST: genesis-wp-ha/requirement-28 genesis-wp-ha/ac-162
+async def test_snapshot_without_storage_version_does_not_prevent_setup(hass, hass_storage, cycles):
+    _, run, read, _, _, entry = cycles
+    await run(20)
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    hass_storage[_run_store_key(entry)] = {"key": _run_store_key(entry), "data": {"day": "2026-01-15"}}
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert entry.state is ConfigEntryState.LOADED
+    assert read("starts_today").state == "0"

@@ -93,10 +93,13 @@ class RunTracker:
 
     def add(self, now_local: datetime, signal: bool | None, mode: str | None = None) -> bool:
         """Record a sample and report whether the daily snapshot changed."""
+        # Only a later date rolls the day over. A backward clock correction across midnight
+        # keeps the current day, so its counted start and completed runs stay (ac-160).
         day = now_local.date()
-        changed = self.daily is None or self.daily.day != day
+        changed = self.daily is None or day > self.daily.day
         if changed:
             self.daily = DailyRuns(day)
+        day = self.daily.day
         if signal is True and self._previous is False:
             kind = HOT_WATER if mode == "Hot water" else HEATING
             self._open_run = (day, monotonic(), kind)
