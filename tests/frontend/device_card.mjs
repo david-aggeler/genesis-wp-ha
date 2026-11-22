@@ -846,6 +846,99 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     const joined = ['either-way','hc2-port-b','condenser-out'].map(id => style(oh, id)).filter(Boolean);
     assert.ok(joined.length && joined.every(s => s.flow === 'idle'), JSON.stringify(joined));
     assert.deepEqual(dot(oh), {flow:'idle', color:'currentColor', opacity:'0.22'});
+    // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-170
+    // An opaque corner is one miter-joined elbow stroke through the shared point, reaching
+    // into both legs, so no antialiased boundary lies inside the corner (formal_review-85 B1).
+    const elbow = (svg, x, y) => {
+      for (const [tag] of svg.matchAll(/<path class="pipe-corner"[^>]*>/g)) {
+        const attr = name => tag.match(new RegExp(`(?:^| )${name}="([^"]+)"`))?.[1];
+        const points = [...attr('d').matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map(([, px, py]) => [+px, +py]);
+        if (points.length === 3 && points[1][0] === x && points[1][1] === y) {
+          assert.equal(attr('stroke-linejoin'), 'miter');
+          assert.equal(attr('stroke-width'), '5');
+          assert.equal(attr('stroke-opacity'), undefined);
+          assert.doesNotMatch(tag, /stroke-linecap|stroke-dasharray/);
+          const reach = [points[0], points[2]].map(([px, py]) => Math.abs(px - x) + Math.abs(py - y));
+          return {color: attr('stroke'), reach};
+        }
+      }
+    };
+    const cover = (svg, x, y) => {
+      for (const [tag] of svg.matchAll(/<rect\b[^>]*>/g)) {
+        const attr = name => tag.match(new RegExp(`(?:^| )${name}="([^"]+)"`))?.[1];
+        const left = +attr('x'), top = +attr('y');
+        const width = +attr('width'), height = +attr('height');
+        if (left < x && x < left + width && top < y && y < top + height) {
+          return {color: attr('fill'), opacity: attr('fill-opacity'), bounds: [left, top, width, height]};
+        }
+      }
+    };
+    const checkCorners = svg => {
+      const corners = new Map();
+      for (const [tag, id, d] of svg.matchAll(/<path data-path="([^"]+)"[^>]* d="([^"]+)"[^>]*>/g)) {
+        assert.doesNotMatch(tag, /stroke-linecap="(?:round|square)"/);
+        const points = [...d.matchAll(/(-?\d+),(-?\d+)/g)].map(([, x, y]) => [+x, +y]);
+        for (const [point, neighbor] of [[points[0], points[1]], [points.at(-1), points.at(-2)]]) {
+          const ends = corners.get(String(point)) || [];
+          ends.push({id, dx: neighbor[0] - point[0], dy: neighbor[1] - point[1]});
+          corners.set(String(point), ends);
+        }
+      }
+      for (const [point, ends] of corners) {
+        if (ends.length !== 2) continue;
+        const [a, b] = ends;
+        if (a.id === b.id || a.dx * b.dx + a.dy * b.dy !== 0) continue;
+        const [x, y] = point.split(',').map(Number);
+        if (svg.match(new RegExp(`<circle class="junction"[^>]* cx="${x}" cy="${y}"`))) continue;
+        const outerX = x - Math.sign(a.dx + b.dx);
+        const outerY = y - Math.sign(a.dy + b.dy);
+        const joint = elbow(svg, x, y);
+        if (joint) {
+          assert.ok(joint.reach.every(r => r > 2.5), `elbow at ${point} reaches past the corner square`);
+          continue;
+        }
+        assert.ok(cover(svg, outerX, outerY), `missing pipe corner at ${point} (${a.id}, ${b.id})`);
+      }
+    };
+    checkCorners(out);
+    for (const category of categories.filter(name => name !== 'internal_heat_pump')) {
+      checkCorners(html(render(category)));
+    }
+    const condenserReturn = style(out, 'condenser-in');
+    assert.equal(condenserReturn.flow, 'active');
+    const cornerBounds = [1100, 387.5, 2.5, 2.5];
+    const renderMode = (category, mode, hiddenRegister) => {
+      const states = structuredClone(heat.states);
+      states[idOf(1)].state = mode;
+      const entities = structuredClone(heat.entities);
+      if (hiddenRegister !== undefined) entities[idOf(hiddenRegister)].disabled_by = 'user';
+      const diagram = new Card();
+      diagram.setConfig({device:category,entry:fixture.entry,layout:'diagram'});
+      diagram.hass = {...heat, entities, states};
+      return html(diagram);
+    };
+    const hotWater = renderMode('internal_heat_pump', 'Hot water');
+    const hotWaterReturn = style(hotWater, 'condenser-in');
+    assert.equal(hotWaterReturn.flow, 'active');
+    assert.equal(style(hotWater, 'buffer-return').flow, 'idle');
+    for (const [svg, active] of [[out, condenserReturn], [hotWater, hotWaterReturn]]) {
+      assert.equal(active.opacity, '1');
+      assert.deepEqual(elbow(svg, 1100, 390), {color: active.color, reach: [5, 5]});
+      assert.equal(cover(svg, 1101, 389), undefined, 'an opaque corner draws no abutting fill');
+    }
+    assert.equal(style(oh, 'condenser-in').flow, 'idle');
+    assert.deepEqual(cover(oh, 1101, 389), {
+      color: 'currentColor', opacity: '0.22', bounds: cornerBounds,
+    }, 'idle corner fill occupies only the outer quadrant');
+    for (const [register, hidden, visible] of [
+      [9, 'charging', 'tank-top'],
+      [15, 'tank-top', 'charging'],
+    ]) {
+      const svg = renderMode('hot_water', 'Hot water', register);
+      assert.ok(style(svg, visible), `${visible} remains visible`);
+      assert.equal(style(svg, hidden), null, `${hidden} is hidden`);
+      assert.equal(cover(svg, 389, 161), undefined, `${visible} keeps its free end`);
+    }
     // No static text-colored dot remains in the drawing.
     assert.doesNotMatch(out, /<circle cx="1220" cy="290"[^>]*fill="currentColor"/);
   }

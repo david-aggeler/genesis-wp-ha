@@ -199,6 +199,52 @@ const PIPES = {
 const JUNCTIONS = {
   internal_heat_pump: [[1220,290,6,['either-way','hc2-port-b','condenser-out']]],
 };
+const PIPE_WIDTH = 5;
+
+// DHF-REQ: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-170
+// A pair of perpendicular pipe ends leaves the outer quadrant unpainted. Each corner keeps
+// the outer-quadrant origin for translucent fills and the elbow through the shared point
+// for opaque ones: one miter-joined stroke has no interior antialiasing boundary.
+function pipeCorners(pipes, junctions) {
+  const endpoints = new Map();
+  const half = PIPE_WIDTH / 2;
+  for (const [id,,,path] of pipes) {
+    const points = pipePoints(path);
+    for (const [[x,y], [nextX,nextY]] of [[points[0], points[1]], [points.at(-1), points.at(-2)]]) {
+      const key = `${x},${y}`;
+      if (!endpoints.has(key)) endpoints.set(key, []);
+      endpoints.get(key).push({id, x, y, dx: nextX - x, dy: nextY - y});
+    }
+  }
+  const junctionPoints = new Set(junctions.map(([x,y]) => `${x},${y}`));
+  const corners = [];
+  for (const [key, ends] of endpoints) {
+    if (ends.length !== 2 || junctionPoints.has(key)) continue;
+    const [a,b] = ends;
+    if (a.id !== b.id && a.dx * b.dx + a.dy * b.dy === 0) {
+      // The legs occupy the sides toward their neighbors. Fill the opposite sides.
+      const x = a.x - (a.dx + b.dx > 0 ? half : 0);
+      const y = a.y - (a.dy + b.dy > 0 ? half : 0);
+      const along = ({x, y, dx, dy}) => {
+        const reach = Math.min(PIPE_WIDTH, Math.abs(dx) + Math.abs(dy));
+        return `${x + Math.sign(dx) * reach},${y + Math.sign(dy) * reach}`;
+      };
+      const elbow = `M${along(a)} L${a.x},${a.y} L${along(b)}`;
+      corners.push([x, y, [a.id, b.id], elbow]);
+    }
+  }
+  return corners;
+}
+
+const CORNERS = Object.fromEntries(Object.entries(PIPES).map(([category, pipes]) =>
+  [category, pipeCorners(pipes, JUNCTIONS[category] || [])],
+));
+
+function joinedPipeStyle(ids, styles) {
+  const drawn = ids.map(id => styles.get(id)).filter(Boolean);
+  return drawn.find(style => style.flow) || drawn[0];
+}
+
 function active(group, mode, passiveEnabled) {
   const passive = mode === 'Passive cooling' && passiveEnabled;
   const compressor = ['Heat','Defrost','Hot water','Anti legionella','Pool'].includes(mode);
@@ -238,8 +284,11 @@ function legShare(id, flows) {
 
 // All animated legs are polylines in the direction of flow. The distance between
 // successive vertices gives their SVG length, including when rendering without a DOM.
+function pipePoints(path) {
+  return path.split(' ').map(point => point.slice(1).split(',').map(Number));
+}
 function pathLength(path) {
-  const points = path.split(' ').map(point => point.slice(1).split(',').map(Number));
+  const points = pipePoints(path);
   return points.slice(1).reduce((length, [x,y], index) => {
     const [previousX,previousY] = points[index];
     return length + Math.hypot(x - previousX, y - previousY);
@@ -436,21 +485,32 @@ export class GenesisWpDeviceCard extends HTMLElement {
         const color=flow&&celsius!==null?temperatureColor(celsius):'currentColor';
         const noSensor = Array.isArray(r) && celsius === null;
         const opacity = flow ? (noSensor ? 0.75 : 1) : 0.22;
-        styles.set(id,{flow,color,opacity});
-        return `<path data-path="${id}" data-flow="${flow?'active':'idle'}" d="${d}" fill="none" stroke="${color}" stroke-opacity="${opacity}" stroke-width="5"${dash?` stroke-dasharray="${dash}"`:''}></path>`;
+        styles.set(id,{flow,color,opacity,dash:Boolean(dash)});
+        return `<path data-path="${id}" data-flow="${flow?'active':'idle'}" d="${d}" fill="none" stroke="${color}" stroke-opacity="${opacity}" stroke-width="${PIPE_WIDTH}"${dash?` stroke-dasharray="${dash}"`:''}></path>`;
       }).join('');
       const junctions=(JUNCTIONS[category]||[]).map(([x,y,r,ids])=>{
-        const joined=ids.map(id=>styles.get(id)).filter(Boolean);
-        if(!joined.length) return '';
-        const s=joined.find(j=>j.flow)||{flow:false,color:'currentColor',opacity:0.22};
+        const s = joinedPipeStyle(ids, styles);
+        if (!s) return '';
         return `<circle class="junction" data-junction="${ids[0]}" data-flow="${s.flow?'active':'idle'}" cx="${x}" cy="${y}" r="${r}" fill="${s.color}" fill-opacity="${s.opacity}"/>`;
+      }).join('');
+      const corners = CORNERS[category].map(([x,y,ids,elbow]) => {
+        if (!ids.every(id => styles.has(id))) return '';
+        const style = joinedPipeStyle(ids, styles);
+        // An opaque solid elbow may overlap both legs; the overlap is invisible and leaves
+        // no seam at fractional pixel alignment. Translucent or dashed legs would show the
+        // overlap, so they keep the abutting outer-quadrant fill.
+        if (style.opacity === 1 && !ids.some(id => styles.get(id).dash)) {
+          return `<path class="pipe-corner" data-corner="${ids.join(' ')}" d="${elbow}" fill="none" stroke="${style.color}" stroke-width="${PIPE_WIDTH}" stroke-linejoin="miter"></path>`;
+        }
+        const half = PIPE_WIDTH / 2;
+        return `<rect class="pipe-corner" data-corner="${ids.join(' ')}" x="${x}" y="${y}" width="${half}" height="${half}" fill="${style.color}" fill-opacity="${style.opacity}"/>`;
       }).join('');
       // Fixed slots keep other legs' animations in place when a source starts or stops.
       const markers = PIPES[category].filter(([id]) => LEG_SOURCE.has(id)).map(([id]) =>
         `<g>${motion.get(id) || ''}</g>`,
       ).join('');
       // Keep optional geometry inside fixed siblings so the motion wrapper keeps its index.
-      const pipes = `<g>${pipesSvg}${junctions}</g><g class="flow-motion" aria-hidden="true" pointer-events="none">${markers}</g>`;
+      const pipes = `<g>${pipesSvg}${junctions}${corners}</g><g class="flow-motion" aria-hidden="true" pointer-events="none">${markers}</g>`;
       const positioned=new Set();
       const diagram=this._config.layout==='diagram';
       const [vx,vy,vw,vh]=VIEWS[category].split(' ').map(Number);
