@@ -188,20 +188,29 @@ async def test_a_changing_calibration_schedules_one_delayed_save_at_a_time(hass,
     assert len(scheduled) == 2
 
 
-# DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-118
-@pytest.mark.parametrize("disabled", [None, "buffer_volume", "circuit_flow", "heating_circuit_2", "buffer_tank"])
-async def test_hc2_return_availability(hass, start_emulator, monkeypatch, disabled):
+# DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-118 genesis-wp-ha/ac-194 genesis-wp-ha/ac-195
+@pytest.mark.parametrize(("disabled", "low_mixer_floor"), [
+    (None, False), (None, True), ("buffer_volume", False), ("circuit_flow", False),
+    ("heating_circuit_2", False), ("buffer_tank", False),
+])
+async def test_hc2_return_availability(hass, start_emulator, monkeypatch, disabled, low_mixer_floor):
+    if low_mixer_floor:
+        # The emulator's temperature spread is below the production 2 K floor.
+        monkeypatch.setattr(genesis_wp, "HeatingCircuit2ReturnEstimator", partial(
+            genesis_wp.HeatingCircuit2ReturnEstimator, min_mixer_delta_t=0.01,
+        ))
     # Only the loopback emulator handles these reads, so omit the production inter-request delay.
     monkeypatch.setattr(genesis_wp, "ThermiaGenesis", partial(genesis_wp.ThermiaGenesis, delay=0))
     emu = await start_emulator(PROFILE_615, dynamics=True, climate=flat_climate(), start_time=START)
     emu.step(60)
     entry = await setup_entry(hass, emu)
-    if disabled is not None:
+    circuit_flow = 1100 / 60 if low_mixer_floor else 18.33
+    if disabled is not None or low_mixer_floor:
         result = await hass.config_entries.options.async_init(entry.entry_id)
-        fields = {"buffer_volume": 300, "circuit_flow": 18.33}
+        fields = {"buffer_volume": 300, "circuit_flow": circuit_flow}
         if disabled in fields:
             del fields[disabled]
-        else:
+        elif disabled is not None:
             fields[disabled] = "not_installed"
         result = await hass.config_entries.options.async_configure(result["flow_id"], fields)
         assert result["type"] is FlowResultType.CREATE_ENTRY
@@ -222,8 +231,21 @@ async def test_hc2_return_availability(hass, start_emulator, monkeypatch, disabl
     assert math.isfinite(float(state.state))
     assert state.attributes["unit_of_measurement"] == "°C"
     assert state.attributes["source"] == "estimate"
-    assert state.attributes["circuit_flow"] == 18.33
+    assert state.attributes["circuit_flow"] == circuit_flow
     assert state.attributes["heat"] >= 0
+    flows = state.attributes
+    assert flows["heat_pump_return_flow"] >= 0
+    if low_mixer_floor:
+        assert 0 <= flows["hot_port_flow"] <= round(circuit_flow, 2)
+        assert flows["hot_port_flow"] == flows["buffer_return_flow"]
+        assert flows["hot_port_flow"] + flows["bypass_flow"] == pytest.approx(circuit_flow, abs=0.02)
+        assert flows["hot_port_flow"] + flows["either_way_flow"] == pytest.approx(
+            flows["heat_pump_return_flow"], abs=0.02,
+        )
+    else:
+        for key in ("hot_port_flow", "bypass_flow", "buffer_return_flow", "either_way_flow"):
+            assert flows[key] is None
+
 
     emu.advance(121)
     await coordinator.async_refresh()

@@ -21,6 +21,7 @@ from genesis_wp.derived import FlowEstimate
 from genesis_wp.derived import FlowEstimator
 from genesis_wp.derived import HC2_BUFFER
 from genesis_wp.derived import HC2_COMPRESSOR
+from genesis_wp.derived import HC2_CONDENSER_PUMP
 from genesis_wp.derived import HC2_PASSIVE_COOLING
 from genesis_wp.derived import HC2_PUMP
 from genesis_wp.derived import HC2_SUPPLY
@@ -522,6 +523,8 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
                 _LOGGER.warning("Invalid heating circuit 2 return estimation options")
             else:
                 self.registerAttribute(hc2_registers)
+                if REGISTERS[HC2_CONDENSER_PUMP][self.kind]:
+                    self.registerAttribute([HC2_CONDENSER_PUMP])
         # DHF-REQ: genesis-wp-ha/requirement-29 genesis-wp-ha/ac-178
         # Room heat exists only where an estimator can supply it.
         self.rooms_heat = DailyHeat() if self.hc2_estimator is not None else None

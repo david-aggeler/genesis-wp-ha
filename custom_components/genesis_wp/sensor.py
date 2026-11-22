@@ -349,7 +349,11 @@ class HC2ReturnSensor(CoordinatorEntity, SensorEntity):
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
     _attr_suggested_display_precision = 1
-    _unrecorded_attributes = frozenset({"register"})
+    _flow_attributes = (
+        "hot_port_flow", "bypass_flow", "buffer_return_flow",
+        "heat_pump_return_flow", "either_way_flow",
+    )
+    _unrecorded_attributes = frozenset(("register", *_flow_attributes))
 
     def __init__(self, coordinator):
         super().__init__(coordinator)
@@ -374,12 +378,17 @@ class HC2ReturnSensor(CoordinatorEntity, SensorEntity):
     def native_value(self):
         return self.coordinator.hc2_return.value
 
+    # DHF-REQ: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-194 genesis-wp-ha/ac-195
     @property
     def extra_state_attributes(self):
-        return {
-            "source": "estimate",
-            "heat": self.coordinator.hc2_return.heat,
-        }
+        estimate = self.coordinator.hc2_return
+        attributes = {"source": "estimate", "heat": estimate.heat}
+        for key in self._flow_attributes:
+            flow = getattr(estimate, key)
+            rounded = round(flow, 2) if flow is not None else None
+            # Preserve the direction and activity of flows below display precision.
+            attributes[key] = flow if rounded == 0 else rounded
+        return attributes
 
 
 class HeatSensor(CoordinatorEntity, SensorEntity):

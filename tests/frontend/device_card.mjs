@@ -439,7 +439,7 @@ for(const category of ['ksm','electric_meter_and_energy','controller']) {
 
 // DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-71
 assert.equal(services,0); assert.equal(ws,0);
-// DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-119 genesis-wp-ha/ac-120 genesis-wp-ha/ac-121 genesis-wp-ha/ac-122 genesis-wp-ha/ac-123 genesis-wp-ha/ac-124
+// DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-119 genesis-wp-ha/ac-120 genesis-wp-ha/ac-122 genesis-wp-ha/ac-123 genesis-wp-ha/ac-124
 {
   const states = structuredClone(hass.states);
   const entities = structuredClone(hass.entities);
@@ -501,6 +501,35 @@ assert.equal(services,0); assert.equal(ws,0);
     assert.equal(markers(card, leg), '', leg);
   }
   assert.match(pipe(card, 'bypass'), /data-flow="active"[^>]*stroke="currentColor" stroke-opacity="0.75"/);
+  // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-194 genesis-wp-ha/ac-195
+  Object.assign(returnState.attributes, {
+    hot_port_flow: 10, buffer_return_flow: 8, bypass_flow: 5, either_way_flow: 4,
+  });
+  returnState.state = '25';
+  const estimated = renderFlow(0.5);
+  for (const [leg, expected] of [
+    ['hc2-port-b', 188 / 15], ['tr9-mixer', 96 / 15],
+    ['room-return-buffer', 220 / 12], ['bypass', 256 / 7.5], ['either-way', 40 / 6],
+  ]) {
+    assert.ok(Math.abs(duration(estimated, leg) - expected) < 0.0001, leg);
+    assert.match(pipe(estimated, leg), /data-flow="active"[^>]*stroke="currentColor" stroke-opacity="0.75"/);
+  }
+  assert.match(markers(estimated, 'either-way'), /path="M1220,290 L1220,330" rotate="auto"/);
+  returnState.attributes.either_way_flow = -4;
+  const reverse = renderFlow(0.5);
+  assert.equal(duration(reverse, 'either-way'), duration(estimated, 'either-way'));
+  assert.match(markers(reverse, 'either-way'), /path="M1220,330 L1220,290" rotate="auto"/);
+  returnState.attributes.buffer_return_flow = null;
+  returnState.attributes.either_way_flow = 0;
+  const partial = renderFlow(0.5);
+  assert.equal(markers(partial, 'room-return-buffer'), '');
+  assert.match(pipe(partial, 'room-return-buffer'), /data-flow="active"[^>]*stroke="#[0-9a-f]+" stroke-opacity="1"/);
+  assert.equal(markers(partial, 'either-way'), '');
+  assert.match(pipe(partial, 'either-way'), /data-flow="idle"[^>]*stroke="currentColor" stroke-opacity="0.22"/);
+  for (const key of ['hot_port_flow', 'buffer_return_flow', 'bypass_flow', 'either_way_flow']) {
+    delete returnState.attributes[key];
+  }
+  returnState.state = 'unavailable';
   let listener;
   const preference = {
     matches: true,
