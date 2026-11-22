@@ -850,9 +850,10 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     const cover = (svg, x, y) => {
       for (const [tag] of svg.matchAll(/<rect\b[^>]*>/g)) {
         const attr = name => tag.match(new RegExp(`(?:^| )${name}="([^"]+)"`))?.[1];
-        if (+attr('x') === x - 2.5 && +attr('y') === y - 2.5 &&
-            +attr('width') === 5 && +attr('height') === 5) {
-          return {color: attr('fill'), opacity: attr('fill-opacity')};
+        const left = +attr('x'), top = +attr('y');
+        const width = +attr('width'), height = +attr('height');
+        if (left < x && x < left + width && top < y && y < top + height) {
+          return {color: attr('fill'), opacity: attr('fill-opacity'), bounds: [left, top, width, height]};
         }
       }
     };
@@ -873,7 +874,9 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
         if (a.id === b.id || a.dx * b.dx + a.dy * b.dy !== 0) continue;
         const [x, y] = point.split(',').map(Number);
         if (svg.match(new RegExp(`<circle class="junction"[^>]* cx="${x}" cy="${y}"`))) continue;
-        assert.ok(cover(svg, x, y), `missing pipe corner at ${point} (${a.id}, ${b.id})`);
+        const outerX = x - Math.sign(a.dx + b.dx);
+        const outerY = y - Math.sign(a.dy + b.dy);
+        assert.ok(cover(svg, outerX, outerY), `missing pipe corner at ${point} (${a.id}, ${b.id})`);
       }
     };
     checkCorners(out);
@@ -882,11 +885,39 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     }
     const condenserReturn = style(out, 'condenser-in');
     assert.equal(condenserReturn.flow, 'active');
-    assert.deepEqual(cover(out, 1100, 390), {
-      color: condenserReturn.color, opacity: condenserReturn.opacity,
-    });
+    const cornerBounds = [1100, 387.5, 2.5, 2.5];
+    const renderMode = (category, mode, hiddenRegister) => {
+      const states = structuredClone(heat.states);
+      states[idOf(1)].state = mode;
+      const entities = structuredClone(heat.entities);
+      if (hiddenRegister !== undefined) entities[idOf(hiddenRegister)].disabled_by = 'user';
+      const diagram = new Card();
+      diagram.setConfig({device:category,entry:fixture.entry,layout:'diagram'});
+      diagram.hass = {...heat, entities, states};
+      return html(diagram);
+    };
+    const hotWater = renderMode('internal_heat_pump', 'Hot water');
+    const hotWaterReturn = style(hotWater, 'condenser-in');
+    assert.equal(hotWaterReturn.flow, 'active');
+    assert.equal(style(hotWater, 'buffer-return').flow, 'idle');
+    for (const [svg, active] of [[out, condenserReturn], [hotWater, hotWaterReturn]]) {
+      assert.deepEqual(cover(svg, 1101, 389), {
+        color: active.color, opacity: active.opacity, bounds: cornerBounds,
+      });
+    }
     assert.equal(style(oh, 'condenser-in').flow, 'idle');
-    assert.deepEqual(cover(oh, 1100, 390), {color: 'currentColor', opacity: '0.22'});
+    assert.deepEqual(cover(oh, 1101, 389), {
+      color: 'currentColor', opacity: '0.22', bounds: cornerBounds,
+    }, 'idle corner fill occupies only the outer quadrant');
+    for (const [register, hidden, visible] of [
+      [9, 'charging', 'tank-top'],
+      [15, 'tank-top', 'charging'],
+    ]) {
+      const svg = renderMode('hot_water', 'Hot water', register);
+      assert.ok(style(svg, visible), `${visible} remains visible`);
+      assert.equal(style(svg, hidden), null, `${hidden} is hidden`);
+      assert.equal(cover(svg, 389, 161), undefined, `${visible} keeps its free end`);
+    }
     // No static text-colored dot remains in the drawing.
     assert.doesNotMatch(out, /<circle cx="1220" cy="290"[^>]*fill="currentColor"/);
   }

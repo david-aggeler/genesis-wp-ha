@@ -202,9 +202,10 @@ const JUNCTIONS = {
 const PIPE_WIDTH = 5;
 
 // DHF-REQ: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-170
-// A pair of perpendicular pipe ends needs a miter fill where their butt caps meet.
+// A pair of perpendicular pipe ends needs a fill only in the outer quadrant.
 function pipeCorners(pipes, junctions) {
   const endpoints = new Map();
+  const half = PIPE_WIDTH / 2;
   for (const [id,,,path] of pipes) {
     const points = pipePoints(path);
     for (const [[x,y], [nextX,nextY]] of [[points[0], points[1]], [points.at(-1), points.at(-2)]]) {
@@ -219,7 +220,10 @@ function pipeCorners(pipes, junctions) {
     if (ends.length !== 2 || junctionPoints.has(key)) continue;
     const [a,b] = ends;
     if (a.id !== b.id && a.dx * b.dx + a.dy * b.dy === 0) {
-      corners.push([a.x, a.y, [a.id, b.id]]);
+      // The legs occupy the sides toward their neighbors. Fill the opposite sides.
+      const x = a.x - (a.dx + b.dx > 0 ? half : 0);
+      const y = a.y - (a.dy + b.dy > 0 ? half : 0);
+      corners.push([x, y, [a.id, b.id]]);
     }
   }
   return corners;
@@ -483,10 +487,10 @@ export class GenesisWpDeviceCard extends HTMLElement {
         return `<circle class="junction" data-junction="${ids[0]}" data-flow="${s.flow?'active':'idle'}" cx="${x}" cy="${y}" r="${r}" fill="${s.color}" fill-opacity="${s.opacity}"/>`;
       }).join('');
       const corners = CORNERS[category].map(([x,y,ids]) => {
+        if (!ids.every(id => styles.has(id))) return '';
         const style = joinedPipeStyle(ids, styles);
-        if (!style) return '';
         const half = PIPE_WIDTH / 2;
-        return `<rect x="${x - half}" y="${y - half}" width="${PIPE_WIDTH}" height="${PIPE_WIDTH}" fill="${style.color}" fill-opacity="${style.opacity}"/>`;
+        return `<rect x="${x}" y="${y}" width="${half}" height="${half}" fill="${style.color}" fill-opacity="${style.opacity}"/>`;
       }).join('');
       // Fixed slots keep other legs' animations in place when a source starts or stops.
       const markers = PIPES[category].filter(([id]) => LEG_SOURCE.has(id)).map(([id]) =>
