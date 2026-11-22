@@ -53,7 +53,8 @@ Use these only as chat shorthand. **Records always carry the full name.**
 
 - The Home Assistant custom integration, openbrain product **genesis-wp-ha**: domain `genesis_wp`, HACS layout (`custom_components/<domain>/`, `hacs.json`), one integration per repo.
 - **genesis-wp is a separate product** (library + emulator, repo `/container/genesis-wp`, session wpe-1). This repo consumes it through `manifest.json` `requirements` and keeps **no library code here**. Register, decoding, transport or emulator fixes go to genesis-wp.
-- Until genesis-wp is on PyPI, `manifest.json` pins a git direct reference to a library commit: `genesis-wp @ git+https://github.com/david-aggeler/genesis-wp@<sha>`. A PyPI release comes before wider HACS distribution or an HA core submission.
+- `manifest.json` pins a git direct reference to the library: `genesis-wp @ git+https://github.com/david-aggeler/genesis-wp@<ref>`, a commit today and a released library tag once one exists.
+- **No PyPI** (owner, 2026-11-22). Neither product uploads to PyPI or any other package index; releases are git tags and GitHub releases only (`.claude/skills/publish/SKILL.md`). Changing that is the owner's decision, not a default to revisit.
 - A fork of [ulrichwi/thermiagenesis](https://github.com/ulrichwi/thermiagenesis), whose code is identical to [CJNE/thermiagenesis](https://github.com/CJNE/thermiagenesis) master `b55fa58`. Remotes: `origin` (ours), `upstream` (ulrichwi), `cjne`.
 - **Not** in charge of rollout. The homelab product owns deployment to its Home Assistant and homelab exploration-8. When a stage lands, tell homelab.
 

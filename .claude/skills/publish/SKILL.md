@@ -4,7 +4,7 @@ description: >
   Publish a genesis-wp-ha integration release: library tag pin and manifest BUILD stamp check,
   gold release notes, integration gate on a clean main, annotated vX.Y.Z tag and GitHub release on
   origin, gold product_version released and the next one opened, old GitHub releases pruned,
-  homelab told the tag and SHA. Never PyPI or any package index. Use when the user says "/publish",
+  homelab told the tag and SHA. No PyPI or other package index unless the owner decides otherwise. Use when the user says "/publish",
   "publish a version", "publish vX.Y.Z", "cut a release", "release the integration", "tag a release".
 allowed-tools: mcp__gold__search_release_notes, mcp__gold__list_release_notes, mcp__gold__get_release_notes, mcp__gold__create_release_notes, mcp__gold__update_release_notes, mcp__gold__get_template_for, mcp__gold__admin_list_product_versions, mcp__gold__admin_get_product_version, mcp__gold__admin_update_product_version, mcp__gold__admin_advance_product_version_status, mcp__gold__admin_create_product_version, mcp__gold__create_baseline, mcp__gold__list_change_request, mcp__gold__get_change_request, mcp__gold__list_issue
 disable-model-invocation: true
@@ -26,7 +26,7 @@ The procedure carries user_need-1 and its requirements:
 | Requirement | Rule |
 |---|---|
 | requirement-32 | version MAJOR.MINOR.PATCH.BUILD, stamped by the merge |
-| requirement-33 | what a release consists of; never a package index |
+| requirement-33 | what a release consists of; no package index |
 | requirement-34 | release retention |
 
 The skill installs nothing anywhere. homelab owns rollout to DEV and PROD.
@@ -236,7 +236,7 @@ For a failure, name the step that failed and what is already live.
 
 ## What this skill never does
 
-- Upload to PyPI or any package index, or create a release while an upload path exists.
+- Upload to PyPI or any package index, or create a release while an upload path exists. Only the owner can change that rule.
 - Release without the owner's explicit yes in this chat.
 - Release on a library commit pin instead of a released genesis-wp tag.
 - Skip or pipe the gate, or release from a dirty tree, a branch, a worktree, a shallow clone or an unstamped HEAD.
