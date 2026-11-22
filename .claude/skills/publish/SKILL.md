@@ -27,7 +27,7 @@ The procedure carries user_need-1 and its requirements:
 |---|---|
 | requirement-32 | version MAJOR.MINOR.PATCH.BUILD, stamped by the merge (ac-179 to ac-181) |
 | requirement-33 | what a release consists of (ac-189 to ac-192); no package index |
-| requirement-34 | release retention: three named bounds (ac-186 to ac-188) |
+| requirement-34 | release retention, openbrain requirement-1163 verbatim (ac-186 to ac-188) |
 
 The skill installs nothing anywhere. homelab owns rollout to DEV and PROD.
 
@@ -202,23 +202,28 @@ Do these in order, and report anything partial.
 
 ## Step 7: Prune old GitHub releases
 
-requirement-34 sets the keep-set: per MAJOR.MINOR line, ordered newest first.
+requirement-34 carries openbrain requirement-1163 verbatim. Three named bounds, defaults maxMinorLines = 5, maxDeepLines = 2, maxPatches = 5.
+
+- **Invariant:** maxDeepLines ≤ maxMinorLines. Check it before computing anything. A violating policy is rejected, never clamped.
+- **Release:** a version carrying a GitHub Release entry. Only releases are keep-eligible.
+- **Terminal release:** the highest-numbered release on a major.minor line.
 
 | Rule | Keeps |
 |---|---|
-| Terminal rule | the highest patch of each of the 5 newest lines; older lines keep nothing |
-| Depth rule | the 5 newest patches of each of the 2 newest lines |
+| Terminal rule | the terminal release of each of the maxMinorLines newest lines; older lines keep nothing |
+| Depth rule | the maxPatches newest patch releases of each of the maxDeepLines newest lines |
 
-- **Eligibility:** only versions with a GitHub release are eligible.
-- **Prune set:** every other release.
+- **Prune set:** every published version tag outside the keep-set, including tags that are not releases (the upstream 0.0.x tags, an aborted publish).
+- **What a prune deletes:** this repo publishes no images or packages, so pruning deletes only the GitHub Release entry. A pruned non-release has nothing to delete.
 - **Tags:** never deleted, upstream tags included.
 
 ```zsh
-gh api --paginate repos/david-aggeler/genesis-wp-ha/releases --jq '.[].tag_name'   # list
-gh release delete <tag> --yes --repo david-aggeler/genesis-wp-ha                    # delete, keeps the tag; never --cleanup-tag
+gh api --paginate repos/david-aggeler/genesis-wp-ha/releases --jq '.[].tag_name'   # releases
+git ls-remote --tags origin                                                      # all version tags
+gh release delete <tag> --yes --repo david-aggeler/genesis-wp-ha                 # delete a release, keep the tag; never --cleanup-tag
 ```
 
-Show the keep and prune sets first, as a dry run. Delete only the prune set. Compare `git ls-remote --tags origin` before and after; the two lists must be identical. Once a pruning script is committed through a change_request, use it here instead of the hand computation.
+Show the keep and prune sets first, as a dry run. Delete the Release entry of every pruned release, and nothing else. Compare `git ls-remote --tags origin` before and after; the two lists must be identical. Once the shared pruning script from genesis-wp change_request-72 serves this repo (`--repo`), use it here instead of the hand computation.
 
 ## Step 8: Notify
 
