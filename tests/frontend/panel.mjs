@@ -289,7 +289,7 @@ p.route={path:'/genesis-wp'}; assert.match(html(),/data-tile=/);
   return [card];
  };
  p.hass = {...hass,
-  devices: {...hass.devices, [childId]: {...hass.devices[childId], via_device_id: parent}},
+  devices: {...hass.devices, [childId]: {...hass.devices[childId], parent_device_id: parent}},
   entities: {...hass.entities, [id]: {device_id: parent, entity_category: 'diagnostic'}},
   states: {...hass.states, [id]: {state: '2', attributes: {genesis_wp_diagnostic: 'disabled_entities'}}},
  };

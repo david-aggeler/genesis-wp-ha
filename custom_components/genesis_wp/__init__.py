@@ -262,7 +262,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     # DHF-REQ: genesis-wp-ha/requirement-19
     registry = er.async_get(hass)
     reenabled = 0
-    for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+    # With "disable new entities" set, Home Assistant itself disables new entries with the
+    # INTEGRATION disabler; those reflect the user's preference, not the legacy default.
+    legacy = [] if entry.pref_disable_new_entities else er.async_entries_for_config_entry(registry, entry.entry_id)
+    for entity in legacy:
         if entity.disabled_by == er.RegistryEntryDisabler.INTEGRATION:
             registry.async_update_entity(entity.entity_id, disabled_by=None)
             reenabled += 1

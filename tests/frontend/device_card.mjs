@@ -1056,7 +1056,7 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
 {
   const id = 'sensor.renamed_diagnostic';
   const parent = 'heat-pump-parent';
-  const devices = {...hass.devices, [heatPumpId]: {...hass.devices[heatPumpId], via_device_id: parent}};
+  const devices = {...hass.devices, [heatPumpId]: {...hass.devices[heatPumpId], parent_device_id: parent}};
   const entities = {...hass.entities, [id]: {device_id: parent, entity_category: 'diagnostic'}};
   const state = value => ({state: value, attributes: {genesis_wp_diagnostic: 'disabled_entities'}});
   const notice = '2 entities disabled \u2014 enable them in Settings \u2192 Entities';

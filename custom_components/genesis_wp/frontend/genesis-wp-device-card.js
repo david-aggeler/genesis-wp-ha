@@ -441,8 +441,10 @@ export class GenesisWpDeviceCard extends HTMLElement {
   // DHF-REQ: genesis-wp-ha/requirement-35
   _disabledEntitiesNotice(resolved) {
     const states = this._hass.states;
+    // Category devices are Home Assistant child devices; the diagnostic sits on their parent.
+    const owners = [resolved.id, resolved.device.parent_device_id].filter(Boolean);
     const diagnostic = Object.entries(this._hass.entities || {}).find(([id, entity]) =>
-      (entity.device_id === resolved.id || entity.device_id === resolved.device.via_device_id)
+      owners.includes(entity.device_id)
       && states[id]?.attributes.genesis_wp_diagnostic === 'disabled_entities');
     const count = Number(diagnostic && states[diagnostic[0]].state);
     if (!Number.isSafeInteger(count) || count < 1) return '';
