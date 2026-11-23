@@ -9,7 +9,7 @@ from custom_components.genesis_wp.config_flow import model_capabilities
 from custom_components.genesis_wp.const import HC2_RETURN_DEFAULTS
 from custom_components.genesis_wp.const import DOMAIN
 from genesis_wp import const as c
-from homeassistant.data_entry_flow import FlowResultType
+from homeassistant.data_entry_flow import FlowResultType, InvalidData
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -198,7 +198,7 @@ async def test_options_step_lists_modules_with_automatic_default(hass, start_emu
 
     fields = {
         str(key): key for key in result["data_schema"].schema
-        if str(key) not in {"show_absent", "buffer_volume", "circuit_flow"}
+        if str(key) not in {"show_absent", "buffer_volume", "circuit_flow", "buffer_reference_offset"}
     }
     detected = hass.data[DOMAIN][entry.entry_id].thermia.capabilities
     expected = [name for name in model_capabilities(WPE_I_KIND) if detected[name].state != "absent"]
@@ -214,7 +214,7 @@ async def test_options_step_lists_modules_with_automatic_default(hass, start_emu
     result = await hass.config_entries.options.async_configure(result["flow_id"], {})
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
-    assert entry.options == {"buffer_volume": None, "circuit_flow": None}
+    assert entry.options == {"buffer_volume": None, "circuit_flow": None, "buffer_reference_offset": None}
 
 
 # DHF-REQ: genesis-wp-ha/requirement-14
@@ -235,7 +235,7 @@ async def test_saving_module_options_applies_them(hass, start_emulator):
     # Hot water and pool are detected absent: they sit on the second page (requirement-16).
     result = await hass.config_entries.options.async_init(entry_id)
     result = await hass.config_entries.options.async_configure(
-        result["flow_id"], {"show_absent": True, "buffer_volume": 300, "circuit_flow": 18.33}
+        result["flow_id"], {"show_absent": True, "buffer_volume": 300, "circuit_flow": 18.33, "buffer_reference_offset": 2}
     )
     assert result["step_id"] == "absent_modules"
     result = await hass.config_entries.options.async_configure(
@@ -244,7 +244,10 @@ async def test_saving_module_options_applies_them(hass, start_emulator):
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
 
-    assert entry.options == {"hot_water": "present", "pool": "absent", "buffer_volume": 300, "circuit_flow": 18.33}
+    assert entry.options == {
+        "hot_water": "present", "pool": "absent", "buffer_volume": 300,
+        "circuit_flow": 18.33, "buffer_reference_offset": 2.0,
+    }
     assert hass.config_entries.async_get_entry(entry_id) is entry
     assert hot_water_entities <= registered(hass, entry)
 
@@ -305,3 +308,39 @@ async def test_hc2_return_options_reject_nonfinite_values(hass, start_emulator, 
     assert result["type"] is FlowResultType.FORM
     assert result["errors"].get(field)
     assert entry.options == {}
+
+
+# DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-141
+@pytest.mark.parametrize(("submitted", "valid"), [
+    ({}, True),
+    ({"buffer_reference_offset": 0}, True),
+    ({"buffer_reference_offset": 10}, True),
+    ({"buffer_reference_offset": 10.5}, False),
+    ({"buffer_reference_offset": 2.25}, False),
+])
+async def test_buffer_reference_offset_option(hass, start_emulator, submitted, valid):
+    emu = await start_emulator(PROFILE_615)
+    entry = await setup_with_options(hass, emu, {})
+    result = await hass.config_entries.options.async_init(entry.entry_id)
+    assert "buffer_reference_offset" in {str(key) for key in result["data_schema"].schema}
+    field, selector = next(
+        (field, selector) for field, selector in result["data_schema"].schema.items()
+        if str(field) == "buffer_reference_offset"
+    )
+    assert field.description["suggested_value"] == 2.0
+    assert selector.config["step"] == 0.5
+    if submitted.get("buffer_reference_offset") == 10.5:
+        with pytest.raises(InvalidData):
+            await hass.config_entries.options.async_configure(result["flow_id"], submitted)
+        assert entry.options == {}
+        assert emu.writes == []
+        return
+    result = await hass.config_entries.options.async_configure(result["flow_id"], submitted)
+    if valid:
+        assert result["type"] is FlowResultType.CREATE_ENTRY
+        await hass.async_block_till_done()
+        assert entry.options["buffer_reference_offset"] == submitted.get("buffer_reference_offset")
+    else:
+        assert result["type"] is FlowResultType.FORM
+        assert result["errors"]["buffer_reference_offset"]
+    assert emu.writes == []

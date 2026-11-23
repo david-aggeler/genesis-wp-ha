@@ -2,7 +2,7 @@
 import asyncio
 import logging
 import time
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from genesis_wp import ThermiaException
@@ -50,7 +50,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.const import EVENT_HOMEASSISTANT_FINAL_WRITE
 from homeassistant.core import HomeAssistant
 from homeassistant.core import callback
-from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.event import async_call_later, async_track_point_in_utc_time
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
@@ -64,6 +64,7 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 
+from .const import BUFFER_REFERENCE_OFFSET, DEFAULT_BUFFER_REFERENCE_OFFSET
 from .const import CARD_MODULES
 from .const import CONF_CAPABILITIES
 from .const import CONF_CAPABILITIES_SEEN
@@ -81,6 +82,7 @@ from .const import EMULATOR_HOST
 from .const import MODE_EMULATED
 
 from .balance import DailyHeat
+from .buffer_use import BufferUseEvaluator, CURVE_INPUTS, PHASE_INPUTS
 from .cycles import RunTracker
 
 POWER_OUTPUT = genesis_const.ATTR_INPUT_CURRENT_POWER_OUTPUT
@@ -129,7 +131,7 @@ def capability_overrides(options) -> dict[str, str]:
     """The entry's module choices as library overrides; anything this library version rejects is dropped."""
     overrides = {}
     for name, state in options.items():
-        if name in HC2_RETURN_DEFAULTS:
+        if name == BUFFER_REFERENCE_OFFSET or name in HC2_RETURN_DEFAULTS:
             continue
         if name in CAPABILITY_NAMES and state in (PRESENT, ABSENT):
             overrides[name] = state
@@ -281,6 +283,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     calibrations = await store.async_load() or {}
     coordinator = GenesisDataUpdateCoordinator(hass, entry, connection, emulator, store, calibrations)
     await coordinator.async_restore_runs()
+    await coordinator.async_restore_buffer_phases()
     await coordinator.async_refresh()
 
     if not coordinator.last_update_success:
@@ -295,6 +298,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         config_entry_id=entry.entry_id, **coordinator.device_info
     ).id
     coordinator.freeze_capabilities()
+    coordinator.schedule_buffer_rollover()
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
@@ -363,7 +367,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
         coordinator = hass.data[DOMAIN].pop(entry.entry_id)
         await coordinator.async_save_calibrations()
         await coordinator.async_save_runs()
-        hass.data.get(DATA_RUN_STORES, {}).pop(entry.entry_id, None)
+        await coordinator.async_save_buffer_phases()
+        coordinator.cancel_buffer_rollover()
+        # The closed stores stay registered: a write Home Assistant deferred to its final-write
+        # event belongs to their Store, which a later setup or removal must reuse to cancel it.
         await coordinator.async_close()
         if not hass.data[DOMAIN]:
             async_remove_panel(hass, "genesis-wp")
@@ -373,11 +380,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Discard observations and calibration owned by the removed entry."""
+    if (coordinator := hass.data.get(DOMAIN, {}).get(entry.entry_id)) is not None:
+        # A failed unload skipped the coordinator's teardown; stop its daily rollover here.
+        coordinator.cancel_buffer_rollover()
     # DHF-REQ: genesis-wp-ha/requirement-26  (ac-111)
     await flow_calibration_store(hass, entry.entry_id).async_remove()
-    # The shared instance, when a retrying setup or a failed unload left one, cancels its pending write.
+    # The shared instances, when a retrying setup or a failed unload left one, cancel their pending writes.
     await compressor_run_store(hass, entry.entry_id).async_remove()
     hass.data[DATA_RUN_STORES].pop(entry.entry_id, None)
+    await buffer_phase_store(hass, entry.entry_id).async_remove()
+    hass.data[DATA_BUFFER_STORES].pop(entry.entry_id, None)
 
 
 # DHF-REQ: genesis-wp-ha/requirement-26
@@ -393,11 +405,12 @@ def flow_calibration_store(hass: HomeAssistant, entry_id: str) -> Store:
 
 COMPRESSOR_RUN_SAVE_DELAY = 30  # [s]
 DATA_RUN_STORES = f"{DOMAIN}_compressor_run_stores"
+DATA_BUFFER_STORES = f"{DOMAIN}_buffer_phase_stores"
 
 
-# DHF-REQ: genesis-wp-ha/requirement-28
-class CompressorRunStore:
-    """The single owner of one entry's stored daily compressor observations.
+# DHF-REQ: genesis-wp-ha/requirement-28 genesis-wp-ha/requirement-30
+class DailySnapshotStore:
+    """The single owner of one entry's stored daily observations of one kind.
 
     Every coordinator of the entry (setup retries included) and its removal share this
     instance, so a pending write is always cancellable. It owns its debounce timer and
@@ -406,9 +419,9 @@ class CompressorRunStore:
     (ac-161, ac-165, ac-166).
     """
 
-    def __init__(self, hass: HomeAssistant, entry_id: str):
+    def __init__(self, hass: HomeAssistant, key: str, store: Store | None = None):
         self._hass = hass
-        self._store = Store(hass, 1, f"{DOMAIN}.compressor_runs.{entry_id}")
+        self._store = store if store is not None else Store(hass, 1, key)
         self._data_func = None
         self._unsub_timer = None
         self._unsub_final_write = None
@@ -475,12 +488,29 @@ class CompressorRunStore:
             await self._store.async_remove()
 
 
-def compressor_run_store(hass: HomeAssistant, entry_id: str) -> CompressorRunStore:
-    """The entry's run store, shared until the entry unloads or is removed."""
-    stores = hass.data.setdefault(DATA_RUN_STORES, {})
-    if entry_id not in stores:
-        stores[entry_id] = CompressorRunStore(hass, entry_id)
+def _daily_snapshot_store(hass: HomeAssistant, registry: str, key: str, entry_id: str) -> DailySnapshotStore:
+    """The entry's open snapshot store; one closed by an unload is reopened on the same Store.
+
+    Keeping the Store instance lets removal cancel a write Home Assistant deferred to its
+    final-write event while it was stopping (formal_review-112 B1).
+    """
+    stores = hass.data.setdefault(registry, {})
+    current = stores.get(entry_id)
+    if current is None or current.closed:
+        stores[entry_id] = DailySnapshotStore(
+            hass, key, None if current is None else current._store
+        )
     return stores[entry_id]
+
+
+def compressor_run_store(hass: HomeAssistant, entry_id: str) -> DailySnapshotStore:
+    """The entry's run store, shared until the entry is removed."""
+    return _daily_snapshot_store(hass, DATA_RUN_STORES, f"{DOMAIN}.compressor_runs.{entry_id}", entry_id)
+
+
+def buffer_phase_store(hass: HomeAssistant, entry_id: str) -> DailySnapshotStore:
+    """The entry's buffer discharge store, shared until the entry is removed."""
+    return _daily_snapshot_store(hass, DATA_BUFFER_STORES, f"{DOMAIN}.buffer_phases.{entry_id}", entry_id)
 
 
 def seeded_estimator(key: str, loop, seed) -> FlowEstimator:
@@ -568,6 +598,17 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self.hc2_estimator = None
         self.circuit_flow = entry.options.get("circuit_flow", HC2_RETURN_DEFAULTS["circuit_flow"])
         buffer_volume = entry.options.get("buffer_volume", HC2_RETURN_DEFAULTS["buffer_volume"])
+        self.buffer_use = None
+        self._buffer_store = None
+        self._cancel_buffer_rollover = None
+        if all(REGISTERS[key][self.kind] for key in PHASE_INPUTS):
+            offset = entry.options.get(BUFFER_REFERENCE_OFFSET, DEFAULT_BUFFER_REFERENCE_OFFSET)
+            self.buffer_use = BufferUseEvaluator(buffer_volume, offset)
+            self._buffer_store = buffer_phase_store(hass, entry.entry_id)
+            self.registerAttribute(list(PHASE_INPUTS))
+        self.supports_curve_gap = all(REGISTERS[key][self.kind] for key in CURVE_INPUTS)
+        if self.supports_curve_gap:
+            self.registerAttribute(list(CURVE_INPUTS))
         hc2_registers = [*HC2_BUFFER, HC2_SUPPLY, HC2_COMPRESSOR, HC2_PUMP, *HC2_PASSIVE_COOLING]
         self.supports_hc2_return = (
             "condenser_flow" in self.flow_estimators and all(REGISTERS[r][self.kind] for r in hc2_registers)
@@ -624,6 +665,23 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             return
         self.run_tracker.restore(dt_util.now(), snapshot)
 
+    # DHF-REQ: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146
+    async def async_restore_buffer_phases(self):
+        """Restore shared observations before polling or adding entities."""
+        if self._buffer_store is not None:
+            try:
+                snapshot = await self._buffer_store.async_load()
+            except Exception as error:  # A damaged snapshot must not prevent setup.
+                _LOGGER.warning("Buffer discharge snapshot unreadable (%s)", type(error).__name__)
+                return
+            self.buffer_use.restore(dt_util.now(), snapshot)
+
+    # DHF-REQ: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146
+    async def async_save_buffer_phases(self):
+        """Flush today's buffer observations when the entry unloads; later phases schedule no writes."""
+        if self._buffer_store is not None:
+            await self._buffer_store.async_close(self.buffer_use.snapshot())
+
     async def async_save_runs(self):
         """Flush compressor observations when the entry unloads; later updates schedule no writes."""
         if self._run_store is not None:
@@ -635,6 +693,8 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         """Drop a pending statistics write and keep the store open."""
         if self._run_store is not None:
             self._run_store.async_cancel()
+        if self._buffer_store is not None:
+            self._buffer_store.async_cancel()
 
     def _track_run(self, signal, mode=None):
         if self.run_tracker is not None and self.run_tracker.add(dt_util.now(), signal, mode):
@@ -653,6 +713,8 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             data = await self.thermia.async_update(only_registers=self.attributes.keys())
         except ThermiaException as error:
             self._track_run(None)
+            if self.buffer_use is not None:
+                self.buffer_use.add(dt_util.now(), {})
             if self.hc2_estimator is not None:
                 self.hc2_return = self.hc2_estimator.add(self.flow_clock(), {}, None)
             self._track_heat(None, None, False)
@@ -677,7 +739,54 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             signal = None if COMPRESSOR_SIGNAL in unread else data.get(COMPRESSOR_SIGNAL)
             mode = None if OPERATING_MODE in unread else data.get(OPERATING_MODE)
             self._track_run(signal, mode)
+        if self.buffer_use is not None:
+            previous_phase = self.buffer_use.last
+            # An absent buffer tank or circuit 2 yields no phase observations (requirement-30).
+            self.buffer_use.add(dt_util.now(), {} if self.hc2_modules_absent else {
+                key: data[key] for key in PHASE_INPUTS if key in data and key not in unread
+            })
+            if self.buffer_use.last is not previous_phase:
+                self._buffer_store.async_delay_save(self.buffer_use.snapshot)
         return data
+
+    @callback
+    def schedule_buffer_rollover(self, now=None):
+        if self.buffer_use is not None:
+            now = dt_util.now() if now is None else now
+            tomorrow = now.date() + timedelta(days=1)
+            midnight = datetime.combine(tomorrow, datetime.min.time(), tzinfo=now.tzinfo)
+            boundary = midnight.astimezone(UTC)
+            if boundary.astimezone(now.tzinfo) != midnight:
+                # The two folds of an imaginary midnight bracket the clock jump.
+                before = midnight.replace(fold=1).astimezone(UTC)
+                while (boundary - before).total_seconds() > 1:
+                    seconds = int((boundary - before).total_seconds())
+                    midpoint = before + timedelta(seconds=seconds // 2)
+                    if midpoint.astimezone(now.tzinfo).date() < tomorrow:
+                        before = midpoint
+                    else:
+                        boundary = midpoint
+            self._cancel_buffer_rollover = async_track_point_in_utc_time(
+                self.hass, self._reset_buffer_day, boundary,
+            )
+
+    @callback
+    def cancel_buffer_rollover(self):
+        if self._cancel_buffer_rollover is not None:
+            self._cancel_buffer_rollover()
+            self._cancel_buffer_rollover = None
+
+    async def async_shutdown(self):
+        self.cancel_buffer_rollover()
+        await super().async_shutdown()
+
+    @callback
+    def _reset_buffer_day(self, boundary):
+        local_now = dt_util.now()
+        now = max(boundary, local_now.astimezone(UTC)).astimezone(local_now.tzinfo)
+        self.schedule_buffer_rollover(now)
+        if self.buffer_use.roll_day(now):
+            self.async_update_listeners()
 
     def _track_heat(self, power, heat, pump_on):
         """Accumulate heat once per coordinator refresh."""
@@ -688,11 +797,16 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             self.rooms_heat.add(now, heat, pump_on)
 
     @property
-    def rooms_heat_estimable(self) -> bool:
-        """False once heating circuit 2 or its buffer tank is confirmed absent."""
-        return self.hc2_estimator is not None and not any(
+    def hc2_modules_absent(self) -> bool:
+        """True once heating circuit 2 or its buffer tank is confirmed absent."""
+        return any(
             self.thermia.capability_state(name) == ABSENT for name in ("buffer_tank", "heating_circuit_2")
         )
+
+    @property
+    def rooms_heat_estimable(self) -> bool:
+        """False once heating circuit 2 or its buffer tank is confirmed absent."""
+        return self.hc2_estimator is not None and not self.hc2_modules_absent
 
     def _estimate_flows(self, data):
         """Feed each loop's estimator; registers not read this update count as missing, never as 0."""

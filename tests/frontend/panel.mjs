@@ -53,6 +53,7 @@ for(const c of order.filter(device)) {
   const s=hass.states[id]; if(!s) continue;
   const count=body.split(`data-entity="${id}"`).length-1;
   if(id.startsWith('binary_sensor.')&&s.attributes.device_class==='problem'&&s.state==='off') assert.equal(count,0);
+  else if(s.attributes.register==='derived_buffer_judgement') assert.equal(count,0);
   else if(!/curve at|heat curve x coordinate/i.test(s.attributes.friendly_name||'')) assert.equal(count,1+(keyRegs[c]||[]).includes(s.attributes.register),id);
  }
  if(['heating_system','additional_heating_circuits'].includes(c)) assert.match(body,/<genesis-wp-heating-curve-card/);

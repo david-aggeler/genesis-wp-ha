@@ -23,6 +23,7 @@ from homeassistant.helpers.restore_state import RestoredExtraData
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from . import COMPRESSOR_SIGNAL
+from .buffer_use import CURVE_INPUTS
 from .cycles import HOT_WATER, mean_band, run_band
 
 from .register_entity import RegisterAnchor
@@ -95,6 +96,14 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         sensors.append(DailyHeatSensor(coordinator, "heat_produced_today", coordinator.produced_heat))
     if coordinator.run_tracker is not None:
         sensors.extend(CompressorRunSensor(coordinator, key) for key in COMPRESSOR_STATISTICS)
+    if coordinator.buffer_use is not None:
+        sensors.extend((
+            LastDischargeSensor(coordinator),
+            DailyDischargeSensor(coordinator),
+            BufferJudgementSensor(coordinator),
+        ))
+    if coordinator.supports_curve_gap:
+        sensors.append(CurveGapSensor(coordinator))
     async_add_entities(sensors, False)
     coordinator.setup_entity_ids["sensor"] = {sensor.unique_id for sensor in sensors}
 
@@ -596,3 +605,96 @@ class CompressorRunSensor(CoordinatorEntity, SensorEntity):
         kind = self._tracker.daily.runs[-1][0]
         # The run-length scale judges heating runs only; a hot-water run has none (design_decision-2, ac-163).
         return {"kind": kind} if kind == HOT_WATER else {"band": run_band(value), "kind": kind}
+
+
+# DHF-REQ: genesis-wp-ha/requirement-30
+class BufferUseSensor(HeatSensor):
+    """A buffer assessment reading; unavailable once the buffer tank or circuit 2 is absent."""
+
+    @property
+    def available(self):
+        return super().available and not self.coordinator.hc2_modules_absent
+
+
+class BufferDeltaSensor(BufferUseSensor):
+    """A temperature difference in kelvins."""
+
+    _attr_icon = "mdi:thermometer-lines"
+    _attr_native_unit_of_measurement = "K"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+
+
+class LastDischargeSensor(BufferDeltaSensor):
+    """The last completed and eligible buffer discharge phase."""
+
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "last_discharge_restart_margin")
+
+    @property
+    def native_value(self):
+        phase = self.coordinator.buffer_use.last
+        return phase.margin if phase is not None else None
+
+    @property
+    def extra_state_attributes(self):
+        phase = self.coordinator.buffer_use.last
+        if phase is None:
+            return None
+        return {
+            "drawn_energy": round(phase.energy, 2) if phase.energy is not None else None,
+            "cold_tail_share": round(phase.share, 1),
+        }
+
+
+class DailyDischargeSensor(BufferDeltaSensor):
+    """The median of the buffer discharges completed today."""
+
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "median_restart_margin_today")
+        self._evaluator = coordinator.buffer_use
+
+    @property
+    def native_value(self):
+        return self._evaluator.daily[0]
+
+    @property
+    def extra_state_attributes(self):
+        _, share = self._evaluator.daily
+        return {
+            "median_cold_tail_share": round(share, 1) if share is not None else None,
+            "phase_count": len(self._evaluator.phases),
+        }
+
+
+class BufferJudgementSensor(BufferUseSensor):
+    """Whether the observed discharges suggest keeping, lowering or raising the reference."""
+
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = ["keep", "lower", "raise"]
+    _attr_suggested_display_precision = None
+
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "buffer_judgement")
+
+    @property
+    def native_value(self):
+        return self.coordinator.buffer_use.judgement
+
+
+# DHF-REQ: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-145
+class CurveGapSensor(BufferDeltaSensor):
+    """The live difference between the buffer and circuit 2 set points."""
+
+    def __init__(self, coordinator):
+        super().__init__(coordinator, "curve_gap")
+
+    @property
+    def native_value(self):
+        if self.coordinator.thermia.unread.intersection(CURVE_INPUTS):
+            return None
+        buffer, circuit = (self.coordinator.data.get(key) for key in CURVE_INPUTS)
+        return buffer - circuit if buffer is not None and circuit is not None else None
+
+    @property
+    def available(self):
+        return super().available and self.native_value is not None

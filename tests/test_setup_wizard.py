@@ -172,7 +172,7 @@ async def test_options_submission_keeps_displayed_choices_after_detection_change
     )
     assert result["type"] is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
-    assert entry.options == {"room_sensor": "present", "buffer_volume": None, "circuit_flow": None}
+    assert entry.options == {"room_sensor": "present", "buffer_volume": None, "circuit_flow": None, "buffer_reference_offset": None}
     assert emu.writes == []
 
 

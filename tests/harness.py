@@ -34,6 +34,10 @@ DERIVED_SENSOR_KEYS = (
     "heating_run_mean",
     "heating_run_maximum",
     "last_run_length",
+    "last_discharge_restart_margin",
+    "median_restart_margin_today",
+    "buffer_judgement",
+    "curve_gap",
 )
 
 # Capabilities the library detects as absent on the 6.1.5 capture, the owner's plant (requirement-12).

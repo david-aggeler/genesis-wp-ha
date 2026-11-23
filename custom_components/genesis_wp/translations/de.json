@@ -1,9 +1,38 @@
 {
   "title": "Genesis WP",
+  "options": {
+    "error": {
+      "invalid_buffer_reference_offset": "Gib einen Wert von 0 bis 10 K in Schritten von 0,5 K ein."
+    },
+    "step": {
+      "init": {
+        "data": {
+          "buffer_reference_offset": "Puffer-Referenzoffset"
+        }
+      }
+    }
+  },
   "entity": {
     "sensor": {
       "disabled_entities": {
         "name": "Deaktivierte Entitäten"
+      },
+      "derived_last_discharge_restart_margin": {
+        "name": "Neustartreserve der letzten Entladung"
+      },
+      "derived_median_restart_margin_today": {
+        "name": "Mediane Neustartreserve heute"
+      },
+      "derived_buffer_judgement": {
+        "name": "Pufferbewertung",
+        "state": {
+          "keep": "Beibehalten",
+          "lower": "Senken",
+          "raise": "Anheben"
+        }
+      },
+      "derived_curve_gap": {
+        "name": "Heizkurvenabstand"
       },
       "derived_heat_to_rooms": {
         "name": "Wärme an die Räume"
