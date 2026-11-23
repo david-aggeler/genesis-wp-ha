@@ -283,6 +283,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     calibrations = await store.async_load() or {}
     coordinator = GenesisDataUpdateCoordinator(hass, entry, connection, emulator, store, calibrations)
     await coordinator.async_restore_runs()
+    await coordinator.async_restore_buffer_phases()
     await coordinator.async_refresh()
 
     if not coordinator.last_update_success:
@@ -378,6 +379,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Discard observations and calibration owned by the removed entry."""
     # DHF-REQ: genesis-wp-ha/requirement-26  (ac-111)
     await flow_calibration_store(hass, entry.entry_id).async_remove()
+    await buffer_phase_store(hass, entry.entry_id).async_remove()
     # The shared instance, when a retrying setup or a failed unload left one, cancels its pending write.
     await compressor_run_store(hass, entry.entry_id).async_remove()
     hass.data[DATA_RUN_STORES].pop(entry.entry_id, None)
@@ -396,6 +398,11 @@ def flow_calibration_store(hass: HomeAssistant, entry_id: str) -> Store:
 
 COMPRESSOR_RUN_SAVE_DELAY = 30  # [s]
 DATA_RUN_STORES = f"{DOMAIN}_compressor_run_stores"
+
+
+def buffer_phase_store(hass: HomeAssistant, entry_id: str) -> Store:
+    """Store the entry's daily buffer observations independently of its entities."""
+    return Store(hass, 1, f"{DOMAIN}.buffer_phases.{entry_id}")
 
 
 # DHF-REQ: genesis-wp-ha/requirement-28
@@ -572,10 +579,12 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self.circuit_flow = entry.options.get("circuit_flow", HC2_RETURN_DEFAULTS["circuit_flow"])
         buffer_volume = entry.options.get("buffer_volume", HC2_RETURN_DEFAULTS["buffer_volume"])
         self.buffer_use = None
+        self._buffer_store = None
         self._cancel_buffer_rollover = None
         if all(REGISTERS[key][self.kind] for key in PHASE_INPUTS):
             offset = entry.options.get(BUFFER_REFERENCE_OFFSET, DEFAULT_BUFFER_REFERENCE_OFFSET)
             self.buffer_use = BufferUseEvaluator(buffer_volume, offset)
+            self._buffer_store = buffer_phase_store(hass, entry.entry_id)
             self.registerAttribute(list(PHASE_INPUTS))
         self.supports_curve_gap = all(REGISTERS[key][self.kind] for key in CURVE_INPUTS)
         if self.supports_curve_gap:
@@ -636,6 +645,17 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             return
         self.run_tracker.restore(dt_util.now(), snapshot)
 
+    # DHF-REQ: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146
+    async def async_restore_buffer_phases(self):
+        """Restore shared observations before polling or adding entities."""
+        if self._buffer_store is not None:
+            try:
+                snapshot = await self._buffer_store.async_load()
+            except Exception as error:  # A damaged snapshot must not prevent setup.
+                _LOGGER.warning("Buffer discharge snapshot unreadable (%s)", type(error).__name__)
+                return
+            self.buffer_use.restore(dt_util.now(), snapshot)
+
     async def async_save_runs(self):
         """Flush compressor observations when the entry unloads; later updates schedule no writes."""
         if self._run_store is not None:
@@ -692,9 +712,12 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             mode = None if OPERATING_MODE in unread else data.get(OPERATING_MODE)
             self._track_run(signal, mode)
         if self.buffer_use is not None:
+            previous_phase = self.buffer_use.last
             self.buffer_use.add(dt_util.now(), {
                 key: data[key] for key in PHASE_INPUTS if key in data and key not in unread
             })
+            if self.buffer_use.last is not previous_phase:
+                await self._buffer_store.async_save(self.buffer_use.snapshot())
         return data
 
     @callback

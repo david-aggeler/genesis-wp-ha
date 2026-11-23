@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import date, datetime
-from math import isfinite
+from math import isclose, isfinite
 from statistics import median
 
 from genesis_wp import const as c
@@ -76,10 +76,15 @@ class BufferUseEvaluator:
         target = data.get(CIRCUIT_TARGET)
         if restart is None or target is None:
             return
-        margin = restart - target
-        drop = self._stop - restart
+        # The mean of two centi-degree readings is exact to half a centi-degree.
+        margin = round(restart - target, 3)
+        drop = round(self._stop - restart, 3)
         share = 100 * max(0, -margin) / drop if drop > 0 else 0.0
-        energy = self.volume * 4.18 * drop / 3600 if self.volume is not None else None
+        energy = None
+        if self.volume is not None:
+            converted = self.volume * (drop * (4.18 / 3600))
+            if isfinite(converted):
+                energy = converted
         self.last = Discharge(margin, share, energy)
         self.phases.append((margin, share))
 
@@ -96,7 +101,8 @@ class BufferUseEvaluator:
         if self.offset is None or not self.phases:
             return None
         margin, share = self.daily
-        if margin < 0 or share > 15:
+        # Division and the median of two ratios can round just above the limit.
+        if margin < 0 or (share > 15 and not isclose(share, 15, rel_tol=0, abs_tol=1e-12)):
             return "raise"
         return "lower" if margin > self.offset else "keep"
 
@@ -104,9 +110,9 @@ class BufferUseEvaluator:
     def snapshot(self) -> dict:
         return {"day": self.day.isoformat() if self.day else None, "phases": self.phases.copy()}
 
-    def restore(self, now: datetime, snapshot: dict) -> None:
+    def restore(self, now: datetime, snapshot: object) -> None:
         self.roll_day(now)
-        if snapshot.get("day") != now.date().isoformat():
+        if not isinstance(snapshot, dict) or snapshot.get("day") != now.date().isoformat():
             return
         phases = snapshot.get("phases")
         if not isinstance(phases, list):

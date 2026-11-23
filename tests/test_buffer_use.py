@@ -12,12 +12,18 @@ from genesis_wp.emulator import Emulator
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 
+from pytest_homeassistant_custom_component.common import async_fire_time_changed
+
 from .helpers import setup_entry
 
 
 @pytest.fixture
-async def buffer(hass, start_emulator, monkeypatch):
+async def buffer(hass, start_emulator, monkeypatch, request):
     now = datetime(2026, 1, 15, 23, tzinfo=ZoneInfo("Europe/Zurich"))
+    if getattr(request, "param", False):
+        now = datetime.now(now.tzinfo).replace(hour=23, minute=59, second=59, microsecond=0)
+        monkeypatch.setattr(dt_util, "DEFAULT_TIME_ZONE", now.tzinfo)
+        monkeypatch.setattr(genesis_wp, "SCAN_INTERVAL", timedelta(days=2))
     bits = {199: True, 209: True, 245: False}
     inputs = {1: 4, 12: 3700, 41: 3900, 68: 3400, 147: 3200}
     original = Emulator._action
@@ -40,14 +46,14 @@ async def buffer(hass, start_emulator, monkeypatch):
     emu = await start_emulator()
     entry = await setup_entry(hass, emu)
 
-    async def sample(on=True, temp=3800, target=3200, *, fr2=True, mode=4, cooling=False):
+    async def sample(on=True, temp=3800, target=3200, *, fr2=True, mode=4, cooling=False, spread=100):
         bits.update({199: on, 209: fr2, 245: cooling})
-        inputs.update({1: mode, 12: temp - 100, 41: temp + 100, 147: target})
+        inputs.update({1: mode, 12: temp - spread, 41: temp + spread, 147: target})
         await hass.data[DOMAIN][entry.entry_id].async_refresh()
 
-    async def phase(restart, stop=3800, target=3200):
-        await sample(False, stop, target=3000)
-        await sample(True, restart, target)
+    async def phase(restart, stop=3800, target=3200, *, spread=100):
+        await sample(False, stop, target=3000, spread=spread)
+        await sample(True, restart, target, spread=spread)
 
     def read(key):
         entity_id = er.async_get(hass).async_get_entity_id("sensor", DOMAIN, f"{entry.entry_id}_derived_{key}")
@@ -150,6 +156,62 @@ async def test_local_midnight_clears_daily_values(buffer):
     await phase(3250)
     advance(2)
     await sample()
+    assert read("median_restart_margin_today").state == "unknown"
+    assert read("median_restart_margin_today").attributes["phase_count"] == 0
+    assert read("buffer_judgement").state == "unknown"
+    assert float(read("last_discharge_restart_margin").state) == 0.5
+
+
+# DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-144
+@pytest.mark.parametrize(("phases", "spread"), [
+    ([(2502, 2602, 2302)], 1),
+    ([(2501, 2601, 2501)], 1),
+    ([(2502, 2602, 2532), (2600, 2700, 2500)], 2),
+])
+async def test_judgement_includes_threshold_equalities(buffer, phases, spread):
+    _, phase, read, *_ = buffer
+    for restart, stop, target in phases:
+        await phase(restart, stop, target, spread=spread)
+    assert read("buffer_judgement").state == "keep"
+
+
+# DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146
+async def test_judgement_restores_with_median_disabled(hass, buffer):
+    _, phase, read, reload, _, _, entry = buffer
+    registry = er.async_get(hass)
+    entity_id = registry.async_get_entity_id(
+        "sensor", DOMAIN, f"{entry.entry_id}_derived_median_restart_margin_today"
+    )
+    registry.async_update_entity(entity_id, disabled_by=er.RegistryEntryDisabler.USER)
+    await reload()
+    assert read("median_restart_margin_today") is None
+    await phase(3500)
+    assert read("buffer_judgement").state == "lower"
+    await reload()
+    assert read("median_restart_margin_today") is None
+    assert read("buffer_judgement").state == "lower"
+
+
+# DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-142
+async def test_drawn_energy_avoids_intermediate_overflow(hass, buffer):
+    _, phase, read, reload, _, _, entry = buffer
+    hass.config_entries.async_update_entry(entry, options={"buffer_volume": 1e308})
+    await reload()
+    await phase(3150)
+    assert read("last_discharge_restart_margin").attributes["drawn_energy"] == pytest.approx(
+        7.547222222222222e305
+    )
+
+
+# DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146
+@pytest.mark.parametrize("buffer", [True], indirect=True)
+async def test_scheduled_local_midnight_clears_daily_values(hass, buffer):
+    _, phase, read, _, _, _, _ = buffer
+    await phase(3250)
+    assert read("median_restart_margin_today").attributes["phase_count"] == 1
+    midnight = dt_util.now() + timedelta(seconds=1)
+    async_fire_time_changed(hass, midnight)
+    await hass.async_block_till_done()
     assert read("median_restart_margin_today").state == "unknown"
     assert read("median_restart_margin_today").attributes["phase_count"] == 0
     assert read("buffer_judgement").state == "unknown"

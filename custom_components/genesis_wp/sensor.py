@@ -21,7 +21,6 @@ from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.restore_state import RestoredExtraData
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from homeassistant.util import dt as dt_util
 
 from . import COMPRESSOR_SIGNAL
 from .buffer_use import CURVE_INPUTS
@@ -638,21 +637,12 @@ class LastDischargeSensor(BufferDeltaSensor):
         }
 
 
-class DailyDischargeSensor(BufferDeltaSensor, RestoreSensor):
-    """The daily median and the individual observations needed after a restart."""
+class DailyDischargeSensor(BufferDeltaSensor):
+    """The median of the buffer discharges completed today."""
 
     def __init__(self, coordinator):
         super().__init__(coordinator, "median_restart_margin_today")
         self._evaluator = coordinator.buffer_use
-
-    async def async_added_to_hass(self):
-        if (restored := await self.async_get_last_extra_data()) is not None:
-            self._evaluator.restore(dt_util.now(), restored.as_dict())
-        await super().async_added_to_hass()
-
-    @property
-    def extra_restore_state_data(self):
-        return RestoredExtraData(self._evaluator.snapshot())
 
     @property
     def native_value(self):
