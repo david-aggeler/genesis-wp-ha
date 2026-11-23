@@ -154,6 +154,9 @@
   },
   "entity": {
     "sensor": {
+      "disabled_entities": {
+        "name": "Disabled entities"
+      },
       "derived_heat_to_rooms": {
         "name": "Heat to the rooms"
       },

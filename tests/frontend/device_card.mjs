@@ -1052,4 +1052,28 @@ for(const empty of [undefined,{}, {devices:{}}, {devices:{root:child('genesis_wp
     assert.equal(html(c).match(new RegExp(`data-register="derived_condenser_flow"[^>]*>[^]*?<span class="value">([^<]*)<`))[1], '≈ 9.5 L/min');
   }
 }
+// DHF-TEST: genesis-wp-ha/requirement-35 genesis-wp-ha/ac-183
+{
+  const id = 'sensor.renamed_diagnostic';
+  const parent = 'heat-pump-parent';
+  const devices = {...hass.devices, [heatPumpId]: {...hass.devices[heatPumpId], parent_device_id: parent}};
+  const entities = {...hass.entities, [id]: {device_id: parent, entity_category: 'diagnostic'}};
+  const state = value => ({state: value, attributes: {genesis_wp_diagnostic: 'disabled_entities'}});
+  const notice = '2 entities disabled \u2014 enable them in Settings \u2192 Entities';
+  const card = render('internal_heat_pump');
+  card.hass = {...hass, devices, entities, states: {...hass.states, [id]: state('2')}};
+  assert.ok(html(card).includes(notice));
+  card.hass = {...hass, devices, entities: {[id]: entities[id]}, states: {[id]: state('2')}};
+  assert.ok(html(card).includes(notice));
+  assert.ok(html(card).indexOf(notice) < html(card).indexOf('No enabled entities for this device'));
+  card.hass = {...hass, devices, entities, locale: {language: 'de-DE'}, states: {...hass.states, [id]: state('2')}};
+  assert.ok(html(card).includes('2 Entit\u00e4ten deaktiviert'));
+  for (const value of ['0', 'unavailable', '']) {
+    card.hass = {...hass, devices, entities, states: {...hass.states, [id]: state(value)}};
+    assert.doesNotMatch(html(card), /entities disabled/);
+  }
+  assert.equal(services, 0);
+  assert.equal(ws, 0);
+}
+
 console.log("HARNESS-COMPLETE");
