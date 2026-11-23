@@ -27,7 +27,7 @@ async def test_overview_delivery(hass, hass_client, start_emulator):
     assert any(url.endswith(f"/{CARD.name}") for url in urls)
     url = next(url for url in urls if url.endswith(f"/{CARD.name}"))
     client = await hass_client()
-    for name in (CARD.name, "overview-bands.js", "register-card.js"):
+    for name in (CARD.name, "overview-bands.js", "patch.js", "register-card.js"):
         response = await client.get(urljoin(url, name))
         assert response.status == 200
         assert await response.read() == (CARD.parent / name).read_bytes()

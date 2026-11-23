@@ -1,9 +1,12 @@
 import {registerCard} from './register-card.js';
+import {patch} from './patch.js';
 import {BAND_COLORS, MEAN_BANDS, RUN_BANDS, bandFor} from './overview-bands.js';
 
 const NAME = 'Compressor and buffer overview';
 const DAY = 86_400;
 const HISTORY_REFRESH = 60;
+// Entities from one 30-second poll can be recorded a fraction of a second apart.
+const DEMAND_SKEW = 1;
 const WIDTH = 840;
 const COMPRESSOR = 'dinput_199';
 const DEMAND = 'input_1';
@@ -15,7 +18,23 @@ const BUFFER = [
   ['input_147', 'Circuit 2 set point', '#5fb88a', '6 4'],
   ['input_68', 'Charge set point', '#d4a14d', '6 4'],
 ];
-const HISTORY_KEYS = [COMPRESSOR, DEMAND, FR2, ...BUFFER.map(([key]) => key), ROOM_HEAT];
+const MODE_HISTORY_KEYS = [COMPRESSOR, DEMAND, FR2];
+const NUMERIC_HISTORY_KEYS = [...BUFFER.map(([key]) => key), ROOM_HEAT];
+const HISTORY_KEYS = [...MODE_HISTORY_KEYS, ...NUMERIC_HISTORY_KEYS];
+const MINUTES = new Map([
+  ['μs', 1 / 60e6], ['ms', 1 / 60e3], ['s', 1 / 60], ['min', 1],
+  ['h', 60], ['d', 1440], ['w', 10080],
+]);
+const KWH = new Map([
+  ['mWh', 1e-6], ['Wh', 1e-3], ['kWh', 1], ['MWh', 1e3], ['GWh', 1e6], ['TWh', 1e9],
+  ['J', 1 / 3.6e6], ['kJ', 1 / 3600], ['MJ', 1 / 3.6], ['GJ', 1e3 / 3.6],
+  ['cal', 4.184 / 3.6e6], ['kcal', 4.184 / 3600], ['Mcal', 4.184 / 3.6], ['Gcal', 4184 / 3.6],
+  ['thm', 1.054804e8 / 3.6e6],
+]);
+const KW = new Map([
+  ['mW', 1e-6], ['W', 1e-3], ['kW', 1], ['MW', 1e3], ['GW', 1e6], ['TW', 1e9],
+  ['BTU/h', 0.29307107 / 1000],
+]);
 
 const escape = value => String(value).replace(/[&<>"']/g, char => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -27,12 +46,30 @@ function number(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function historyPoints(rows, start, end) {
+function scaled(value, factors, unit, target) {
+  const reading = number(value);
+  const factor = factors.get(unit ?? target);
+  if (reading === null || factor === undefined) return null;
+  return number(reading * factor / factors.get(target));
+}
+
+function temperature(value, unit) {
+  const reading = number(value);
+  if (reading === null) return null;
+  switch (unit ?? '°C') {
+    case '°C': return reading;
+    case '°F': return (reading - 32) * 5 / 9;
+    case 'K': return reading - 273.15;
+    default: return null;
+  }
+}
+
+function historyPoints(rows, start, end, convert) {
   if (!Array.isArray(rows)) return [];
   return rows.flatMap(row => {
     const time = number(row?.lu ?? row?.lc);
     return time === null || time > end || typeof row.s !== 'string'
-      ? [] : [{time: Math.max(start, time), state: row.s}];
+      ? [] : [{time: Math.max(start, time), state: convert(row.s, row.a?.unit_of_measurement)}];
   }).sort((a, b) => a.time - b.time);
 }
 
@@ -53,7 +90,9 @@ function runs(points, demand, start, end) {
   let open;
   for (const {state, time} of points) {
     if (state === 'on' && previous !== 'on') {
-      open = {time, completeStart: previous === 'off' && time > start, mode: atTime(demand, time)};
+      const completeStart = previous === 'off' && time > start;
+      const modeTime = time === start ? time : time + DEMAND_SKEW;
+      open = {time, completeStart, mode: atTime(demand, modeTime)};
     } else if (state !== 'on' && open) {
       result.push(segment(open, time, state === 'off'));
       open = undefined;
@@ -78,11 +117,10 @@ function segment(open, end, completeEnd) {
   return {start: open.time, end, label, color};
 }
 
-function linePath(points, convert, x, y, end) {
+function linePath(points, x, y, end) {
   let path = '';
   let previous = null;
-  for (const {time, state} of points) {
-    const value = convert(state);
+  for (const {time, state: value} of points) {
     if (previous !== null) path += `H${x(time)}`;
     if (value !== null) path += previous === null ? `M${x(time)},${y(value)}` : `V${y(value)}`;
     previous = value;
@@ -113,8 +151,19 @@ const STYLES = `
   .lanes h3 {margin:0;font-size:.9rem;font-weight:500;}
   svg {display:block;width:100%;background:var(--secondary-background-color);border-radius:4px;}
   svg path {fill:none;stroke-width:2;vector-effect:non-scaling-stroke;}
-  .axis,.legend {display:flex;flex-wrap:wrap;gap:8px;color:var(--secondary-text-color);font-size:.75rem;}
-  .axis {justify-content:space-between;}
+  .axis,.legend {color:var(--secondary-text-color);font-size:.75rem;}
+  .lanes {container-type:inline-size;}
+  .axis {position:relative;height:1.6em;}
+  .axis span {position:absolute;left:var(--tick);transform:translateX(-50%);white-space:nowrap;}
+  .axis span:first-child {transform:none;}
+  .axis span:last-child {transform:translateX(-100%);}
+  @container (max-width: 340px) {
+    .axis span:nth-child(2n) {display:none;}
+  }
+  @container (max-width: 200px) {
+    .axis span:nth-child(3) {display:none;}
+  }
+  .legend {display:flex;flex-wrap:wrap;gap:8px;}
   .legend span {white-space:nowrap;}
   output {display:block;min-height:2.5em;color:var(--secondary-text-color);font-size:.85rem;}
 `;
@@ -128,6 +177,7 @@ class OverviewCard extends HTMLElement {
       || ['entry', 'title'].some(key => config[key] !== undefined && typeof config[key] !== 'string')) {
       throw new Error('Overview card accepts entry and title');
     }
+    if (this.config?.entry !== config.entry) this.hoverFraction = undefined;
     this.config = config;
     if (!this.shadowRoot) {
       this.attachShadow({mode: 'open'});
@@ -138,6 +188,15 @@ class OverviewCard extends HTMLElement {
       this.shadowRoot.addEventListener('pointermove', event => this.readHistory(event));
     }
     this.update();
+  }
+
+  connectedCallback() {
+    this.refreshTimer = setInterval(() => this.update(), HISTORY_REFRESH * 1000);
+    this.update();
+  }
+
+  disconnectedCallback() {
+    clearInterval(this.refreshTimer);
   }
 
   static getStubConfig() { return {}; }
@@ -168,11 +227,12 @@ class OverviewCard extends HTMLElement {
       this.pending = undefined;
       this.requestedAt = undefined;
       this.historyFailed = false;
+      this.hoverFraction = undefined;
     }
-    if (ids.some(Boolean) && !this.pending && (this.requestedAt === undefined
+    if (this.isConnected && ids.some(Boolean) && !this.pending && (this.requestedAt === undefined
       || now - this.requestedAt >= HISTORY_REFRESH || now < this.requestedAt)) {
       this.requestedAt = now;
-      this.loadHistory(ids, now);
+      this.loadHistory(now);
     }
     this.render();
   }
@@ -195,24 +255,39 @@ class OverviewCard extends HTMLElement {
     return matches;
   }
 
-  async loadHistory(ids, end) {
+  async loadHistory(end) {
     const request = {};
     this.pending = request;
     const start = end - DAY;
-    try {
-      const data = await this._hass.callWS({
+    const read = (keys, compact) => {
+      const entityIds = keys.flatMap(key => {
+        const id = this.entities.get(key)?.id;
+        return id ? [id] : [];
+      });
+      if (!entityIds.length) return {};
+      return this._hass.callWS({
         type: 'history/history_during_period',
         start_time: new Date(start * 1000).toISOString(),
         end_time: new Date(end * 1000).toISOString(),
-        entity_ids: ids.filter(Boolean),
-        minimal_response: true,
-        no_attributes: true,
+        entity_ids: entityIds,
+        minimal_response: compact,
+        no_attributes: compact,
         significant_changes_only: false,
       });
+    };
+    try {
+      // Full numeric rows retain the unit per sample and Recorder's attribute-only changes.
+      const [modes, measurements] = await Promise.all([
+        read(MODE_HISTORY_KEYS, true), read(NUMERIC_HISTORY_KEYS, false),
+      ]);
       if (this.pending !== request) return;
-      const series = new Map(HISTORY_KEYS.map((key, i) => [
-        key, historyPoints(ids[i] ? data[ids[i]] : [], start, end),
-      ]));
+      const data = {...modes, ...measurements};
+      const series = new Map(HISTORY_KEYS.map(key => {
+        const convert = key === ROOM_HEAT ? (value, unit) => scaled(value, KW, unit, 'kW')
+          : key === FR2 ? binaryValue
+          : MODE_HISTORY_KEYS.includes(key) ? value => value : temperature;
+        return [key, historyPoints(data[this.entities.get(key)?.id], start, end, convert)];
+      }));
       this.history = {start, end, series};
       this.historyFailed = false;
     } catch {
@@ -232,9 +307,9 @@ class OverviewCard extends HTMLElement {
     }));
   }
 
-  entityAttributes(key) {
+  entityAttributes(key, link = key) {
     const entity = this.entities.get(key);
-    return entity ? ` data-entity="${escape(entity.id)}" tabindex="0" role="link"` : '';
+    return entity ? ` data-entity="${escape(entity.id)}" data-link="${escape(link)}" tabindex="0" role="link"` : '';
   }
 
   stateWord(state) {
@@ -244,9 +319,14 @@ class OverviewCard extends HTMLElement {
 
   metric(key, label, unit = '', options = {}) {
     const register = `derived_${key}`;
-    const raw = this.entities.get(register)?.state.state;
-    const value = number(raw);
-    const band = value === null || !options.bands ? undefined : bandFor(value, options.bands);
+    const state = this.entities.get(register)?.state;
+    const raw = state?.state;
+    const value = options.factors
+      ? scaled(raw, options.factors, state?.attributes.unit_of_measurement, unit)
+      : number(raw);
+    const canonical = state?.attributes.band;
+    const band = value !== null && options.bands?.some(([, label]) => label === canonical)
+      ? canonical : undefined;
     const display = value === null ? this.stateWord(raw)
       : `${options.decimals === undefined ? value : value.toFixed(options.decimals)}${unit ? ` ${unit}` : ''}`;
     const color = band ? BAND_COLORS[band] : value > 0 && options.alert ? BAND_COLORS.bad : undefined;
@@ -254,7 +334,7 @@ class OverviewCard extends HTMLElement {
   }
 
   valueRow(register, label, display, color, caption, unavailable = false) {
-    return `<div class="metric"${this.entityAttributes(register)}><span>${escape(label)}</span>
+    return `<div class="metric"${this.entityAttributes(register, `tile:${register}:${label}`)}><span>${escape(label)}</span>
       <strong${unavailable ? ' class="unavailable"' : ''}${color ? ` style="color:${color}"` : ''}>${escape(display)}</strong>
       ${caption ? `<span class="caption">${escape(caption)}</span>` : ''}</div>`;
   }
@@ -276,13 +356,13 @@ class OverviewCard extends HTMLElement {
       tile('Starts today', metric('starts_today', 'Total') + metric('hot_water_starts_today', 'Hot water')),
       tile('Short heating runs', metric('short_heating_runs_today', 'Today', '', {alert: true})),
       tile('Heating run length',
-        metric('heating_run_minimum', 'Minimum', 'min', {bands: RUN_BANDS}) +
-        metric('heating_run_mean', 'Heating run mean', 'min', {bands: MEAN_BANDS}) +
-        metric('heating_run_maximum', 'Maximum', 'min', {bands: RUN_BANDS})),
-      tile('Running hours', metric('running_hours_today', 'Today', 'h')),
+        metric('heating_run_minimum', 'Minimum', 'min', {bands: RUN_BANDS, factors: MINUTES}) +
+        metric('heating_run_mean', 'Heating run mean', 'min', {bands: MEAN_BANDS, factors: MINUTES}) +
+        metric('heating_run_maximum', 'Maximum', 'min', {bands: RUN_BANDS, factors: MINUTES})),
+      tile('Running hours', metric('running_hours_today', 'Today', 'h', {factors: MINUTES})),
       tile('Heat today',
-        metric('heat_produced_today', 'Produced', 'kWh', {decimals: 1}) +
-        metric('heat_to_rooms_today', 'To the rooms', 'kWh', {decimals: 1}) +
+        metric('heat_produced_today', 'Produced', 'kWh', {decimals: 1, factors: KWH}) +
+        metric('heat_to_rooms_today', 'To the rooms', 'kWh', {decimals: 1, factors: KWH}) +
         this.valueRow('derived_heat_to_rooms_today', 'Coverage', coverage === null
           ? this.stateWord(rooms?.state) : `${coverage} %`)),
       tile('Buffer',
@@ -292,16 +372,6 @@ class OverviewCard extends HTMLElement {
         this.valueRow('derived_buffer_judgement', 'Judgement', marker, color, undefined, !color) +
         metric('curve_gap', 'Curve gap', 'K', {decimals: 1})),
     ].join('');
-  }
-
-  temperature(key, state) {
-    const value = number(state);
-    if (value === null) return null;
-    switch (this.entities.get(key)?.state.attributes.unit_of_measurement) {
-      case '°F': return (value - 32) * 5 / 9;
-      case 'K': return value - 273.15;
-      default: return value;
-    }
   }
 
   timeLabel(time) {
@@ -321,8 +391,8 @@ class OverviewCard extends HTMLElement {
     const lane = (title, height, contents) => `<h3>${title}</h3>
       <svg data-lane viewBox="0 0 ${WIDTH} ${height}" preserveAspectRatio="none"
         style="height:${height}px" aria-label="${title}">${contents}</svg>`;
-    const trace = (key, convert, y, color, dash = '') =>
-      `<path${this.entityAttributes(key)} d="${linePath(series.get(key), convert, x, y, end)}"
+    const trace = (key, y, color, dash = '') =>
+      `<path${this.entityAttributes(key)} d="${linePath(series.get(key), x, y, end)}"
         stroke="${color}" stroke-dasharray="${dash}"/>`;
     const range = (values, height) => {
       const {low, high} = values.reduce((bounds, value) => value === null ? bounds : ({
@@ -334,25 +404,26 @@ class OverviewCard extends HTMLElement {
     const compressor = runs(series.get(COMPRESSOR), series.get(DEMAND), start, end).map(run =>
       `<rect class="run" x="${x(run.start)}" width="${x(start + run.end - run.start)}"
         fill="${run.color}" fill-opacity="${run.color === 'currentColor' ? 0.35 : 1}"
-        y="3" height="18"${this.entityAttributes(COMPRESSOR)}>
+        y="3" height="18"${this.entityAttributes(COMPRESSOR, `run:${run.start}`)}>
         <title>${run.label} · ${((run.end - run.start) / 60).toFixed(1)} min</title></rect>`).join('');
     const bufferScale = range(BUFFER.flatMap(([key]) =>
-      series.get(key).map(({state}) => this.temperature(key, state))), 72);
-    const heatScale = range([0, ...series.get(ROOM_HEAT).map(({state}) => number(state))], 56);
-    const ticks = Array.from({length: 5}, (_, i) => `<span>${escape(this.timeLabel(start + i * DAY / 4))}</span>`);
+      series.get(key).map(({state}) => state)), 72);
+    const heatScale = range([0, ...series.get(ROOM_HEAT).map(({state}) => state)], 56);
+    const ticks = Array.from({length: 5}, (_, i) =>
+      `<span style="--tick:${i * 25}%">${escape(this.timeLabel(start + i * DAY / 4))}</span>`);
     const swatch = (color, label) => `<span><span style="color:${color}" aria-hidden="true">●</span> ${label}</span>`;
     const bandLegend = [...RUN_BANDS].reverse().map(([, label]) => swatch(BAND_COLORS[label], label.replaceAll('_', ' ')));
     return `<section class="lanes" aria-label="Last 24 hours">
       <h2>Last 24 hours</h2>
       ${lane('Compressor', 24, compressor)}
-      ${lane('FR2', 24, trace(FR2, binaryValue, value => value ? 4 : 20, '#50a0cb'))}
+      ${lane('FR2', 24, trace(FR2, value => value ? 4 : 20, '#50a0cb'))}
       ${lane('Buffer [°C]', 72, BUFFER.map(([key, , color, dash]) =>
-        trace(key, state => this.temperature(key, state), bufferScale, color, dash)).join(''))}
-      ${lane('Heat to the rooms [kW]', 56, trace(ROOM_HEAT, number, heatScale, '#5fb88a'))}
+        trace(key, bufferScale, color, dash)).join(''))}
+      ${lane('Heat to the rooms [kW]', 56, trace(ROOM_HEAT, heatScale, '#5fb88a'))}
       <div class="axis">${ticks.join('')}</div>
       <div class="legend">${bandLegend.join('')} ${swatch('currentColor', 'Hot water / unscored')}</div>
       <div class="legend">${BUFFER.map(([key, label, color]) =>
-        `<span${this.entityAttributes(key)}>${swatch(color, label)}</span>`).join('')}</div>
+        `<span${this.entityAttributes(key, `legend:${key}`)}>${swatch(color, label)}</span>`).join('')}</div>
       <output></output>
       ${this.historyFailed ? '<p>Recorder history refresh failed</p>' : ''}
       </section>`;
@@ -360,31 +431,44 @@ class OverviewCard extends HTMLElement {
 
   readHistory(event) {
     const lane = event.target?.closest?.('[data-lane]');
-    const output = this.shadowRoot.querySelector?.('output');
-    if (!output || !lane || !this.history) return;
+    if (!lane || !this.history) return;
     const bounds = lane.getBoundingClientRect();
     if (bounds.width <= 0) return;
+    this.hoverFraction = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
+    this.renderHover();
+  }
+
+  renderHover() {
+    if (!this.history || this.hoverFraction === undefined) return;
+    const output = this.shadowRoot.querySelector('output');
     const {start, series} = this.history;
-    const fraction = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width));
-    const time = start + DAY * fraction;
+    const time = start + DAY * this.hoverFraction;
     const get = key => atTime(series.get(key), time);
-    const reading = (value, unit) => value === null ? this.stateWord() : `${value.toFixed(1)} ${unit}`;
+    const reading = (value, unit) => value === null || value === undefined ? this.stateWord() : `${value.toFixed(1)} ${unit}`;
     output.textContent = [
       this.timeLabel(time),
       `Compressor ${get(COMPRESSOR) ?? this.stateWord()}`,
-      `FR2 ${get(FR2) ?? this.stateWord()}`,
-      ...BUFFER.map(([key, label]) => `${label} ${reading(this.temperature(key, get(key)), '°C')}`),
-      `Heat to the rooms ${reading(number(get(ROOM_HEAT)), 'kW')}`,
+      `FR2 ${['off', 'on'][get(FR2)] ?? this.stateWord()}`,
+      ...BUFFER.map(([key, label]) => `${label} ${reading(get(key), '°C')}`),
+      `Heat to the rooms ${reading(get(ROOM_HEAT), 'kW')}`,
     ].join(' · ');
   }
 
   render() {
     const markup = `<style>${STYLES}</style><ha-card header="${escape(this.config.title || NAME)}">
       <div class="body"><div class="tiles">${this.tiles()}</div>${this.strip()}</div></ha-card>`;
-    if (this.markup !== markup) {
-      this.shadowRoot.innerHTML = markup;
-      this.markup = markup;
+    const root = this.shadowRoot;
+    const focused = root.activeElement;
+    const link = focused?.getAttribute('data-link');
+    const entityId = focused?.getAttribute('data-entity');
+    if (patch(root, markup) === 'unchanged') return;
+    if (link && (root.activeElement?.getAttribute('data-link') !== link
+      || root.activeElement?.getAttribute('data-entity') !== entityId)) {
+      const replacement = [...root.querySelectorAll('[data-link]')].find(node =>
+        node.getAttribute('data-link') === link && node.getAttribute('data-entity') === entityId);
+      replacement?.focus({preventScroll: true});
     }
+    this.renderHover();
   }
 }
 
