@@ -1,6 +1,7 @@
 """Stamp the pending merge index and verify the version in the resulting commit."""
 
 import json
+from json.decoder import scanstring
 from pathlib import Path
 import re
 import subprocess
@@ -8,7 +9,7 @@ import sys
 from tempfile import TemporaryDirectory
 
 REGULAR_MODES = {b"100644", b"100755"}
-VERSION_VALUE = re.compile(rb'("version"\s*:\s*")[^"\\]*(")')
+WHITESPACE = re.compile(r"[ \t\n\r]*")
 
 
 def parse_version(data: bytes) -> str:
@@ -41,15 +42,39 @@ def index_file(path, entry):
     return git("cat-file", "blob", entry[1])
 
 
+def version_span(path, text):
+    """Locate the top-level "version" value of a JSON object as a (start, end) span."""
+    json.loads(text)  # full validation; the scan below only walks the top level
+    decoder = json.JSONDecoder()
+    index = WHITESPACE.match(text).end()
+    if text[index : index + 1] != "{":
+        raise ValueError(f"{path}: expected a JSON object")
+    index = WHITESPACE.match(text, index + 1).end()
+    span = None
+    while text[index : index + 1] != "}":
+        key, index = scanstring(text, index + 1)
+        index = WHITESPACE.match(text, index).end() + 1  # past ':'
+        start = WHITESPACE.match(text, index).end()
+        value, index = decoder.raw_decode(text, start)
+        if key == "version":
+            if span is not None or not isinstance(value, str):
+                raise ValueError(f"{path}: expected one top-level string version")
+            span = start, index
+        index = WHITESPACE.match(text, index).end()
+        if text[index : index + 1] == ",":
+            index = WHITESPACE.match(text, index + 1).end()
+    if span is None:
+        raise ValueError(f"{path}: expected a top-level manifest version")
+    return span
+
+
 def replace_version(path, original, stamp):
-    # Check the same field before and after replacement so a nested key cannot
-    # stand in for the required top-level manifest version.
-    if not isinstance(json.loads(original).get("version"), str):
-        raise ValueError(f"{path}: expected a string manifest version")
-    updated, count = VERSION_VALUE.subn(
-        lambda match: match[1] + stamp.encode("ascii") + match[2], original
-    )
-    if count != 1 or json.loads(updated).get("version") != stamp:
+    # Replace only the bytes of the top-level value; nested "version" keys and
+    # escape sequences elsewhere stay byte-identical.
+    text = original.decode("utf-8")
+    start, end = version_span(path, text)
+    updated = (text[:start] + json.dumps(stamp) + text[end:]).encode("utf-8")
+    if json.loads(updated).get("version") != stamp:
         raise ValueError(f"{path}: expected one manifest version to stamp")
     return updated
 
@@ -86,7 +111,7 @@ def stamp_index(path, build, merge_conflicted):
 
     blob = git("hash-object", "-w", "--stdin", data=updated).strip()
     git("update-index", "--cacheinfo", mode, blob, path)
-    git("checkout-index", "--force", "--", path)
+    git("checkout-index", "--force", "-u", "--", path)
 
 
 def verify_commit(path, commit):
@@ -95,6 +120,9 @@ def verify_commit(path, commit):
         raise ValueError("VERSION: expected a committed regular file")
     version = parse_version(git("show", f"{commit}:VERSION"))
     build = git("rev-list", "--count", commit).strip().decode("ascii")
+    manifest_entry = git("ls-tree", commit, "--", path).split()
+    if not manifest_entry or manifest_entry[0] not in REGULAR_MODES:
+        raise ValueError(f"{path}: expected a committed regular file")
     manifest = json.loads(git("show", f"{commit}:{path}"))
     if manifest.get("version") != f"{version}.{build}":
         raise ValueError(f"{path}: incorrect committed build stamp")
@@ -109,5 +137,5 @@ if __name__ == "__main__":
             verify_commit(path, value)
         else:
             raise ValueError(f"Unknown manifest version action: {action}")
-    except (ValueError, AttributeError, OSError, subprocess.CalledProcessError) as error:
+    except (ValueError, UnicodeError, AttributeError, OSError, subprocess.CalledProcessError) as error:
         sys.exit(str(error))

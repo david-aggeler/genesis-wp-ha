@@ -171,3 +171,117 @@ def test_merge_rolls_back_incorrect_committed_stamp(merge_repo):
     assert git(repo, "rev-parse", "HEAD") == before
     assert git(origin, "rev-parse", "main") == before
     assert git(repo, "status", "--porcelain") == ""
+
+
+def refused_unchanged(repo, origin, result, before):
+    assert result.returncode != 0, result.stdout
+    assert git(repo, "rev-parse", "main") == before
+    assert git(origin, "rev-parse", "main") == before
+
+
+# DHF-TEST: genesis-wp-ha/requirement-32
+# DHF-TEST: genesis-wp-ha/ac-179
+def test_merge_honors_rejecting_pre_merge_commit_hook(merge_repo):
+    repo, origin = merge_repo
+    prepare_unit(repo, "0.4.0\n")
+    before = git(repo, "rev-parse", "HEAD")
+    hook = repo / ".git/hooks/pre-merge-commit"
+    hook.write_text("#!/bin/sh\nexit 1\n")
+    hook.chmod(0o755)
+
+    result = merge(repo)
+
+    refused_unchanged(repo, origin, result, before)
+    assert "pre-merge-commit" in result.stderr
+    assert git(repo, "status", "--porcelain") == ""
+
+
+# DHF-TEST: genesis-wp-ha/requirement-32
+# DHF-TEST: genesis-wp-ha/ac-179
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        b'{\n  "domain": "genesis_wp",\n  "version": "0.\\u0031.0"\n}\n',
+        b'{"options": {"version": "keep"}, "version" :"0.1.0", "x": ["version"]}',
+    ],
+    ids=["escaped", "nested"],
+)
+def test_merge_replaces_only_top_level_version(merge_repo, manifest):
+    repo, origin = merge_repo
+    (repo / MANIFEST).write_bytes(manifest)
+    git(repo, "commit", "-am", "Manifest variant")
+    git(repo, "push", "-q", "origin", "main")
+    prepare_unit(repo, "0.4.0\n")
+    old = b'"0.\\u0031.0"' if b"\\u" in manifest else b'"0.1.0"'
+
+    result = merge(repo)
+
+    assert result.returncode == 0, result.stderr
+    expected = manifest.replace(old, b'"0.4.0.5"')
+    assert git(repo, "show", f"HEAD:{MANIFEST}").encode() == expected.rstrip(b"\n")
+    assert (repo / MANIFEST).read_bytes() == expected
+
+
+# DHF-TEST: genesis-wp-ha/requirement-32
+# DHF-TEST: genesis-wp-ha/ac-179
+def test_merge_rolls_back_symlinked_manifest(merge_repo):
+    repo, origin = merge_repo
+    prepare_unit(repo, "0.4.0\n")
+    before = git(repo, "rev-parse", "HEAD")
+    hook = repo / ".git/hooks/pre-commit"
+    hook.write_text(
+        f"#!/bin/sh\nrm {MANIFEST}\nln -s '{{\"version\": \"0.4.0.4\"}}' {MANIFEST}\n"
+        f"git add {MANIFEST}\n"
+    )
+    hook.chmod(0o755)
+
+    result = merge(repo)
+
+    refused_unchanged(repo, origin, result, before)
+    assert "regular file" in result.stderr
+
+
+# DHF-TEST: genesis-wp-ha/requirement-32
+# DHF-TEST: genesis-wp-ha/ac-179
+def test_merge_refuses_assume_unchanged_edits(merge_repo):
+    repo, origin = merge_repo
+    prepare_unit(repo, "0.4.0\n")
+    before = git(repo, "rev-parse", "HEAD")
+    git(repo, "update-index", "--assume-unchanged", MANIFEST)
+    edited = ORIGINAL.replace(b"genesis_wp", b"local_edit")
+    (repo / MANIFEST).write_bytes(edited)
+
+    result = merge(repo)
+
+    refused_unchanged(repo, origin, result, before)
+    assert "assume-unchanged" in result.stderr
+    assert (repo / MANIFEST).read_bytes() == edited
+
+
+# DHF-TEST: genesis-wp-ha/requirement-32
+# DHF-TEST: genesis-wp-ha/ac-179
+def test_merge_survives_unit_that_replaces_merge_implementation(merge_repo):
+    repo, origin = merge_repo
+    scripts = repo / "scripts"
+    scripts.mkdir()
+    for name in ("merge_unit.sh", "manifest_version.py"):
+        (scripts / name).write_bytes((SCRIPT.parent / name).read_bytes())
+    git(repo, "add", "scripts")
+    git(repo, "commit", "-m", "Add merge implementation")
+    git(repo, "push", "-q", "origin", "main")
+    git(repo, "branch", "-f", "cr-1", "main")
+    git(repo, "switch", "cr-1")
+    git(repo, "rm", "-q", "scripts/manifest_version.py")
+    (scripts / "merge_unit.sh").write_text("# replaced\n" * 2000 + "exit 7\n")
+    (repo / "VERSION").write_text("0.4.0\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-m", "Replace merge implementation")
+    git(repo, "switch", "main")
+
+    result = subprocess.run(
+        ("bash", "scripts/merge_unit.sh", "cr-1"), cwd=repo, capture_output=True, text=True
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(git(repo, "show", f"HEAD:{MANIFEST}"))["version"] == "0.4.0.5"
+    assert git(origin, "rev-parse", "main") == git(repo, "rev-parse", "HEAD")
