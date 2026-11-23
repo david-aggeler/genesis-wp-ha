@@ -50,7 +50,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.const import EVENT_HOMEASSISTANT_FINAL_WRITE
 from homeassistant.core import HomeAssistant
 from homeassistant.core import callback
-from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.event import async_call_later, async_track_time_change
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
@@ -64,6 +64,7 @@ from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 
+from .const import BUFFER_REFERENCE_OFFSET, DEFAULT_BUFFER_REFERENCE_OFFSET
 from .const import CARD_MODULES
 from .const import CONF_CAPABILITIES
 from .const import CONF_CAPABILITIES_SEEN
@@ -81,6 +82,7 @@ from .const import EMULATOR_HOST
 from .const import MODE_EMULATED
 
 from .balance import DailyHeat
+from .buffer_use import BufferUseEvaluator, CURVE_INPUTS, PHASE_INPUTS
 from .cycles import RunTracker
 
 POWER_OUTPUT = genesis_const.ATTR_INPUT_CURRENT_POWER_OUTPUT
@@ -129,7 +131,7 @@ def capability_overrides(options) -> dict[str, str]:
     """The entry's module choices as library overrides; anything this library version rejects is dropped."""
     overrides = {}
     for name, state in options.items():
-        if name in HC2_RETURN_DEFAULTS:
+        if name == BUFFER_REFERENCE_OFFSET or name in HC2_RETURN_DEFAULTS:
             continue
         if name in CAPABILITY_NAMES and state in (PRESENT, ABSENT):
             overrides[name] = state
@@ -295,6 +297,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         config_entry_id=entry.entry_id, **coordinator.device_info
     ).id
     coordinator.freeze_capabilities()
+    if coordinator.buffer_use is not None:
+        entry.async_on_unload(async_track_time_change(
+            hass, coordinator.reset_buffer_day, hour=0, minute=0, second=0,
+        ))
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
@@ -568,6 +574,14 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self.hc2_estimator = None
         self.circuit_flow = entry.options.get("circuit_flow", HC2_RETURN_DEFAULTS["circuit_flow"])
         buffer_volume = entry.options.get("buffer_volume", HC2_RETURN_DEFAULTS["buffer_volume"])
+        self.buffer_use = None
+        if all(REGISTERS[key][self.kind] for key in PHASE_INPUTS):
+            offset = entry.options.get(BUFFER_REFERENCE_OFFSET, DEFAULT_BUFFER_REFERENCE_OFFSET)
+            self.buffer_use = BufferUseEvaluator(buffer_volume, offset)
+            self.registerAttribute(list(PHASE_INPUTS))
+        self.supports_curve_gap = all(REGISTERS[key][self.kind] for key in CURVE_INPUTS)
+        if self.supports_curve_gap:
+            self.registerAttribute(list(CURVE_INPUTS))
         hc2_registers = [*HC2_BUFFER, HC2_SUPPLY, HC2_COMPRESSOR, HC2_PUMP, *HC2_PASSIVE_COOLING]
         self.supports_hc2_return = (
             "condenser_flow" in self.flow_estimators and all(REGISTERS[r][self.kind] for r in hc2_registers)
@@ -653,6 +667,8 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             data = await self.thermia.async_update(only_registers=self.attributes.keys())
         except ThermiaException as error:
             self._track_run(None)
+            if self.buffer_use is not None:
+                self.buffer_use.add(dt_util.now(), {})
             if self.hc2_estimator is not None:
                 self.hc2_return = self.hc2_estimator.add(self.flow_clock(), {}, None)
             self._track_heat(None, None, False)
@@ -677,7 +693,16 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             signal = None if COMPRESSOR_SIGNAL in unread else data.get(COMPRESSOR_SIGNAL)
             mode = None if OPERATING_MODE in unread else data.get(OPERATING_MODE)
             self._track_run(signal, mode)
+        if self.buffer_use is not None:
+            self.buffer_use.add(dt_util.now(), {
+                key: data[key] for key in PHASE_INPUTS if key in data and key not in unread
+            })
         return data
+
+    @callback
+    def reset_buffer_day(self, now):
+        if self.buffer_use.roll_day(now):
+            self.async_update_listeners()
 
     def _track_heat(self, power, heat, pump_on):
         """Accumulate heat once per coordinator refresh."""

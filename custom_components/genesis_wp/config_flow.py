@@ -29,6 +29,8 @@ from homeassistant.helpers.selector import selector
 from . import create_client
 from . import detect_capabilities
 from . import read_capabilities
+from .const import BUFFER_REFERENCE_OFFSET
+from .const import DEFAULT_BUFFER_REFERENCE_OFFSET
 from .const import CONF_ADVANCED
 from .const import CONF_CAPABILITIES
 from .const import CONF_MODE
@@ -375,7 +377,11 @@ class GenesisOptionsFlow(config_entries.OptionsFlowWithReload):
                 key: "nonfinite_number" for key, value in constants.items()
                 if value is not None and not math.isfinite(value)
             }
+            offset = user_input.get(BUFFER_REFERENCE_OFFSET)
+            if offset is not None and (not 0 <= offset <= 10 or offset * 2 % 1):
+                errors[BUFFER_REFERENCE_OFFSET] = "invalid_buffer_reference_offset"
             if not errors:
+                constants[BUFFER_REFERENCE_OFFSET] = offset
                 self._options = module_choices(user_input, self._page_names)
                 self._options.update(constants)
                 if user_input.get(SHOW_ABSENT):
@@ -394,6 +400,12 @@ class GenesisOptionsFlow(config_entries.OptionsFlowWithReload):
                 ))
             for key, unit in (("buffer_volume", "L"), ("circuit_flow", "L/min"))
         }
+        # DHF-REQ: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-141
+        fields[vol.Optional(BUFFER_REFERENCE_OFFSET, description={
+            "suggested_value": options.get(BUFFER_REFERENCE_OFFSET, DEFAULT_BUFFER_REFERENCE_OFFSET),
+        })] = NumberSelector(NumberSelectorConfig(
+            min=0, max=10, step=0.5, mode=NumberSelectorMode.BOX, unit_of_measurement="K",
+        ))
         schema = schema.extend(fields)
         return self.async_show_form(
             step_id="init",

@@ -97,7 +97,8 @@
   },
   "options": {
     "error": {
-      "nonfinite_number": "Enter a finite number."
+      "nonfinite_number": "Enter a finite number.",
+      "invalid_buffer_reference_offset": "Enter a value from 0 to 10 K in increments of 0.5 K."
     },
     "step": {
       "init": {
@@ -118,6 +119,7 @@
           "electric_meter": "Electric meter",
           "smart_grid": "SG Ready",
           "buffer_volume": "Buffer volume",
+          "buffer_reference_offset": "Buffer reference offset",
           "circuit_flow": "Heating circuit 2 flow",
           "show_absent": "Show modules detected as not installed"
         }
@@ -156,6 +158,23 @@
     "sensor": {
       "disabled_entities": {
         "name": "Disabled entities"
+      },
+      "derived_last_discharge_restart_margin": {
+        "name": "Last discharge restart margin"
+      },
+      "derived_median_restart_margin_today": {
+        "name": "Median restart margin today"
+      },
+      "derived_buffer_judgement": {
+        "name": "Buffer judgement",
+        "state": {
+          "keep": "Keep",
+          "lower": "Lower",
+          "raise": "Raise"
+        }
+      },
+      "derived_curve_gap": {
+        "name": "Curve gap"
       },
       "derived_heat_to_rooms": {
         "name": "Heat to the rooms"
