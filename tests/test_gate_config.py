@@ -83,3 +83,9 @@ def test_wrapper_passes_the_exit_code_through() -> None:
         [*WRAPPER, "-c", "raise SystemExit(3)"], cwd=REPO, check=False
     )
     assert result.returncode == 3
+
+
+# DHF-TEST: genesis-wp-ha/requirement-1 genesis-wp-ha/ac-196
+def test_runner_allows_five_rework_rounds() -> None:
+    rounds = CONFIG.get("max_rework_rounds")
+    assert type(rounds) is int and rounds == 5
