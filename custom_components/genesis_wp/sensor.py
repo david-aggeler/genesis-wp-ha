@@ -13,11 +13,12 @@ from homeassistant.components.sensor import RestoreSensor
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.components.sensor import SensorStateClass
-from homeassistant.const import UnitOfEnergy, UnitOfPower
+from homeassistant.const import EntityCategory, UnitOfEnergy, UnitOfPower
 from homeassistant.const import UnitOfTemperature
 from homeassistant.const import UnitOfTime
 from homeassistant.const import UnitOfVolumeFlowRate
 from homeassistant.core import callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.restore_state import RestoredExtraData
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -72,7 +73,10 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     """Add the heat pump's sensors from a config_entry, except those of absent modules (requirement-12)."""
     coordinator = hass.data[DOMAIN][config_entry.entry_id]
 
-    sensors = [ThermiaHeatpumpSensor(coordinator, HEATPUMP_SENSOR)]
+    sensors = [
+        ThermiaHeatpumpSensor(coordinator, HEATPUMP_SENSOR),
+        DisabledEntitiesSensor(coordinator),
+    ]
     for register, spec in REGISTERS.items():
         if not spec[coordinator.kind] or register in coordinator.excluded or register in REGISTER_EXCLUSIONS:
             continue
@@ -93,6 +97,55 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         sensors.extend(CompressorRunSensor(coordinator, key) for key in COMPRESSOR_STATISTICS)
     async_add_entities(sensors, False)
     coordinator.setup_entity_ids["sensor"] = {sensor.unique_id for sensor in sensors}
+
+
+# DHF-REQ: genesis-wp-ha/requirement-35
+class DisabledEntitiesSensor(SensorEntity):
+    """Count disabled entities from this config entry for the drawing notice."""
+
+    _attr_should_poll = False
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "disabled_entities"
+    _attr_extra_state_attributes = {"genesis_wp_diagnostic": "disabled_entities"}
+
+    def __init__(self, coordinator):
+        self._entry_id = coordinator.entry_id
+        self._attr_unique_id = f"{self._entry_id}_disabled_entities"
+        self._attr_device_info = coordinator.device_info
+
+    async def async_added_to_hass(self):
+        registry = er.async_get(self.hass)
+
+        def is_counted(entity):
+            return (
+                entity is not None
+                and entity.config_entry_id == self._entry_id
+                and entity.disabled_by is not None
+                and entity.unique_id != self.unique_id
+            )
+
+        disabled_ids = {
+            entity.entity_id
+            for entity in er.async_entries_for_config_entry(registry, self._entry_id)
+            if is_counted(entity)
+        }
+        self._attr_native_value = len(disabled_ids)
+
+        @callback
+        def registry_updated(event):
+            entity_id = event.data["entity_id"]
+            disabled_ids.discard(event.data.get("old_entity_id", entity_id))
+            if is_counted(registry.async_get(entity_id)):
+                disabled_ids.add(entity_id)
+            count = len(disabled_ids)
+            if count != self._attr_native_value:
+                self._attr_native_value = count
+                self.async_write_ha_state()
+
+        self.async_on_remove(
+            self.hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, registry_updated)
+        )
 
 
 class RegisterSensor(RegisterAnchor, SensorEntity):

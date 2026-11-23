@@ -2,6 +2,9 @@
   "title": "Genesis WP",
   "entity": {
     "sensor": {
+      "disabled_entities": {
+        "name": "Deaktivierte Entitäten"
+      },
       "derived_heat_to_rooms": {
         "name": "Wärme an die Räume"
       },

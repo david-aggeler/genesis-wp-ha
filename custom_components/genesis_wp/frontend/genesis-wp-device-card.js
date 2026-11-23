@@ -1,6 +1,6 @@
 import { registerCard } from './register-card.js';
 import { patch } from './patch.js';
-import { shortLabel } from './labels.js';
+import { language, shortLabel } from './labels.js';
 // DHF-REQ: genesis-wp-ha/requirement-18
 // Read-only entity presentation. Register keys are anchors, never wire reads or decoding.
 // Geometry redrawn from genesis-wp interface_spec-6, process control room editions.
@@ -438,6 +438,19 @@ export class GenesisWpDeviceCard extends HTMLElement {
     }
     return tags?`<svg class="values" viewBox="0 0 550 ${y}" aria-label="Values">${tags}</svg>`:'';
   }
+  // DHF-REQ: genesis-wp-ha/requirement-35
+  _disabledEntitiesNotice(resolved) {
+    const states = this._hass.states;
+    const diagnostic = Object.entries(this._hass.entities || {}).find(([id, entity]) =>
+      (entity.device_id === resolved.id || entity.device_id === resolved.device.via_device_id)
+      && states[id]?.attributes.genesis_wp_diagnostic === 'disabled_entities');
+    const count = Number(diagnostic && states[diagnostic[0]].state);
+    if (!Number.isSafeInteger(count) || count < 1) return '';
+    const notice = language(this._hass) === 'de'
+      ? `${count} Entit\u00e4ten deaktiviert \u2014 unter Einstellungen \u2192 Entit\u00e4ten aktivieren`
+      : `${count} entities disabled \u2014 enable them in Settings \u2192 Entities`;
+    return `<p>${notice}</p>`;
+  }
   _render() {
     if(!this._config || !this._hass || !this.shadowRoot) return;
     const category=this._config.device, resolved=this._resolve();
@@ -565,7 +578,7 @@ export class GenesisWpDeviceCard extends HTMLElement {
       }
     }
     const diagram=this._config.layout==='diagram';
-    patch(this.shadowRoot, `<style>@media (prefers-reduced-motion:reduce){.flow-motion{display:none}}[role=button]{cursor:pointer}[role=button]:focus-visible{outline:2px solid var(--primary-color)}:host{display:block;color:var(--primary-text-color)}ha-card{padding:16px}h2{font-size:var(--ha-font-size-xl);font-weight:var(--ha-font-weight-normal)}.mode{color:var(--secondary-text-color)}svg{display:block;width:100%;height:auto}text{fill:currentColor;font-family:inherit;font-size:11px}.tag-label{font-size:11px;line-height:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.own rect,.context rect{fill:var(--card-background-color);stroke:var(--tag-color);stroke-width:1.5}.context{opacity:.75}.calculated rect,.estimated rect{stroke-dasharray:6 3}.style-legend{font-size:8px}.alarms{color:var(--error-color,#d46161);padding:8px}.value{font-size:13px;font-weight:bold}.chip rect{rx:10px}.stage{position:relative}.stage .drawing{position:absolute;inset:0;width:100%;height:100%}.stage .drawing text{font-size:12px}div.chip{position:absolute;box-sizing:border-box;display:flex;flex-direction:column;padding:0 var(--ha-space-1);border:1.5px solid var(--tag-color);border-radius:var(--ha-border-radius-sm,4px);background:var(--card-background-color);overflow:hidden;cursor:pointer;line-height:1.1}.part-label{position:absolute;white-space:nowrap;line-height:1;font-size:var(--ha-font-size-s);color:var(--primary-text-color);pointer-events:none}div.chip.calculated,div.chip.estimated{border-color:transparent;overflow:visible}.chip-border{position:absolute;inset:-1.5px;width:calc(100% + 3px);height:calc(100% + 3px);pointer-events:none}.chip-border rect{x:.75px;y:.75px;width:calc(100% - 1.5px);height:calc(100% - 1.5px);fill:none}div.chip .label{font-size:var(--ha-font-size-s);color:var(--secondary-text-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}div.chip .value{font-size:var(--ha-font-size-s);font-weight:var(--ha-font-weight-medium);white-space:nowrap;overflow:hidden}.legend{display:flex;flex-wrap:wrap;gap:var(--ha-space-1) var(--ha-space-4);margin-top:var(--ha-space-2);font-size:var(--ha-font-size-s);color:var(--secondary-text-color)}.scale{display:inline-flex;align-items:center;gap:var(--ha-space-1)}.bar{display:inline-block;width:160px;height:8px;border-radius:4px}.fault{color:var(--error-color,#d46161)}.fault rect{stroke:var(--error-color,#d46161)}</style>${diagram?'<div class="diagram"':'<ha-card'} style="--tag-color:${CATEGORY_COLORS[category]}">${diagram?'':`<h2>${escapeText(title)}</h2><div class="mode">${escapeText(mode)}</div>`}${body}${diagram?'</div>':'</ha-card>'}`);
+    patch(this.shadowRoot, `<style>@media (prefers-reduced-motion:reduce){.flow-motion{display:none}}[role=button]{cursor:pointer}[role=button]:focus-visible{outline:2px solid var(--primary-color)}:host{display:block;color:var(--primary-text-color)}ha-card{padding:16px}h2{font-size:var(--ha-font-size-xl);font-weight:var(--ha-font-weight-normal)}.mode{color:var(--secondary-text-color)}svg{display:block;width:100%;height:auto}text{fill:currentColor;font-family:inherit;font-size:11px}.tag-label{font-size:11px;line-height:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.own rect,.context rect{fill:var(--card-background-color);stroke:var(--tag-color);stroke-width:1.5}.context{opacity:.75}.calculated rect,.estimated rect{stroke-dasharray:6 3}.style-legend{font-size:8px}.alarms{color:var(--error-color,#d46161);padding:8px}.value{font-size:13px;font-weight:bold}.chip rect{rx:10px}.stage{position:relative}.stage .drawing{position:absolute;inset:0;width:100%;height:100%}.stage .drawing text{font-size:12px}div.chip{position:absolute;box-sizing:border-box;display:flex;flex-direction:column;padding:0 var(--ha-space-1);border:1.5px solid var(--tag-color);border-radius:var(--ha-border-radius-sm,4px);background:var(--card-background-color);overflow:hidden;cursor:pointer;line-height:1.1}.part-label{position:absolute;white-space:nowrap;line-height:1;font-size:var(--ha-font-size-s);color:var(--primary-text-color);pointer-events:none}div.chip.calculated,div.chip.estimated{border-color:transparent;overflow:visible}.chip-border{position:absolute;inset:-1.5px;width:calc(100% + 3px);height:calc(100% + 3px);pointer-events:none}.chip-border rect{x:.75px;y:.75px;width:calc(100% - 1.5px);height:calc(100% - 1.5px);fill:none}div.chip .label{font-size:var(--ha-font-size-s);color:var(--secondary-text-color);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}div.chip .value{font-size:var(--ha-font-size-s);font-weight:var(--ha-font-weight-medium);white-space:nowrap;overflow:hidden}.legend{display:flex;flex-wrap:wrap;gap:var(--ha-space-1) var(--ha-space-4);margin-top:var(--ha-space-2);font-size:var(--ha-font-size-s);color:var(--secondary-text-color)}.scale{display:inline-flex;align-items:center;gap:var(--ha-space-1)}.bar{display:inline-block;width:160px;height:8px;border-radius:4px}.fault{color:var(--error-color,#d46161)}.fault rect{stroke:var(--error-color,#d46161)}</style>${diagram?'<div class="diagram"':'<ha-card'} style="--tag-color:${CATEGORY_COLORS[category]}">${diagram?'':`<h2>${escapeText(title)}</h2><div class="mode">${escapeText(mode)}</div>`}${resolved ? this._disabledEntitiesNotice(resolved) : ''}${body}${diagram?'</div>':'</ha-card>'}`);
   }
 }
 registerCard('genesis-wp-device-card', GenesisWpDeviceCard, {

@@ -236,8 +236,6 @@ p.route={path:'/genesis-wp'}; assert.match(html(),/data-tile=/);
    assert.equal(p._curveConfig({curve:'sensor.x'}).max,undefined);
    p.hass=hass;}
 }
-console.log("HARNESS-COMPLETE");
-
 // DHF-TEST: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-122
 {
  const stored = new Map();
@@ -276,3 +274,27 @@ console.log("HARNESS-COMPLETE");
  assert.ok(Math.abs(duration() - 7.1428571429) < 0.0001);
  delete globalThis.localStorage;
 }
+
+// DHF-TEST: genesis-wp-ha/requirement-35 genesis-wp-ha/ac-183
+{
+ const [childId] = device('internal_heat_pump');
+ const parent = 'heat-pump-parent';
+ const id = 'sensor.renamed_diagnostic';
+ const card = new (customElements.get('genesis-wp-device-card'))();
+ p.shadowRoot.querySelectorAll = selector => {
+  if (selector !== '[data-diagram]') return [];
+  const diagram = html().match(/data-diagram="([^"]+)" data-entry="([^"]+)"/);
+  if (!diagram) return [];
+  card.dataset = {diagram: diagram[1], entry: diagram[2]};
+  return [card];
+ };
+ p.hass = {...hass,
+  devices: {...hass.devices, [childId]: {...hass.devices[childId], via_device_id: parent}},
+  entities: {...hass.entities, [id]: {device_id: parent, entity_category: 'diagnostic'}},
+  states: {...hass.states, [id]: {state: '2', attributes: {genesis_wp_diagnostic: 'disabled_entities'}}},
+ };
+ p.route = {path: '/genesis-wp/internal_heat_pump'};
+ assert.match(card.shadowRoot.innerHTML, /2 entities disabled \u2014 enable them in Settings \u2192 Entities/);
+}
+
+console.log("HARNESS-COMPLETE");
