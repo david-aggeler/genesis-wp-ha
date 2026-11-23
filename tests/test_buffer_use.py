@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 from functools import partial
+from unittest.mock import patch
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -11,6 +12,8 @@ from custom_components.genesis_wp.const import DOMAIN
 from genesis_wp.emulator import Emulator
 from homeassistant.helpers import entity_registry as er
 from homeassistant.const import EVENT_HOMEASSISTANT_FINAL_WRITE
+from homeassistant.core import CoreState
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
@@ -95,6 +98,15 @@ async def test_completed_discharge(buffer):
     assert value.attributes["unit_of_measurement"] == "K"
     assert value.attributes["drawn_energy"] == 2.26
     assert value.attributes["cold_tail_share"] == 7.7
+
+
+# DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-142
+async def test_phase_without_temperature_drop_has_zero_cold_tail_share(buffer):
+    _, phase, read, *_ = buffer
+    await phase(3800, stop=3800, target=3900)
+    value = read("last_discharge_restart_margin")
+    assert float(value.state) == -1.0
+    assert value.attributes["cold_tail_share"] == 0.0
 
 
 # DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-143
@@ -276,6 +288,50 @@ async def test_removal_discards_pending_buffer_writes_and_rollover(
         hass.data[DOMAIN].pop(entry.entry_id, None)
         await coordinator.async_shutdown()
         await coordinator.async_close()
+
+
+# DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146
+async def test_removal_while_stopping_cancels_the_deferred_final_write(hass, hass_storage, buffer):
+    _, phase, _, _, _, _, entry = buffer
+    key = f"{DOMAIN}.buffer_phases.{entry.entry_id}"
+
+    # The storage fixture's async_remove only drops the key. Home Assistant's own also
+    # cancels that Store instance's delayed and final-write listeners; restore that part.
+    async def remove(store):
+        store._async_cleanup_delay_listener()
+        store._async_cleanup_final_write_listener()
+        hass_storage.pop(store.key, None)
+
+    await phase(3250)
+    hass.set_state(CoreState.stopping)
+    try:
+        with patch.object(Store, "async_remove", remove):
+            # Unload succeeds; Home Assistant defers its flush to the final-write event.
+            await hass.config_entries.async_remove(entry.entry_id)
+            await hass.async_block_till_done()
+        assert key not in hass_storage
+        hass.set_state(CoreState.final_write)
+        hass.bus.async_fire(EVENT_HOMEASSISTANT_FINAL_WRITE)
+        await hass.async_block_till_done()
+        assert key not in hass_storage
+    finally:
+        hass.set_state(CoreState.running)
+
+
+# DHF-TEST: genesis-wp-ha/requirement-30
+@pytest.mark.parametrize("module", ["buffer_tank", "heating_circuit_2"])
+async def test_absent_module_makes_buffer_readings_unavailable(hass, buffer, module):
+    _, phase, read, reload, _, _, entry = buffer
+    hass.config_entries.async_update_entry(entry, options={**entry.options, module: "absent"})
+    await hass.async_block_till_done()
+    await reload()
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    assert coordinator.thermia.capability_state(module) == "absent"
+    await phase(3250)
+    for key in ("curve_gap", "last_discharge_restart_margin", "median_restart_margin_today", "buffer_judgement"):
+        assert read(key).state == "unavailable", key
+    assert coordinator.buffer_use.last is None
+    assert coordinator.buffer_use.phases == []
 
 
 # DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146

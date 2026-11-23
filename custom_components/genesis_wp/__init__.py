@@ -369,8 +369,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
         await coordinator.async_save_runs()
         await coordinator.async_save_buffer_phases()
         coordinator.cancel_buffer_rollover()
-        hass.data.get(DATA_RUN_STORES, {}).pop(entry.entry_id, None)
-        hass.data.get(DATA_BUFFER_STORES, {}).pop(entry.entry_id, None)
+        # The closed stores stay registered: a write Home Assistant deferred to its final-write
+        # event belongs to their Store, which a later setup or removal must reuse to cancel it.
         await coordinator.async_close()
         if not hass.data[DOMAIN]:
             async_remove_panel(hass, "genesis-wp")
@@ -419,9 +419,9 @@ class DailySnapshotStore:
     (ac-161, ac-165, ac-166).
     """
 
-    def __init__(self, hass: HomeAssistant, key: str):
+    def __init__(self, hass: HomeAssistant, key: str, store: Store | None = None):
         self._hass = hass
-        self._store = Store(hass, 1, key)
+        self._store = store if store is not None else Store(hass, 1, key)
         self._data_func = None
         self._unsub_timer = None
         self._unsub_final_write = None
@@ -488,20 +488,29 @@ class DailySnapshotStore:
             await self._store.async_remove()
 
 
-def compressor_run_store(hass: HomeAssistant, entry_id: str) -> DailySnapshotStore:
-    """The entry's run store, shared until the entry unloads or is removed."""
-    stores = hass.data.setdefault(DATA_RUN_STORES, {})
-    if entry_id not in stores:
-        stores[entry_id] = DailySnapshotStore(hass, f"{DOMAIN}.compressor_runs.{entry_id}")
+def _daily_snapshot_store(hass: HomeAssistant, registry: str, key: str, entry_id: str) -> DailySnapshotStore:
+    """The entry's open snapshot store; one closed by an unload is reopened on the same Store.
+
+    Keeping the Store instance lets removal cancel a write Home Assistant deferred to its
+    final-write event while it was stopping (formal_review-112 B1).
+    """
+    stores = hass.data.setdefault(registry, {})
+    current = stores.get(entry_id)
+    if current is None or current.closed:
+        stores[entry_id] = DailySnapshotStore(
+            hass, key, None if current is None else current._store
+        )
     return stores[entry_id]
+
+
+def compressor_run_store(hass: HomeAssistant, entry_id: str) -> DailySnapshotStore:
+    """The entry's run store, shared until the entry is removed."""
+    return _daily_snapshot_store(hass, DATA_RUN_STORES, f"{DOMAIN}.compressor_runs.{entry_id}", entry_id)
 
 
 def buffer_phase_store(hass: HomeAssistant, entry_id: str) -> DailySnapshotStore:
-    """The entry's buffer discharge store, shared until the entry unloads or is removed."""
-    stores = hass.data.setdefault(DATA_BUFFER_STORES, {})
-    if entry_id not in stores:
-        stores[entry_id] = DailySnapshotStore(hass, f"{DOMAIN}.buffer_phases.{entry_id}")
-    return stores[entry_id]
+    """The entry's buffer discharge store, shared until the entry is removed."""
+    return _daily_snapshot_store(hass, DATA_BUFFER_STORES, f"{DOMAIN}.buffer_phases.{entry_id}", entry_id)
 
 
 def seeded_estimator(key: str, loop, seed) -> FlowEstimator:
@@ -732,7 +741,8 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             self._track_run(signal, mode)
         if self.buffer_use is not None:
             previous_phase = self.buffer_use.last
-            self.buffer_use.add(dt_util.now(), {
+            # An absent buffer tank or circuit 2 yields no phase observations (requirement-30).
+            self.buffer_use.add(dt_util.now(), {} if self.hc2_modules_absent else {
                 key: data[key] for key in PHASE_INPUTS if key in data and key not in unread
             })
             if self.buffer_use.last is not previous_phase:
@@ -787,11 +797,16 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             self.rooms_heat.add(now, heat, pump_on)
 
     @property
-    def rooms_heat_estimable(self) -> bool:
-        """False once heating circuit 2 or its buffer tank is confirmed absent."""
-        return self.hc2_estimator is not None and not any(
+    def hc2_modules_absent(self) -> bool:
+        """True once heating circuit 2 or its buffer tank is confirmed absent."""
+        return any(
             self.thermia.capability_state(name) == ABSENT for name in ("buffer_tank", "heating_circuit_2")
         )
+
+    @property
+    def rooms_heat_estimable(self) -> bool:
+        """False once heating circuit 2 or its buffer tank is confirmed absent."""
+        return self.hc2_estimator is not None and not self.hc2_modules_absent
 
     def _estimate_flows(self, data):
         """Feed each loop's estimator; registers not read this update count as missing, never as 0."""

@@ -607,7 +607,16 @@ class CompressorRunSensor(CoordinatorEntity, SensorEntity):
         return {"kind": kind} if kind == HOT_WATER else {"band": run_band(value), "kind": kind}
 
 
-class BufferDeltaSensor(HeatSensor):
+# DHF-REQ: genesis-wp-ha/requirement-30
+class BufferUseSensor(HeatSensor):
+    """A buffer assessment reading; unavailable once the buffer tank or circuit 2 is absent."""
+
+    @property
+    def available(self):
+        return super().available and not self.coordinator.hc2_modules_absent
+
+
+class BufferDeltaSensor(BufferUseSensor):
     """A temperature difference in kelvins."""
 
     _attr_icon = "mdi:thermometer-lines"
@@ -657,7 +666,7 @@ class DailyDischargeSensor(BufferDeltaSensor):
         }
 
 
-class BufferJudgementSensor(HeatSensor):
+class BufferJudgementSensor(BufferUseSensor):
     """Whether the observed discharges suggest keeping, lowering or raising the reference."""
 
     _attr_device_class = SensorDeviceClass.ENUM
