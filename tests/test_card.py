@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from custom_components.genesis_wp.const import CARD_URL
 from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL
 from homeassistant.components.frontend import UrlManager
 from homeassistant.setup import async_setup_component
@@ -25,8 +24,8 @@ async def test_card_module_is_served_and_registered(hass, hass_client, start_emu
     hass.data[DATA_EXTRA_MODULE_URL] = UrlManager(lambda *_: None, [])
     await setup_entry(hass, await start_emulator())
 
-    assert CARD_URL in hass.data[DATA_EXTRA_MODULE_URL].urls
-    response = await (await hass_client()).get(CARD_URL)
+    url, = (url for url in hass.data[DATA_EXTRA_MODULE_URL].urls if url.endswith(f"/{CARD.name}"))
+    response = await (await hass_client()).get(url)
     assert response.status == 200
     assert await response.read() == CARD.read_bytes()
     assert b'const TAG = "genesis-wp-heating-curve-card"' in CARD.read_bytes()

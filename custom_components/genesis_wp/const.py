@@ -91,9 +91,9 @@ CORE_SETTINGS = {
 # A circuit's set temperature sensor carries its heating curve for the card (requirement-11).
 HEATING_CURVES = {_SET_TEMPERATURE_1: _CURVE_Y_1, _SET_TEMPERATURE_2: _CURVE_Y_2}
 OUTDOOR_TEMPERATURE = thermiaconst.ATTR_INPUT_OUTDOOR_TEMPERATURE
-CARD_URL = "/genesis_wp/genesis-wp-heating-curve-card.js"
-DEVICE_CARD_URL = "/genesis_wp/genesis-wp-device-card.js"
-CARD_URLS = (CARD_URL, DEVICE_CARD_URL)
+FRONTEND_URL = "/genesis_wp"
+PANEL_MODULE = "genesis-wp-panel.js"
+CARD_MODULES = ("genesis-wp-heating-curve-card.js", "genesis-wp-device-card.js")
 
 # Registers a setting entity subscribes besides its own: the library reads holding 116 only
 # while it knows coil 41 is True.

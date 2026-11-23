@@ -59,9 +59,10 @@ from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.helpers.update_coordinator import UpdateFailed
+from homeassistant.loader import async_get_integration
 from homeassistant.util import dt as dt_util
 
-from .const import CARD_URLS
+from .const import CARD_MODULES
 from .const import CONF_CAPABILITIES
 from .const import CONF_CAPABILITIES_SEEN
 from .const import CONF_MODE
@@ -70,6 +71,8 @@ from .const import CONF_PROFILE
 from .const import CONF_UNIT
 from .const import CORE_SETTINGS
 from .const import DOMAIN
+from .const import FRONTEND_URL
+from .const import PANEL_MODULE
 from .const import HC2_RETURN_DEFAULTS
 from .const import EMULATOR_DYNAMICS_INTERVAL
 from .const import EMULATOR_HOST
@@ -89,6 +92,7 @@ SCAN_INTERVAL = timedelta(seconds=30)
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 _LOGGER = logging.getLogger(__name__)
+_DATA_FRONTEND_URL = "genesis_wp_frontend_url"
 
 VERSION_REGISTERS = {
     "control_software": (  # inputs 311-313
@@ -160,18 +164,33 @@ def create_entry_client(entry: ConfigEntry, connection) -> ThermiaGenesis:
         return create_client(connection, overrides)
 
 
+# DHF-REQ: genesis-wp-ha/requirement-35
 async def async_setup(hass: HomeAssistant, config: ConfigType):
     """Serve and register the read-only dashboard cards (requirements 11 and 18)."""
     # DHF-REQ: genesis-wp-ha/requirement-18
+    if _DATA_FRONTEND_URL in hass.data:
+        return True
+
+    integration = await async_get_integration(hass, DOMAIN)
+    frontend_url = f"{FRONTEND_URL}/{integration.version}"
     if hass.http is not None:
+        frontend = Path(__file__).parent / "frontend"
+        # Keep the previous URLs working for tabs opened before the update.
+        legacy_modules = (
+            *CARD_MODULES, PANEL_MODULE, "genesis-wp-panel-view.js",
+            "register-card.js", "patch.js", "labels.js",
+        )
         await hass.http.async_register_static_paths([
-            StaticPathConfig(url, str(Path(__file__).parent / "frontend" / Path(url).name), False)
-            for url in (*CARD_URLS, "/genesis_wp/register-card.js", "/genesis_wp/patch.js", "/genesis_wp/labels.js",
-                        "/genesis_wp/genesis-wp-panel.js")
+            StaticPathConfig(frontend_url, str(frontend), False),
+            *(
+                StaticPathConfig(f"{FRONTEND_URL}/{name}", str(frontend / name), False)
+                for name in legacy_modules
+            ),
         ])
     if DATA_EXTRA_MODULE_URL in hass.data:
-        for url in CARD_URLS:
-            add_extra_js_url(hass, url)
+        for name in CARD_MODULES:
+            add_extra_js_url(hass, f"{frontend_url}/{name}")
+    hass.data[_DATA_FRONTEND_URL] = frontend_url
     return True
 
 
@@ -257,7 +276,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         await async_register_panel(
             hass, webcomponent_name="genesis-wp-panel", frontend_url_path="genesis-wp",
             sidebar_title="Heat pump", sidebar_icon="mdi:heat-pump",
-            module_url="/genesis_wp/genesis-wp-panel.js", require_admin=False,
+            module_url=f"{hass.data[_DATA_FRONTEND_URL]}/{PANEL_MODULE}", require_admin=False,
         )
     # DHF-REQ: genesis-wp-ha/requirement-19
     registry = er.async_get(hass)

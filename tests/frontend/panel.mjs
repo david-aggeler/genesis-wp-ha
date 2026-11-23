@@ -12,6 +12,7 @@ const Panel=customElements.get('genesis-wp-panel');
 assert.ok(Panel);
 const p=new Panel(); p.hass=hass;
 const html=()=>p.shadowRoot.innerHTML;
+const styles=()=>html().split('<style>')[1].split('</style>')[0];
 const order=['internal_heat_pump','heating_system','additional_heating_circuits','buffer_tank','hot_water','cooling','pool','ksm','electric_meter_and_energy','controller'];
 const device=c=>Object.entries(hass.devices).find(([,d])=>d.identifiers.some(([dom,id])=>dom==='genesis_wp'&&id===`${hass.entry}_${c}`));
 const keyRegs={internal_heat_pump:['input_54','input_9','input_10','input_11'],heating_system:['input_12','input_18'],additional_heating_circuits:['input_40','input_147'],buffer_tank:['input_41'],hot_water:['input_15','input_17'],cooling:['input_106'],pool:['input_119','input_120'],controller:['input_13','input_157','input_158']};
@@ -138,7 +139,7 @@ p.route={path:'/genesis-wp'}; assert.match(html(),/data-tile=/);
 }
 // DHF-TEST: genesis-wp-ha/requirement-21 genesis-wp-ha/ac-90
 {
-  const css=readFileSync(source,'utf8').split('const CSS=`')[1].split('`;')[0];
+  const css=styles();
   assert.ok(css.length>500);
   assert.doesNotMatch(css,/font-size\s*:\s*[\d.]+(px|em|rem|pt)/,'font sizes come from theme tokens');
   assert.doesNotMatch(css,/#[0-9a-f]{3,6}\b|rgba?\(/i,'colors come from theme variables');
@@ -190,8 +191,8 @@ p.route={path:'/genesis-wp'}; assert.match(html(),/data-tile=/);
    p.route={prefix:'/genesis-wp',path:'/internal_heat_pump'};assert.match(html(),/data-diagram="internal_heat_pump"/);
    p._activate({target:{closest:()=>({dataset:{tab:'internal_heat_pump'}})}});assert.equal(pushed.length,1,'no push for the current tab');
    Object.assign(globalThis,saved);}
-  assert.match(readFileSync(source,'utf8').split('const CSS=`')[1].split('`;')[0],/\.diagram\.overflow \.hint\{display:block\}/,'hint follows the diagram overflow, not the viewport');
-  assert.doesNotMatch(readFileSync(source,'utf8').split('const CSS=`')[1].split('`;')[0],/max-width:870px\)\{\.diagram \.hint/);
+  assert.match(styles(),/\.diagram\.overflow \.hint\{display:block\}/,'hint follows the diagram overflow, not the viewport');
+  assert.doesNotMatch(styles(),/max-width:870px\)\{\.diagram \.hint/);
   {const classes=new Set();const box={scrollWidth:976,clientWidth:710,classList:{toggle:(c,on)=>on?classes.add(c):classes.delete(c)}};
    p._overflow(box);assert.ok(classes.has('overflow'));box.clientWidth=1200;p._overflow(box);assert.ok(!classes.has('overflow'));}
 }

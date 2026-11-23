@@ -1,9 +1,66 @@
 """Sidebar panel lifecycle on the loopback emulator."""
 from pathlib import Path
+from urllib.parse import urljoin
 
+import pytest
+from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, UrlManager
+from homeassistant.loader import async_get_integration
 from homeassistant.setup import async_setup_component
 from .helpers import setup_entry
 from .harness import PROFILE_615
+from .node_harness import run_node_harness
+
+FRONTEND = Path("custom_components/genesis_wp/frontend")
+
+
+# DHF-TEST: genesis-wp-ha/requirement-35 genesis-wp-ha/ac-185
+@pytest.mark.parametrize("version", ["1.2.3", "1.2.4"])
+async def test_frontend_urls_use_manifest_version(
+    hass, hass_client, start_emulator, monkeypatch, version
+):
+    assert await async_setup_component(hass, "http", {})
+    hass.data[DATA_EXTRA_MODULE_URL] = UrlManager(lambda *_: None, [])
+    integration = await async_get_integration(hass, "genesis_wp")
+    monkeypatch.setitem(integration.manifest, "version", version)
+    await setup_entry(hass, await start_emulator(PROFILE_615))
+
+    prefix = f"/genesis_wp/{version}/"
+    panel = hass.data["frontend_panels"]["genesis-wp"]
+    panel_url = panel.config["_panel_custom"]["module_url"]
+    assert panel_url == prefix + "genesis-wp-panel.js"
+    assert set(hass.data[DATA_EXTRA_MODULE_URL].urls) == {
+        prefix + "genesis-wp-device-card.js",
+        prefix + "genesis-wp-heating-curve-card.js",
+    }
+
+    client = await hass_client()
+    for module in FRONTEND.glob("*.js"):
+        for url in (urljoin(panel_url, f"./{module.name}"), f"/genesis_wp/{module.name}"):
+            response = await client.get(url)
+            assert response.status == 200, url
+            assert await response.read() == module.read_bytes(), url
+
+
+# DHF-TEST: genesis-wp-ha/requirement-35 genesis-wp-ha/ac-184
+@pytest.mark.parametrize("failure", ["rejected_import", "missing_export"])
+def test_panel_module_failure_shows_reload_message(tmp_path, failure):
+    for module in FRONTEND.glob("*.js"):
+        (tmp_path / module.name).write_bytes(module.read_bytes())
+    card = tmp_path / "genesis-wp-device-card.js"
+    if failure == "rejected_import":
+        card.unlink()
+    else:
+        card.write_text(
+            "export class GenesisWpDeviceCard {}\n"
+            "export const temperatureColor = () => '';\n"
+            "export const toCelsius = (value) => value;\n",
+            encoding="utf-8",
+        )
+
+    run_node_harness(
+        Path(__file__).parent / "frontend" / "panel_failure.mjs",
+        tmp_path / "genesis-wp-panel.js",
+    )
 
 
 # DHF-TEST: genesis-wp-ha/requirement-21 genesis-wp-ha/ac-81
