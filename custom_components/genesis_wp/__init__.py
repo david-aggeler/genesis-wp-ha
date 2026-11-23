@@ -48,10 +48,10 @@ from homeassistant.const import CONF_HOST
 from homeassistant.const import CONF_PORT
 from homeassistant.const import EntityCategory
 from homeassistant.const import EVENT_HOMEASSISTANT_FINAL_WRITE
-from homeassistant.core import CoreState, HomeAssistant
+from homeassistant.core import HomeAssistant
 from homeassistant.core import callback
 from homeassistant.helpers.event import async_call_later, async_track_point_in_utc_time
-from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
+from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import ChildDeviceInfo
@@ -367,8 +367,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
         coordinator = hass.data[DOMAIN].pop(entry.entry_id)
         await coordinator.async_save_calibrations()
         await coordinator.async_save_runs()
+        await coordinator.async_save_buffer_phases()
+        coordinator.cancel_buffer_rollover()
         hass.data.get(DATA_RUN_STORES, {}).pop(entry.entry_id, None)
-        await coordinator.async_close(flush_buffer=True)
+        hass.data.get(DATA_BUFFER_STORES, {}).pop(entry.entry_id, None)
+        await coordinator.async_close()
         if not hass.data[DOMAIN]:
             async_remove_panel(hass, "genesis-wp")
 
@@ -378,13 +381,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Discard observations and calibration owned by the removed entry."""
     if (coordinator := hass.data.get(DOMAIN, {}).get(entry.entry_id)) is not None:
-        await coordinator.async_retire_buffer_store()
+        # A failed unload skipped the coordinator's teardown; stop its daily rollover here.
+        coordinator.cancel_buffer_rollover()
     # DHF-REQ: genesis-wp-ha/requirement-26  (ac-111)
     await flow_calibration_store(hass, entry.entry_id).async_remove()
-    await buffer_phase_store(hass, entry.entry_id).async_remove()
-    # The shared instance, when a retrying setup or a failed unload left one, cancels its pending write.
+    # The shared instances, when a retrying setup or a failed unload left one, cancel their pending writes.
     await compressor_run_store(hass, entry.entry_id).async_remove()
     hass.data[DATA_RUN_STORES].pop(entry.entry_id, None)
+    await buffer_phase_store(hass, entry.entry_id).async_remove()
+    hass.data[DATA_BUFFER_STORES].pop(entry.entry_id, None)
 
 
 # DHF-REQ: genesis-wp-ha/requirement-26
@@ -400,16 +405,12 @@ def flow_calibration_store(hass: HomeAssistant, entry_id: str) -> Store:
 
 COMPRESSOR_RUN_SAVE_DELAY = 30  # [s]
 DATA_RUN_STORES = f"{DOMAIN}_compressor_run_stores"
+DATA_BUFFER_STORES = f"{DOMAIN}_buffer_phase_stores"
 
 
-def buffer_phase_store(hass: HomeAssistant, entry_id: str) -> Store:
-    """Store the entry's daily buffer observations independently of its entities."""
-    return Store(hass, 1, f"{DOMAIN}.buffer_phases.{entry_id}", atomic_writes=True)
-
-
-# DHF-REQ: genesis-wp-ha/requirement-28
-class CompressorRunStore:
-    """The single owner of one entry's stored daily compressor observations.
+# DHF-REQ: genesis-wp-ha/requirement-28 genesis-wp-ha/requirement-30
+class DailySnapshotStore:
+    """The single owner of one entry's stored daily observations of one kind.
 
     Every coordinator of the entry (setup retries included) and its removal share this
     instance, so a pending write is always cancellable. It owns its debounce timer and
@@ -418,9 +419,9 @@ class CompressorRunStore:
     (ac-161, ac-165, ac-166).
     """
 
-    def __init__(self, hass: HomeAssistant, entry_id: str):
+    def __init__(self, hass: HomeAssistant, key: str):
         self._hass = hass
-        self._store = Store(hass, 1, f"{DOMAIN}.compressor_runs.{entry_id}")
+        self._store = Store(hass, 1, key)
         self._data_func = None
         self._unsub_timer = None
         self._unsub_final_write = None
@@ -487,11 +488,19 @@ class CompressorRunStore:
             await self._store.async_remove()
 
 
-def compressor_run_store(hass: HomeAssistant, entry_id: str) -> CompressorRunStore:
+def compressor_run_store(hass: HomeAssistant, entry_id: str) -> DailySnapshotStore:
     """The entry's run store, shared until the entry unloads or is removed."""
     stores = hass.data.setdefault(DATA_RUN_STORES, {})
     if entry_id not in stores:
-        stores[entry_id] = CompressorRunStore(hass, entry_id)
+        stores[entry_id] = DailySnapshotStore(hass, f"{DOMAIN}.compressor_runs.{entry_id}")
+    return stores[entry_id]
+
+
+def buffer_phase_store(hass: HomeAssistant, entry_id: str) -> DailySnapshotStore:
+    """The entry's buffer discharge store, shared until the entry unloads or is removed."""
+    stores = hass.data.setdefault(DATA_BUFFER_STORES, {})
+    if entry_id not in stores:
+        stores[entry_id] = DailySnapshotStore(hass, f"{DOMAIN}.buffer_phases.{entry_id}")
     return stores[entry_id]
 
 
@@ -582,8 +591,6 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         buffer_volume = entry.options.get("buffer_volume", HC2_RETURN_DEFAULTS["buffer_volume"])
         self.buffer_use = None
         self._buffer_store = None
-        self._buffer_save_lock = asyncio.Lock()
-        self._buffer_pending_day = None
         self._cancel_buffer_rollover = None
         if all(REGISTERS[key][self.kind] for key in PHASE_INPUTS):
             offset = entry.options.get(BUFFER_REFERENCE_OFFSET, DEFAULT_BUFFER_REFERENCE_OFFSET)
@@ -661,37 +668,10 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             self.buffer_use.restore(dt_util.now(), snapshot)
 
     # DHF-REQ: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146
-    async def _async_save_pending_buffer_phases(self):
-        """Attempt the current day's save while holding the buffer save lock."""
-        store = self._buffer_store
-        pending_day = self._buffer_pending_day
-        if store is None or pending_day is None:
-            return
-        if pending_day != self.buffer_use.day or pending_day != dt_util.now().date():
-            self._buffer_pending_day = None
-            return
-        snapshot = self.buffer_use.snapshot()
-        try:
-            await store.async_save(snapshot)
-            if self.hass.state is CoreState.stopping:
-                return  # Store defers the write until Home Assistant's final write event.
-            # Store can log a write failure and return normally. Read back the
-            # snapshot before marking it clean.
-            saved = await store.async_load()
-        except (OSError, HomeAssistantError) as error:
-            _LOGGER.warning("Buffer discharge snapshot save failed (%s)", type(error).__name__)
-        else:
-            if saved == snapshot:
-                self._buffer_pending_day = None
-            else:
-                _LOGGER.warning("Buffer discharge snapshot save could not be confirmed")
-
-    async def async_retire_buffer_store(self, *, flush=False):
-        """Wait for active saves and optionally flush today's pending observations."""
-        async with self._buffer_save_lock:
-            if flush:
-                await self._async_save_pending_buffer_phases()
-            self._buffer_store = None
+    async def async_save_buffer_phases(self):
+        """Flush today's buffer observations when the entry unloads; later phases schedule no writes."""
+        if self._buffer_store is not None:
+            await self._buffer_store.async_close(self.buffer_use.snapshot())
 
     async def async_save_runs(self):
         """Flush compressor observations when the entry unloads; later updates schedule no writes."""
@@ -704,14 +684,15 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         """Drop a pending statistics write and keep the store open."""
         if self._run_store is not None:
             self._run_store.async_cancel()
+        if self._buffer_store is not None:
+            self._buffer_store.async_cancel()
 
     def _track_run(self, signal, mode=None):
         if self.run_tracker is not None and self.run_tracker.add(dt_util.now(), signal, mode):
             self._run_store.async_delay_save(self.run_tracker.daily.as_dict)
 
-    async def async_close(self, *, flush_buffer=False):
+    async def async_close(self):
         """Close the client, then stop the entry's emulator if it has one."""
-        await self.async_retire_buffer_store(flush=flush_buffer)
         await self.thermia.close()
         if self.emulator is not None:
             await self.emulator.stop()
@@ -755,10 +736,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
                 key: data[key] for key in PHASE_INPUTS if key in data and key not in unread
             })
             if self.buffer_use.last is not previous_phase:
-                self._buffer_pending_day = self.buffer_use.day
-            if self._buffer_pending_day is not None:
-                async with self._buffer_save_lock:
-                    await self._async_save_pending_buffer_phases()
+                self._buffer_store.async_delay_save(self.buffer_use.snapshot)
         return data
 
     @callback
@@ -782,10 +760,14 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
                 self.hass, self._reset_buffer_day, boundary,
             )
 
-    async def async_shutdown(self):
+    @callback
+    def cancel_buffer_rollover(self):
         if self._cancel_buffer_rollover is not None:
             self._cancel_buffer_rollover()
             self._cancel_buffer_rollover = None
+
+    async def async_shutdown(self):
+        self.cancel_buffer_rollover()
         await super().async_shutdown()
 
     @callback

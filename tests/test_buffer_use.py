@@ -1,9 +1,7 @@
 """Buffer discharge assessment through loopback emulator refreshes."""
 
-import asyncio
 from datetime import UTC, datetime, timedelta
 from functools import partial
-from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -12,19 +10,12 @@ from custom_components import genesis_wp
 from custom_components.genesis_wp.const import DOMAIN
 from genesis_wp.emulator import Emulator
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers import storage
-from homeassistant.helpers.storage import Store
+from homeassistant.const import EVENT_HOMEASSISTANT_FINAL_WRITE
 from homeassistant.util import dt as dt_util
 
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from .helpers import setup_entry
-
-
-# The Home Assistant fixture mocks Store I/O. Keep real I/O available for
-# the snapshot failure test, which targets the filesystem write boundary.
-_REAL_STORE_LOAD = Store._async_load
-_REAL_STORE_WRITE = Store._async_write_data
 
 
 @pytest.fixture
@@ -243,109 +234,48 @@ async def test_scheduled_local_midnight_clears_daily_values(hass, buffer):
 
 
 # DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146
-@pytest.mark.parametrize("error", [storage.WriteError, OSError])
-@pytest.mark.parametrize("retry_on", ["poll", "reload"])
-async def test_buffer_snapshot_recovers_from_file_write_failure(
-    hass, buffer, monkeypatch, caplog, error, retry_on
-):
-    sample, phase, read, reload, _, _, entry = buffer
+async def test_completed_phase_is_written_after_the_save_delay(hass, hass_storage, buffer):
+    _, phase, _, _, _, _, entry = buffer
     key = f"{DOMAIN}.buffer_phases.{entry.entry_id}"
-    mocked_load = Store._async_load
-    mocked_write = Store._async_write_data
-
-    async def load(store):
-        return await (_REAL_STORE_LOAD if store.key == key else mocked_load)(store)
-
-    async def write(store, data):
-        await (_REAL_STORE_WRITE if store.key == key else mocked_write)(store, data)
-
-    with monkeypatch.context() as patch:
-        patch.setattr(Store, "_async_load", load)
-        patch.setattr(Store, "_async_write_data", write)
-
-        attempts = 0
-
-        def fail_first(writer):
-            def write_file(path, *args, **kwargs):
-                nonlocal attempts
-                if Path(path).name == key:
-                    attempts += 1
-                    if attempts == 1:
-                        raise error("storage directory unavailable")
-                return writer(path, *args, **kwargs)
-
-            return write_file
-
-        for writer in ("write_utf8_file", "write_utf8_file_atomic"):
-            patch.setattr(storage, writer, fail_first(getattr(storage, writer)))
-
-        await phase(3250)
-        assert attempts == 1
-        assert not Path(hass.config.path(".storage", key)).exists()
-        assert float(read("curve_gap").state) == 2.0
-        assert float(read("median_restart_margin_today").state) == 0.5
-        assert ("storage directory unavailable" if error is storage.WriteError else "OSError") in caplog.text
-        if retry_on == "poll":
-            await sample()
-            assert attempts == 2
-        await reload()
-        assert attempts == 2
-        daily = read("median_restart_margin_today")
-        assert float(daily.state) == 0.5
-        assert daily.attributes["phase_count"] == 1
+    await phase(3250)
+    assert key not in hass_storage
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=genesis_wp.COMPRESSOR_RUN_SAVE_DELAY + 1))
+    await hass.async_block_till_done()
+    saved = hass_storage[key]["data"]
+    assert saved["day"] == dt_util.now().date().isoformat()
+    assert len(saved["phases"]) == 1
+    assert saved["phases"][0][0] == 0.5
 
 
 # DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146
-@pytest.mark.parametrize("operation", ["reload", "remove", "remove_after_failed_unload"])
-async def test_entry_lifecycle_waits_for_buffer_phase_save(
-    hass, hass_storage, buffer, monkeypatch, operation
+@pytest.mark.parametrize("failed_unload", [False, True])
+async def test_removal_discards_pending_buffer_writes_and_rollover(
+    hass, hass_storage, buffer, monkeypatch, failed_unload
 ):
-    _, phase, read, reload, _, _, entry = buffer
-    await phase(3150)
+    _, phase, _, _, _, _, entry = buffer
     key = f"{DOMAIN}.buffer_phases.{entry.entry_id}"
-    writing = asyncio.Event()
-    release = asyncio.Event()
-    original_save = Store.async_save
-
-    async def held_save(store, data):
-        if store.key == key:
-            writing.set()
-            await release.wait()
-        await original_save(store, data)
-
-    monkeypatch.setattr(Store, "async_save", held_save)
     coordinator = hass.data[DOMAIN][entry.entry_id]
-    if operation == "remove_after_failed_unload":
+    if failed_unload:
         async def refuse_unload(*_args):
             return False
 
         monkeypatch.setattr(hass.config_entries, "async_unload_platforms", refuse_unload)
-
-    refresh = asyncio.create_task(phase(3250))
-    await asyncio.wait_for(writing.wait(), timeout=5)
-    lifecycle = asyncio.create_task(
-        reload() if operation == "reload" else hass.config_entries.async_remove(entry.entry_id)
-    )
-    try:
-        finished, _ = await asyncio.wait({lifecycle}, timeout=0.2)
-    finally:
-        release.set()
-        await refresh
-        await lifecycle
-        if operation == "remove_after_failed_unload":
-            await phase(3500)
-            hass.data[DOMAIN].pop(entry.entry_id, None)
-            await coordinator.async_shutdown()
-            await coordinator.async_close()
-
-    assert not finished
-    if operation == "reload":
-        daily = read("median_restart_margin_today")
-        assert float(daily.state) == 0
-        assert daily.attributes["median_cold_tail_share"] == 3.8
-        assert daily.attributes["phase_count"] == 2
-    else:
+    await phase(3250)  # Arms the delayed write and the final-write listener.
+    await hass.config_entries.async_remove(entry.entry_id)
+    await hass.async_block_till_done()
+    assert coordinator._cancel_buffer_rollover is None
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=genesis_wp.COMPRESSOR_RUN_SAVE_DELAY + 1))
+    hass.bus.async_fire(EVENT_HOMEASSISTANT_FINAL_WRITE)
+    await hass.async_block_till_done()
+    assert key not in hass_storage
+    if failed_unload:
+        await phase(3500)  # A surviving coordinator schedules no write to the removed store.
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=genesis_wp.COMPRESSOR_RUN_SAVE_DELAY + 1))
+        await hass.async_block_till_done()
         assert key not in hass_storage
+        hass.data[DOMAIN].pop(entry.entry_id, None)
+        await coordinator.async_shutdown()
+        await coordinator.async_close()
 
 
 # DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146
