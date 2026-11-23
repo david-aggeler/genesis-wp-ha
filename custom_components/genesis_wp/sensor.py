@@ -107,6 +107,7 @@ class DisabledEntitiesSensor(SensorEntity):
     _attr_has_entity_name = True
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_translation_key = "disabled_entities"
+    _attr_icon = "mdi:counter"
     _attr_extra_state_attributes = {"genesis_wp_diagnostic": "disabled_entities"}
 
     def __init__(self, coordinator):

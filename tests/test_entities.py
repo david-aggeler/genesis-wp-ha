@@ -120,7 +120,10 @@ async def test_unique_ids_use_register_type_and_address(hass, start_emulator):
 
     absent = gates(*ABSENT_615)  # no entities for absent modules (requirement-12)
     fitted = lambda types: [r for r in types if c.REGISTERS[r][WPE_I_KIND] and r not in absent]  # noqa: E731
-    expected = {("sensor", f"{entry.entry_id}_heatpump")}
+    expected = {
+        ("sensor", f"{entry.entry_id}_heatpump"),
+        ("sensor", f"{entry.entry_id}_disabled_entities"),
+    }
     # Derived sensors use an entry ID and stable derived key.
     expected |= {("sensor", f"{entry.entry_id}_derived_{key}") for key in DERIVED_SENSOR_KEYS}
     expected |= {

@@ -63,7 +63,10 @@ async def test_present_unknown_and_ungated_registers_keep_entities(hass, start_e
     kept = candidates() - gates(*ABSENT)
     assert kept & gates("heating_circuit_2", "buffer_tank", "ksm")  # present
     assert kept & gates("additional_heater", "smart_grid")  # unknown
-    expected = {unique_id(entry, r) for r in kept} | {f"{entry.entry_id}_heatpump"}
+    expected = {unique_id(entry, r) for r in kept} | {
+        f"{entry.entry_id}_heatpump",
+        f"{entry.entry_id}_disabled_entities",
+    }
     # Derived sensors are available independently of the optional modules.
     expected |= {f"{entry.entry_id}_derived_{key}" for key in DERIVED_SENSOR_KEYS}
     assert registered(hass, entry) == expected
