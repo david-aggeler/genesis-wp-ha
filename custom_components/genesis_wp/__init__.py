@@ -38,6 +38,8 @@ from genesis_wp.emulator import Profile
 from genesis_wp.groups import ROLE_MEASUREMENT
 from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL
 from homeassistant.components.frontend import add_extra_js_url
+from aiohttp import web
+from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.components.panel_custom import async_register_panel
 from homeassistant.components.frontend import async_remove_panel
@@ -165,6 +167,30 @@ def create_entry_client(entry: ConfigEntry, connection) -> ThermiaGenesis:
 
 
 # DHF-REQ: genesis-wp-ha/requirement-35
+class RetiredFrontendView(HomeAssistantView):
+    """Panel entry for a tab that still holds an earlier version's sidebar URL.
+
+    The current version's static directory is registered first and is the more specific
+    route, so only other versions reach this view. Their panel entry gets the current entry
+    module, whose view import then fails with a 404 and shows the reload message. Every other
+    module of a retired version stays 404, so a tab never mixes two versions' modules.
+    """
+
+    requires_auth = False
+    url = FRONTEND_URL + "/{version}/{name}"
+    name = "genesis_wp:retired_frontend"
+
+    def __init__(self, current: str, entry: Path) -> None:
+        self._current = current
+        self._entry = entry
+
+    async def get(self, request: web.Request, version: str, name: str) -> web.StreamResponse:
+        if version == self._current or name != PANEL_MODULE:
+            raise web.HTTPNotFound
+        return web.FileResponse(self._entry, headers={"Cache-Control": "no-cache"})
+
+
+# DHF-REQ: genesis-wp-ha/requirement-35
 async def async_setup(hass: HomeAssistant, config: ConfigType):
     """Serve and register the read-only dashboard cards (requirements 11 and 18)."""
     # DHF-REQ: genesis-wp-ha/requirement-18
@@ -187,6 +213,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
                 for name in legacy_modules
             ),
         ])
+        hass.http.register_view(RetiredFrontendView(integration.version, frontend / PANEL_MODULE))
     if DATA_EXTRA_MODULE_URL in hass.data:
         for name in CARD_MODULES:
             add_extra_js_url(hass, f"{frontend_url}/{name}")
