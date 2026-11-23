@@ -6,7 +6,10 @@ import ast
 import json
 import re
 from pathlib import Path
+import pytest
 from awesomeversion import AwesomeVersion
+
+from scripts.manifest_version import parse_version
 
 PACKAGE = Path(__file__).parents[1] / "custom_components" / "genesis_wp"
 # hassfest rejects spaces, so the PEP 508 direct reference is written without them.
@@ -54,7 +57,19 @@ def test_integration_title_has_no_placeholder():
 # DHF-TEST: genesis-wp-ha/ac-181
 def test_manifest_version_matches_version_of_record():
     version = json.loads((PACKAGE / "manifest.json").read_text())["version"]
-    version_of_record = (PACKAGE.parents[1] / "VERSION").read_text().removesuffix("\n")
-    assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version_of_record)
+    version_of_record = parse_version((PACKAGE.parents[1] / "VERSION").read_bytes())
     assert re.fullmatch(rf"{re.escape(version_of_record)}\.[0-9]+", version)
     assert AwesomeVersion(version).valid
+
+
+# DHF-TEST: genesis-wp-ha/requirement-32
+# DHF-TEST: genesis-wp-ha/ac-181
+def test_manifest_gate_rejects_crlf_version(tmp_path, monkeypatch):
+    package = tmp_path / "custom_components" / "genesis_wp"
+    package.mkdir(parents=True)
+    (package / "manifest.json").write_text('{"version": "0.4.0.1"}')
+    (tmp_path / "VERSION").write_bytes(b"0.4.0\r\n")
+    monkeypatch.setitem(globals(), "PACKAGE", package)
+
+    with pytest.raises(ValueError, match="VERSION must contain"):
+        test_manifest_version_matches_version_of_record()
