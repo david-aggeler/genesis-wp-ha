@@ -1,6 +1,7 @@
 """Device card public delivery and emulator-backed rendering contract."""
 import json
 from pathlib import Path
+from urllib.parse import urljoin
 
 from homeassistant.components.frontend import DATA_EXTRA_MODULE_URL, UrlManager
 from homeassistant.helpers import device_registry as dr, entity_registry as er
@@ -14,7 +15,6 @@ from .test_devices import register_entities, sub_devices
 
 ROOT = Path(__file__).parents[1]
 CARD = ROOT / "custom_components/genesis_wp/frontend/genesis-wp-device-card.js"
-URL = "/genesis_wp/genesis-wp-device-card.js"
 
 
 # DHF-TEST: genesis-wp-ha/requirement-18 genesis-wp-ha/ac-65
@@ -22,12 +22,12 @@ async def test_device_card_delivery(hass, hass_client, start_emulator):
     assert await async_setup_component(hass, "http", {})
     hass.data[DATA_EXTRA_MODULE_URL] = UrlManager(lambda *_: None, [])
     await setup_entry(hass, await start_emulator(PROFILE_615))
-    assert URL in hass.data[DATA_EXTRA_MODULE_URL].urls
-    response = await (await hass_client()).get(URL)
+    url, = (url for url in hass.data[DATA_EXTRA_MODULE_URL].urls if url.endswith(f"/{CARD.name}"))
+    response = await (await hass_client()).get(url)
     assert response.status == 200
     assert await response.read() == CARD.read_bytes()
     CARD.read_bytes().decode("ascii")
-    helper = await (await hass_client()).get("/genesis_wp/register-card.js")
+    helper = await (await hass_client()).get(urljoin(url, "./register-card.js"))
     assert helper.status == 200
     assert await helper.read() == (CARD.parent / "register-card.js").read_bytes()
 
