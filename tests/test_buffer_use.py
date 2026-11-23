@@ -21,8 +21,9 @@ from .helpers import setup_entry
 async def buffer(hass, start_emulator, monkeypatch, request):
     now = datetime(2026, 1, 15, 23, tzinfo=ZoneInfo("Europe/Zurich"))
     if getattr(request, "param", False):
-        now = datetime.now(now.tzinfo).replace(hour=23, minute=59, second=59, microsecond=0)
-        monkeypatch.setattr(dt_util, "DEFAULT_TIME_ZONE", now.tzinfo)
+        now = datetime.now(dt_util.DEFAULT_TIME_ZONE).replace(
+            hour=23, minute=59, second=59, microsecond=0
+        )
         monkeypatch.setattr(genesis_wp, "SCAN_INTERVAL", timedelta(days=2))
     bits = {199: True, 209: True, 245: False}
     inputs = {1: 4, 12: 3700, 41: 3900, 68: 3400, 147: 3200}
