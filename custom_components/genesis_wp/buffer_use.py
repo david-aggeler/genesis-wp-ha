@@ -16,6 +16,11 @@ BUFFER_TARGET = c.ATTR_INPUT_BUFFER_TANK_CHARGE_SET_POINT
 PHASE_INPUTS = (COMPRESSOR, MODE, HC2_PUMP, PASSIVE_COOLING, CIRCUIT_TARGET, *HC2_BUFFER)
 CURVE_INPUTS = (BUFFER_TARGET, CIRCUIT_TARGET)
 
+# Conservative bounds for the decoded centi-degree inputs. The full signed
+# temperature span is under 656 K, and the smallest positive mean drop is 0.005 K.
+MAX_RESTART_MARGIN = 656
+MAX_COLD_TAIL_SHARE = 13_120_000
+
 
 @dataclass(frozen=True)
 class Discharge:
@@ -121,8 +126,9 @@ class BufferUseEvaluator:
         for phase in phases:
             if (
                 not isinstance(phase, (list, tuple)) or len(phase) != 2
-                or not all(type(value) in (int, float) and isfinite(value) for value in phase)
-                or phase[1] < 0
+                or not all(type(value) in (int, float) for value in phase)
+                or not -MAX_RESTART_MARGIN <= phase[0] <= MAX_RESTART_MARGIN
+                or not 0 <= phase[1] <= MAX_COLD_TAIL_SHARE
             ):
                 return
             restored.append(tuple(phase))

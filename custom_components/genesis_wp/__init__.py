@@ -377,6 +377,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Discard observations and calibration owned by the removed entry."""
+    if (coordinator := hass.data.get(DOMAIN, {}).get(entry.entry_id)) is not None:
+        await coordinator.async_retire_buffer_store()
     # DHF-REQ: genesis-wp-ha/requirement-26  (ac-111)
     await flow_calibration_store(hass, entry.entry_id).async_remove()
     await buffer_phase_store(hass, entry.entry_id).async_remove()
@@ -580,6 +582,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         buffer_volume = entry.options.get("buffer_volume", HC2_RETURN_DEFAULTS["buffer_volume"])
         self.buffer_use = None
         self._buffer_store = None
+        self._buffer_save_lock = asyncio.Lock()
         self._cancel_buffer_rollover = None
         if all(REGISTERS[key][self.kind] for key in PHASE_INPUTS):
             offset = entry.options.get(BUFFER_REFERENCE_OFFSET, DEFAULT_BUFFER_REFERENCE_OFFSET)
@@ -656,6 +659,11 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
                 return
             self.buffer_use.restore(dt_util.now(), snapshot)
 
+    async def async_retire_buffer_store(self):
+        """Wait for any active save and disable future saves from this coordinator."""
+        async with self._buffer_save_lock:
+            self._buffer_store = None
+
     async def async_save_runs(self):
         """Flush compressor observations when the entry unloads; later updates schedule no writes."""
         if self._run_store is not None:
@@ -674,6 +682,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
 
     async def async_close(self):
         """Close the client, then stop the entry's emulator if it has one."""
+        await self.async_retire_buffer_store()
         await self.thermia.close()
         if self.emulator is not None:
             await self.emulator.stop()
@@ -717,7 +726,10 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
                 key: data[key] for key in PHASE_INPUTS if key in data and key not in unread
             })
             if self.buffer_use.last is not previous_phase:
-                await self._buffer_store.async_save(self.buffer_use.snapshot())
+                snapshot = self.buffer_use.snapshot()
+                async with self._buffer_save_lock:
+                    if self._buffer_store is not None:
+                        await self._buffer_store.async_save(snapshot)
         return data
 
     @callback

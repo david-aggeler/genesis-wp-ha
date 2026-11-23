@@ -1,5 +1,6 @@
 """Buffer discharge assessment through loopback emulator refreshes."""
 
+import asyncio
 from datetime import datetime, timedelta
 from functools import partial
 from zoneinfo import ZoneInfo
@@ -10,6 +11,7 @@ from custom_components import genesis_wp
 from custom_components.genesis_wp.const import DOMAIN
 from genesis_wp.emulator import Emulator
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
@@ -90,14 +92,15 @@ async def test_completed_discharge(buffer):
 # DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-143
 async def test_excluded_samples_invalidate_the_whole_phase(buffer):
     sample, phase, read, *_ = buffer
-    await phase(3250)
+    await phase(3150)
     for exclusion in ({"fr2": False}, {"mode": 3}, {"cooling": True}):
         await sample(False)
         await sample(False, **exclusion)
         await sample(True, 3350)
-        assert float(read("last_discharge_restart_margin").state) == 0.5, exclusion
+        assert float(read("last_discharge_restart_margin").state) == -0.5, exclusion
     daily = read("median_restart_margin_today")
-    assert float(daily.state) == 0.5
+    assert float(daily.state) == -0.5
+    assert daily.attributes["median_cold_tail_share"] == 7.7
     assert daily.attributes["phase_count"] == 1
 
 
@@ -121,7 +124,9 @@ async def test_daily_judgement(hass, buffer, phases, margin, share, judgement):
     hass.config_entries.async_update_entry(entry, options={"buffer_reference_offset": None})
     await reload()
     assert read("buffer_judgement").state == "unknown"
-    assert float(read("median_restart_margin_today").state) == margin
+    restored = read("median_restart_margin_today")
+    assert float(restored.state) == margin
+    assert restored.attributes["median_cold_tail_share"] == share
 
 
 # DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-145
@@ -217,3 +222,77 @@ async def test_scheduled_local_midnight_clears_daily_values(hass, buffer):
     assert read("median_restart_margin_today").attributes["phase_count"] == 0
     assert read("buffer_judgement").state == "unknown"
     assert float(read("last_discharge_restart_margin").state) == 0.5
+
+
+# DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146
+@pytest.mark.parametrize("operation", ["reload", "remove", "remove_after_failed_unload"])
+async def test_entry_lifecycle_waits_for_buffer_phase_save(
+    hass, hass_storage, buffer, monkeypatch, operation
+):
+    _, phase, read, reload, _, _, entry = buffer
+    await phase(3150)
+    key = f"{DOMAIN}.buffer_phases.{entry.entry_id}"
+    writing = asyncio.Event()
+    release = asyncio.Event()
+    original_save = Store.async_save
+
+    async def held_save(store, data):
+        if store.key == key:
+            writing.set()
+            await release.wait()
+        await original_save(store, data)
+
+    monkeypatch.setattr(Store, "async_save", held_save)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    if operation == "remove_after_failed_unload":
+        async def refuse_unload(*_args):
+            return False
+
+        monkeypatch.setattr(hass.config_entries, "async_unload_platforms", refuse_unload)
+
+    refresh = asyncio.create_task(phase(3250))
+    await asyncio.wait_for(writing.wait(), timeout=5)
+    lifecycle = asyncio.create_task(
+        reload() if operation == "reload" else hass.config_entries.async_remove(entry.entry_id)
+    )
+    try:
+        finished, _ = await asyncio.wait({lifecycle}, timeout=0.2)
+    finally:
+        release.set()
+        await refresh
+        await lifecycle
+        if operation == "remove_after_failed_unload":
+            await phase(3500)
+            hass.data[DOMAIN].pop(entry.entry_id, None)
+            await coordinator.async_shutdown()
+            await coordinator.async_close()
+
+    assert not finished
+    if operation == "reload":
+        daily = read("median_restart_margin_today")
+        assert float(daily.state) == 0
+        assert daily.attributes["median_cold_tail_share"] == 3.8
+        assert daily.attributes["phase_count"] == 2
+    else:
+        assert key not in hass_storage
+
+
+# DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146
+@pytest.mark.parametrize("invalid_phase", [[10**309, 0], [1e308, 0], [1, 1e308]])
+async def test_invalid_buffer_snapshot_does_not_break_setup(hass, hass_storage, buffer, invalid_phase):
+    _, phase, read, _, _, _, entry = buffer
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    key = f"{DOMAIN}.buffer_phases.{entry.entry_id}"
+    hass_storage[key] = {
+        "key": key,
+        "version": 1,
+        "data": {"day": "2026-01-15", "phases": [invalid_phase, invalid_phase]},
+    }
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert read("median_restart_margin_today").state == "unknown"
+    assert read("buffer_judgement").state == "unknown"
+    await phase(3250)
+    daily = read("median_restart_margin_today")
+    assert float(daily.state) == 0.5
+    assert daily.attributes["phase_count"] == 1
