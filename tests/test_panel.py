@@ -42,19 +42,25 @@ async def test_frontend_urls_use_manifest_version(
 
 
 # DHF-TEST: genesis-wp-ha/requirement-35 genesis-wp-ha/ac-184
-@pytest.mark.parametrize("failure", ["rejected_import", "missing_export"])
+@pytest.mark.parametrize(
+    "failure", ["rejected_import", "missing_export", "missing_view_export"]
+)
 def test_panel_module_failure_shows_reload_message(tmp_path, failure):
     for module in FRONTEND.glob("*.js"):
         (tmp_path / module.name).write_bytes(module.read_bytes())
     card = tmp_path / "genesis-wp-device-card.js"
     if failure == "rejected_import":
         card.unlink()
-    else:
+    elif failure == "missing_export":
         card.write_text(
             "export class GenesisWpDeviceCard {}\n"
             "export const temperatureColor = () => '';\n"
             "export const toCelsius = (value) => value;\n",
             encoding="utf-8",
+        )
+    else:
+        (tmp_path / "genesis-wp-panel-view.js").write_text(
+            "export {};\n", encoding="utf-8"
         )
 
     run_node_harness(
