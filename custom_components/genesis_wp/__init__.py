@@ -206,7 +206,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType):
         # Keep the previous URLs working for tabs opened before the update.
         legacy_modules = (
             *CARD_MODULES, PANEL_MODULE, "genesis-wp-panel-view.js",
-            "register-card.js", "patch.js", "labels.js",
+            "register-card.js", "patch.js", "labels.js", "overview-bands.js",
         )
         await hass.http.async_register_static_paths([
             StaticPathConfig(frontend_url, str(frontend), False),
