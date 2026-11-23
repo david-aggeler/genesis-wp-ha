@@ -259,6 +259,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             sidebar_title="Heat pump", sidebar_icon="mdi:heat-pump",
             module_url="/genesis_wp/genesis-wp-panel.js", require_admin=False,
         )
+    # DHF-REQ: genesis-wp-ha/requirement-19
+    registry = er.async_get(hass)
+    reenabled = 0
+    for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if entity.disabled_by == er.RegistryEntryDisabler.INTEGRATION:
+            registry.async_update_entity(entity.entity_id, disabled_by=None)
+            reenabled += 1
+    if reenabled:
+        _LOGGER.info("Re-enabled %d integration-disabled entities", reenabled)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     if all(platform in coordinator.setup_entity_ids for platform in PLATFORMS):
         _remove_stale_entities(hass, entry, coordinator)
