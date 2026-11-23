@@ -26,3 +26,7 @@ transition_gates:
 # Argv that openbrain-client merge runs from the primary checkout on main; the client
 # appends the commit SHA it resolved from branch-or-ref.
 merge_command: ["bash", "scripts/merge_unit.sh"]
+
+# Review rework rounds per unit before the tail stops with rework_exhausted (client default 1).
+# Owner, 2026-11-23: 5, the same value as homelab.
+max_rework_rounds: 5
