@@ -2,7 +2,7 @@
 import asyncio
 import logging
 import time
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from genesis_wp import ThermiaException
@@ -50,7 +50,7 @@ from homeassistant.const import EntityCategory
 from homeassistant.const import EVENT_HOMEASSISTANT_FINAL_WRITE
 from homeassistant.core import HomeAssistant
 from homeassistant.core import callback
-from homeassistant.helpers.event import async_call_later, async_track_time_change
+from homeassistant.helpers.event import async_call_later, async_track_point_in_utc_time
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
@@ -583,6 +583,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self.buffer_use = None
         self._buffer_store = None
         self._buffer_save_lock = asyncio.Lock()
+        self._buffer_pending_day = None
         self._cancel_buffer_rollover = None
         if all(REGISTERS[key][self.kind] for key in PHASE_INPUTS):
             offset = entry.options.get(BUFFER_REFERENCE_OFFSET, DEFAULT_BUFFER_REFERENCE_OFFSET)
@@ -726,17 +727,42 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
                 key: data[key] for key in PHASE_INPUTS if key in data and key not in unread
             })
             if self.buffer_use.last is not previous_phase:
-                snapshot = self.buffer_use.snapshot()
+                self._buffer_pending_day = self.buffer_use.day
+            if self._buffer_pending_day == self.buffer_use.day:
                 async with self._buffer_save_lock:
-                    if self._buffer_store is not None:
-                        await self._buffer_store.async_save(snapshot)
+                    if (
+                        self._buffer_store is not None
+                        and self._buffer_pending_day == self.buffer_use.day
+                    ):
+                        try:
+                            await self._buffer_store.async_save(self.buffer_use.snapshot())
+                        except OSError as error:
+                            _LOGGER.warning(
+                                "Buffer discharge snapshot save failed (%s)", type(error).__name__
+                            )
+                        else:
+                            self._buffer_pending_day = None
         return data
 
     @callback
-    def schedule_buffer_rollover(self):
+    def schedule_buffer_rollover(self, now=None):
         if self.buffer_use is not None:
-            self._cancel_buffer_rollover = async_track_time_change(
-                self.hass, self._reset_buffer_day, hour=0, minute=0, second=0,
+            now = dt_util.now() if now is None else now
+            tomorrow = now.date() + timedelta(days=1)
+            midnight = datetime.combine(tomorrow, datetime.min.time(), tzinfo=now.tzinfo)
+            boundary = midnight.astimezone(UTC)
+            if boundary.astimezone(now.tzinfo) != midnight:
+                # The two folds of an imaginary midnight bracket the clock jump.
+                before = midnight.replace(fold=1).astimezone(UTC)
+                while (boundary - before).total_seconds() > 1:
+                    seconds = int((boundary - before).total_seconds())
+                    midpoint = before + timedelta(seconds=seconds // 2)
+                    if midpoint.astimezone(now.tzinfo).date() < tomorrow:
+                        before = midpoint
+                    else:
+                        boundary = midpoint
+            self._cancel_buffer_rollover = async_track_point_in_utc_time(
+                self.hass, self._reset_buffer_day, boundary,
             )
 
     async def async_shutdown(self):
@@ -746,7 +772,10 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         await super().async_shutdown()
 
     @callback
-    def _reset_buffer_day(self, now):
+    def _reset_buffer_day(self, boundary):
+        local_now = dt_util.now()
+        now = max(boundary, local_now.astimezone(UTC)).astimezone(local_now.tzinfo)
+        self.schedule_buffer_rollover(now)
         if self.buffer_use.roll_day(now):
             self.async_update_listeners()
 

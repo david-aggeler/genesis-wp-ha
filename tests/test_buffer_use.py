@@ -1,7 +1,7 @@
 """Buffer discharge assessment through loopback emulator refreshes."""
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from functools import partial
 from zoneinfo import ZoneInfo
 
@@ -21,8 +21,13 @@ from .helpers import setup_entry
 
 @pytest.fixture
 async def buffer(hass, start_emulator, monkeypatch, request):
-    now = datetime(2026, 1, 15, 23, tzinfo=ZoneInfo("Europe/Zurich"))
-    if getattr(request, "param", False):
+    now = datetime(2035, 1, 15, 23, tzinfo=ZoneInfo("Europe/Zurich"))
+    clock_mode = getattr(request, "param", False)
+    if clock_mode == "midnight_gap":
+        zone = ZoneInfo("America/Santiago")
+        now = datetime(2035, 9, 1, 23, 59, 59, tzinfo=zone)
+        monkeypatch.setattr(genesis_wp, "SCAN_INTERVAL", timedelta(days=10000))
+    elif clock_mode:
         now = datetime.now(dt_util.DEFAULT_TIME_ZONE).replace(
             hour=23, minute=59, second=59, microsecond=0
         )
@@ -47,11 +52,15 @@ async def buffer(hass, start_emulator, monkeypatch, request):
     monkeypatch.setattr(dt_util, "now", lambda: now)
     monkeypatch.setattr(genesis_wp, "ThermiaGenesis", partial(genesis_wp.ThermiaGenesis, delay=0))
     emu = await start_emulator()
-    entry = await setup_entry(hass, emu)
+    with monkeypatch.context() as clock:
+        if clock_mode == "midnight_gap":
+            clock.setattr(dt_util, "DEFAULT_TIME_ZONE", zone)
+            clock.setattr(dt_util, "utcnow", lambda: now.astimezone(UTC))
+        entry = await setup_entry(hass, emu)
 
     async def sample(on=True, temp=3800, target=3200, *, fr2=True, mode=4, cooling=False, spread=100):
         bits.update({199: on, 209: fr2, 245: cooling})
-        inputs.update({1: mode, 12: temp - spread, 41: temp + spread, 147: target})
+        inputs.update({1: mode, 12: int(temp - spread), 41: int(temp + spread), 147: target})
         await hass.data[DOMAIN][entry.entry_id].async_refresh()
 
     async def phase(restart, stop=3800, target=3200, *, spread=100):
@@ -173,6 +182,7 @@ async def test_local_midnight_clears_daily_values(buffer):
     ([(2502, 2602, 2302)], 1),
     ([(2501, 2601, 2501)], 1),
     ([(2502, 2602, 2532), (2600, 2700, 2500)], 2),
+    ([(2799.5, 4800.5, 3200), (4000.5, 4800.5, 3200)], 0.5),
 ])
 async def test_judgement_includes_threshold_equalities(buffer, phases, spread):
     _, phase, read, *_ = buffer
@@ -210,7 +220,7 @@ async def test_drawn_energy_avoids_intermediate_overflow(hass, buffer):
 
 
 # DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146
-@pytest.mark.parametrize("buffer", [True], indirect=True)
+@pytest.mark.parametrize("buffer", [True, "midnight_gap"], indirect=True)
 async def test_scheduled_local_midnight_clears_daily_values(hass, buffer):
     _, phase, read, _, _, _, _ = buffer
     await phase(3250)
@@ -222,6 +232,35 @@ async def test_scheduled_local_midnight_clears_daily_values(hass, buffer):
     assert read("median_restart_margin_today").attributes["phase_count"] == 0
     assert read("buffer_judgement").state == "unknown"
     assert float(read("last_discharge_restart_margin").state) == 0.5
+
+
+# DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146
+async def test_buffer_snapshot_save_failure_retries_without_another_phase(
+    buffer, monkeypatch, caplog
+):
+    sample, phase, read, reload, *_ = buffer
+    original_save = Store.async_save
+    attempts = 0
+
+    async def fail_first_save(store, data):
+        nonlocal attempts
+        if store.key.startswith(f"{DOMAIN}.buffer_phases."):
+            attempts += 1
+            if attempts == 1:
+                raise OSError("storage directory unavailable")
+        await original_save(store, data)
+
+    monkeypatch.setattr(Store, "async_save", fail_first_save)
+    await phase(3250)
+    assert float(read("curve_gap").state) == 2.0
+    assert float(read("median_restart_margin_today").state) == 0.5
+    assert "OSError" in caplog.text
+    await sample()
+    assert attempts == 2
+    await reload()
+    daily = read("median_restart_margin_today")
+    assert float(daily.state) == 0.5
+    assert daily.attributes["phase_count"] == 1
 
 
 # DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146
@@ -286,7 +325,7 @@ async def test_invalid_buffer_snapshot_does_not_break_setup(hass, hass_storage, 
     hass_storage[key] = {
         "key": key,
         "version": 1,
-        "data": {"day": "2026-01-15", "phases": [invalid_phase, invalid_phase]},
+        "data": {"day": dt_util.now().date().isoformat(), "phases": [invalid_phase, invalid_phase]},
     }
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()

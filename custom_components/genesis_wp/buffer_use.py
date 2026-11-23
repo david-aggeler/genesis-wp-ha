@@ -98,7 +98,8 @@ class BufferUseEvaluator:
         if not self.phases:
             return None, None
         margins, shares = zip(*self.phases)
-        return median(margins), median(shares)
+        # A median can halve the 0.005 K resolution of a phase margin.
+        return round(median(margins), 4), median(shares)
 
     # DHF-REQ: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-144
     @property
