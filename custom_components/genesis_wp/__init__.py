@@ -48,10 +48,10 @@ from homeassistant.const import CONF_HOST
 from homeassistant.const import CONF_PORT
 from homeassistant.const import EntityCategory
 from homeassistant.const import EVENT_HOMEASSISTANT_FINAL_WRITE
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CoreState, HomeAssistant
 from homeassistant.core import callback
 from homeassistant.helpers.event import async_call_later, async_track_point_in_utc_time
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryNotReady, HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import ChildDeviceInfo
@@ -368,7 +368,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
         await coordinator.async_save_calibrations()
         await coordinator.async_save_runs()
         hass.data.get(DATA_RUN_STORES, {}).pop(entry.entry_id, None)
-        await coordinator.async_close()
+        await coordinator.async_close(flush_buffer=True)
         if not hass.data[DOMAIN]:
             async_remove_panel(hass, "genesis-wp")
 
@@ -404,7 +404,7 @@ DATA_RUN_STORES = f"{DOMAIN}_compressor_run_stores"
 
 def buffer_phase_store(hass: HomeAssistant, entry_id: str) -> Store:
     """Store the entry's daily buffer observations independently of its entities."""
-    return Store(hass, 1, f"{DOMAIN}.buffer_phases.{entry_id}")
+    return Store(hass, 1, f"{DOMAIN}.buffer_phases.{entry_id}", atomic_writes=True)
 
 
 # DHF-REQ: genesis-wp-ha/requirement-28
@@ -660,9 +660,37 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
                 return
             self.buffer_use.restore(dt_util.now(), snapshot)
 
-    async def async_retire_buffer_store(self):
-        """Wait for any active save and disable future saves from this coordinator."""
+    # DHF-REQ: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146
+    async def _async_save_pending_buffer_phases(self):
+        """Attempt the current day's save while holding the buffer save lock."""
+        store = self._buffer_store
+        pending_day = self._buffer_pending_day
+        if store is None or pending_day is None:
+            return
+        if pending_day != self.buffer_use.day or pending_day != dt_util.now().date():
+            self._buffer_pending_day = None
+            return
+        snapshot = self.buffer_use.snapshot()
+        try:
+            await store.async_save(snapshot)
+            if self.hass.state is CoreState.stopping:
+                return  # Store defers the write until Home Assistant's final write event.
+            # Store can log a write failure and return normally. Read back the
+            # snapshot before marking it clean.
+            saved = await store.async_load()
+        except (OSError, HomeAssistantError) as error:
+            _LOGGER.warning("Buffer discharge snapshot save failed (%s)", type(error).__name__)
+        else:
+            if saved == snapshot:
+                self._buffer_pending_day = None
+            else:
+                _LOGGER.warning("Buffer discharge snapshot save could not be confirmed")
+
+    async def async_retire_buffer_store(self, *, flush=False):
+        """Wait for active saves and optionally flush today's pending observations."""
         async with self._buffer_save_lock:
+            if flush:
+                await self._async_save_pending_buffer_phases()
             self._buffer_store = None
 
     async def async_save_runs(self):
@@ -681,9 +709,9 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         if self.run_tracker is not None and self.run_tracker.add(dt_util.now(), signal, mode):
             self._run_store.async_delay_save(self.run_tracker.daily.as_dict)
 
-    async def async_close(self):
+    async def async_close(self, *, flush_buffer=False):
         """Close the client, then stop the entry's emulator if it has one."""
-        await self.async_retire_buffer_store()
+        await self.async_retire_buffer_store(flush=flush_buffer)
         await self.thermia.close()
         if self.emulator is not None:
             await self.emulator.stop()
@@ -728,20 +756,9 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
             })
             if self.buffer_use.last is not previous_phase:
                 self._buffer_pending_day = self.buffer_use.day
-            if self._buffer_pending_day == self.buffer_use.day:
+            if self._buffer_pending_day is not None:
                 async with self._buffer_save_lock:
-                    if (
-                        self._buffer_store is not None
-                        and self._buffer_pending_day == self.buffer_use.day
-                    ):
-                        try:
-                            await self._buffer_store.async_save(self.buffer_use.snapshot())
-                        except OSError as error:
-                            _LOGGER.warning(
-                                "Buffer discharge snapshot save failed (%s)", type(error).__name__
-                            )
-                        else:
-                            self._buffer_pending_day = None
+                    await self._async_save_pending_buffer_phases()
         return data
 
     @callback

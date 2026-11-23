@@ -3,6 +3,7 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 from functools import partial
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -11,12 +12,19 @@ from custom_components import genesis_wp
 from custom_components.genesis_wp.const import DOMAIN
 from genesis_wp.emulator import Emulator
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import storage
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 
 from pytest_homeassistant_custom_component.common import async_fire_time_changed
 
 from .helpers import setup_entry
+
+
+# The Home Assistant fixture mocks Store I/O. Keep real I/O available for
+# the snapshot failure test, which targets the filesystem write boundary.
+_REAL_STORE_LOAD = Store._async_load
+_REAL_STORE_WRITE = Store._async_write_data
 
 
 @pytest.fixture
@@ -235,32 +243,56 @@ async def test_scheduled_local_midnight_clears_daily_values(hass, buffer):
 
 
 # DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146
-async def test_buffer_snapshot_save_failure_retries_without_another_phase(
-    buffer, monkeypatch, caplog
+@pytest.mark.parametrize("error", [storage.WriteError, OSError])
+@pytest.mark.parametrize("retry_on", ["poll", "reload"])
+async def test_buffer_snapshot_recovers_from_file_write_failure(
+    hass, buffer, monkeypatch, caplog, error, retry_on
 ):
-    sample, phase, read, reload, *_ = buffer
-    original_save = Store.async_save
-    attempts = 0
+    sample, phase, read, reload, _, _, entry = buffer
+    key = f"{DOMAIN}.buffer_phases.{entry.entry_id}"
+    mocked_load = Store._async_load
+    mocked_write = Store._async_write_data
 
-    async def fail_first_save(store, data):
-        nonlocal attempts
-        if store.key.startswith(f"{DOMAIN}.buffer_phases."):
-            attempts += 1
-            if attempts == 1:
-                raise OSError("storage directory unavailable")
-        await original_save(store, data)
+    async def load(store):
+        return await (_REAL_STORE_LOAD if store.key == key else mocked_load)(store)
 
-    monkeypatch.setattr(Store, "async_save", fail_first_save)
-    await phase(3250)
-    assert float(read("curve_gap").state) == 2.0
-    assert float(read("median_restart_margin_today").state) == 0.5
-    assert "OSError" in caplog.text
-    await sample()
-    assert attempts == 2
-    await reload()
-    daily = read("median_restart_margin_today")
-    assert float(daily.state) == 0.5
-    assert daily.attributes["phase_count"] == 1
+    async def write(store, data):
+        await (_REAL_STORE_WRITE if store.key == key else mocked_write)(store, data)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(Store, "_async_load", load)
+        patch.setattr(Store, "_async_write_data", write)
+
+        attempts = 0
+
+        def fail_first(writer):
+            def write_file(path, *args, **kwargs):
+                nonlocal attempts
+                if Path(path).name == key:
+                    attempts += 1
+                    if attempts == 1:
+                        raise error("storage directory unavailable")
+                return writer(path, *args, **kwargs)
+
+            return write_file
+
+        for writer in ("write_utf8_file", "write_utf8_file_atomic"):
+            patch.setattr(storage, writer, fail_first(getattr(storage, writer)))
+
+        await phase(3250)
+        assert attempts == 1
+        assert not Path(hass.config.path(".storage", key)).exists()
+        assert float(read("curve_gap").state) == 2.0
+        assert float(read("median_restart_margin_today").state) == 0.5
+        assert ("storage directory unavailable" if error is storage.WriteError else "OSError") in caplog.text
+        if retry_on == "poll":
+            await sample()
+            assert attempts == 2
+        await reload()
+        assert attempts == 2
+        daily = read("median_restart_margin_today")
+        assert float(daily.state) == 0.5
+        assert daily.attributes["phase_count"] == 1
 
 
 # DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146

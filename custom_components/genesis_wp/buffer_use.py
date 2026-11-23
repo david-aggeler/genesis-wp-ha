@@ -114,7 +114,10 @@ class BufferUseEvaluator:
 
     # DHF-REQ: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146
     def snapshot(self) -> dict:
-        return {"day": self.day.isoformat() if self.day else None, "phases": self.phases.copy()}
+        return {
+            "day": self.day.isoformat() if self.day else None,
+            "phases": [list(phase) for phase in self.phases],
+        }
 
     def restore(self, now: datetime, snapshot: object) -> None:
         self.roll_day(now)
