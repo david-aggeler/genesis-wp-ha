@@ -63,6 +63,7 @@ for (const [stat, unit, band] of [
 };
 
 const requests = [];
+let historyScenario = 'normal';
 let now = Date.parse('2026-01-15T12:00:00Z');
 Date.now = () => now;
 const timers = new Map();
@@ -81,6 +82,7 @@ const hass = {
   callService() { assert.fail('Unexpected service call'); },
   async callWS(message) {
     requests.push(message);
+    if (historyScenario === 'empty') return {};
     const start = Date.parse(message.start_time) / 1000;
     const rows = pairs => pairs.map(([minute, s, unit]) => ({
       s: String(s), lu: start + minute * 60,
@@ -102,7 +104,11 @@ const hass = {
         ...Array.from({length: 1440}, (_, i) => i % 2 ? [i, 3000, 'W'] : [i, 2, 'kW']),
         [1439.5, 3000, 'mW'],
       ]),
-    ].filter(([id]) => message.entity_ids.includes(id)));
+    ].filter(([id]) => message.entity_ids.includes(id)).flatMap(([id, samples]) => {
+      if (id !== byRegister.dinput_199 || historyScenario === 'normal') return [[id, samples]];
+      if (historyScenario === 'off') return [entity('dinput_199', [[0, 'off']])];
+      return [];
+    }));
   },
 };
 card.isConnected = true;
@@ -113,7 +119,7 @@ const html = () => card.shadowRoot.innerHTML;
 assert.match(html(), /Daily overview/);
 assert.doesNotMatch(html(), /<(input|button|ha-slider)\b/);
 function tile(title) {
-  const section = [...html().matchAll(/<section class="tile"><h3>([^<]+)<\/h3>(.*?)<\/section>/gs)]
+  const section = [...html().matchAll(/<section class="tile"[^>]*><h3>([^<]+)<\/h3>(.*?)<\/section>/gs)]
     .find(([, heading]) => heading === title);
   assert.ok(section, title);
   return section[2];
@@ -223,7 +229,7 @@ assert.equal(hover(), '12:15 · Compressor off · FR2 on · T31 buffer 29.0 °C 
 
 // DHF-TEST: genesis-wp-ha/requirement-31 genesis-wp-ha/ac-152
 function renderedLinks(markup, root) {
-  return [...markup.matchAll(/<(?:div|path|rect|span)\b([^>]* data-entity="[^"]+"[^>]*)>/g)].map(([tag, attrs]) => {
+  return [...markup.matchAll(/<(?:section|div|path|rect|span)\b([^>]* data-entity="[^"]+"[^>]*)>/g)].map(([tag, attrs]) => {
     const attributes = Object.fromEntries([...attrs.matchAll(/([\w-]+)="([^"]*)"/g)]
       .map(([, name, value]) => [name, value]));
     const node = {
@@ -266,6 +272,34 @@ assert.match(html(), /<title>Hot water · 3\.0 min<\/title>/);
 await refreshHistory();
 assert.match(html(), /<title>Hot water · 4\.0 min<\/title>/);
 assert.equal(card.shadowRoot.activeElement?.dataset.entity, byRegister.dinput_209);
+// DHF-TEST: genesis-wp-ha/requirement-31 genesis-wp-ha/ac-151
+function compressorLane() {
+  return html().match(/<h3>Compressor(?:<[^/][^>]*>[^<]*<\/span>)?<\/h3>\s*<svg\b[^>]*aria-label="Compressor">[\s\S]*?<\/svg>/)[0];
+}
+for (const scenario of ['omitted', 'empty', 'off']) {
+  historyScenario = scenario;
+  await refreshHistory();
+  assert.doesNotMatch(compressorLane(), /class="run"/, scenario);
+  assert.equal(compressorLane().includes('Unavailable locally'), scenario !== 'off', scenario);
+  if (scenario === 'omitted') assert.match(html(), /aria-label="FR2">\s*<path[^>]+ d="M/);
+}
+
+// DHF-TEST: genesis-wp-ha/requirement-31 genesis-wp-ha/ac-152
+const tileLinks = renderedLinks(html(), card.shadowRoot);
+const startsTile = tileLinks.find(node => node.tag.startsWith('<section')
+  && node.dataset.entity === byRegister.derived_starts_today);
+assert.ok(startsTile, 'Starts today tile opens more-info from its padding');
+const hotWater = tileLinks.find(node => node.tag === row('Starts today', 'Hot water').attributes);
+assert.ok(hotWater);
+const firstTileEvent = events.length;
+card.click({target: startsTile});
+card.click({target: {closest: selector => startsTile.closest(selector)}});
+card.click({target: hotWater});
+assert.deepEqual(events.slice(firstTileEvent).map(({type, detail}) => [type, detail.entityId]), [
+  ['hass-more-info', byRegister.derived_starts_today],
+  ['hass-more-info', byRegister.derived_starts_today],
+  ['hass-more-info', byRegister.derived_hot_water_starts_today],
+]);
 card.isConnected = false;
 card.disconnectedCallback();
 assert.equal(timers.size, 0);

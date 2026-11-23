@@ -149,6 +149,7 @@ const STYLES = `
   .lanes {display:grid;gap:5px;position:relative;}
   .lanes h2 {margin:0 0 4px;font-size:1rem;font-weight:600;}
   .lanes h3 {margin:0;font-size:.9rem;font-weight:500;}
+  .lane-status {margin-inline-start:.5em;color:var(--secondary-text-color);font-size:.8em;}
   svg {display:block;width:100%;background:var(--secondary-background-color);border-radius:4px;}
   svg path {fill:none;stroke-width:2;vector-effect:non-scaling-stroke;}
   .axis,.legend {color:var(--secondary-text-color);font-size:.75rem;}
@@ -340,7 +341,11 @@ class OverviewCard extends HTMLElement {
   }
 
   tiles() {
-    const tile = (title, rows) => `<section class="tile"><h3>${title}</h3>${rows}</section>`;
+    const tile = (title, rows, primaryRegister) => {
+      const id = this.entities.get(primaryRegister)?.id;
+      const clickTarget = id ? ` data-entity="${escape(id)}"` : '';
+      return `<section class="tile"${clickTarget}><h3>${title}</h3>${rows}</section>`;
+    };
     const metric = (...args) => this.metric(...args);
     const rooms = this.entities.get('derived_heat_to_rooms_today')?.state;
     const coverage = number(rooms?.state) === null ? null : number(rooms?.attributes.coverage);
@@ -353,7 +358,8 @@ class OverviewCard extends HTMLElement {
     ]);
     const [marker, color] = markers.get(judgement?.state) ?? [this.stateWord(judgement?.state)];
     return [
-      tile('Starts today', metric('starts_today', 'Total') + metric('hot_water_starts_today', 'Hot water')),
+      tile('Starts today', metric('starts_today', 'Total') + metric('hot_water_starts_today', 'Hot water'),
+        'derived_starts_today'),
       tile('Short heating runs', metric('short_heating_runs_today', 'Today', '', {alert: true})),
       tile('Heating run length',
         metric('heating_run_minimum', 'Minimum', 'min', {bands: RUN_BANDS, factors: MINUTES}) +
@@ -388,7 +394,8 @@ class OverviewCard extends HTMLElement {
     }
     const {start, end, series} = this.history;
     const x = time => (WIDTH * (time - start) / DAY).toFixed(3);
-    const lane = (title, height, contents) => `<h3>${title}</h3>
+    const lane = (title, height, contents, status) => `<h3>${title}${status
+      ? `<span class="lane-status">${escape(status)}</span>` : ''}</h3>
       <svg data-lane viewBox="0 0 ${WIDTH} ${height}" preserveAspectRatio="none"
         style="height:${height}px" aria-label="${title}">${contents}</svg>`;
     const trace = (key, y, color, dash = '') =>
@@ -401,7 +408,10 @@ class OverviewCard extends HTMLElement {
       return value => Number.isFinite(low) && high !== low
         ? (height - 4 - (height - 8) * (value - low) / (high - low)).toFixed(2) : height / 2;
     };
-    const compressor = runs(series.get(COMPRESSOR), series.get(DEMAND), start, end).map(run =>
+    const compressorPoints = series.get(COMPRESSOR);
+    const compressorStatus = compressorPoints.some(({state}) => binaryValue(state) !== null)
+      ? undefined : this.stateWord();
+    const compressor = runs(compressorPoints, series.get(DEMAND), start, end).map(run =>
       `<rect class="run" x="${x(run.start)}" width="${x(start + run.end - run.start)}"
         fill="${run.color}" fill-opacity="${run.color === 'currentColor' ? 0.35 : 1}"
         y="3" height="18"${this.entityAttributes(COMPRESSOR, `run:${run.start}`)}>
@@ -415,7 +425,7 @@ class OverviewCard extends HTMLElement {
     const bandLegend = [...RUN_BANDS].reverse().map(([, label]) => swatch(BAND_COLORS[label], label.replaceAll('_', ' ')));
     return `<section class="lanes" aria-label="Last 24 hours">
       <h2>Last 24 hours</h2>
-      ${lane('Compressor', 24, compressor)}
+      ${lane('Compressor', 24, compressor, compressorStatus)}
       ${lane('FR2', 24, trace(FR2, value => value ? 4 : 20, '#50a0cb'))}
       ${lane('Buffer [°C]', 72, BUFFER.map(([key, , color, dash]) =>
         trace(key, bufferScale, color, dash)).join(''))}
