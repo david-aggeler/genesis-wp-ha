@@ -297,10 +297,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         config_entry_id=entry.entry_id, **coordinator.device_info
     ).id
     coordinator.freeze_capabilities()
-    if coordinator.buffer_use is not None:
-        entry.async_on_unload(async_track_time_change(
-            hass, coordinator.reset_buffer_day, hour=0, minute=0, second=0,
-        ))
+    coordinator.schedule_buffer_rollover()
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
@@ -575,6 +572,7 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         self.circuit_flow = entry.options.get("circuit_flow", HC2_RETURN_DEFAULTS["circuit_flow"])
         buffer_volume = entry.options.get("buffer_volume", HC2_RETURN_DEFAULTS["buffer_volume"])
         self.buffer_use = None
+        self._cancel_buffer_rollover = None
         if all(REGISTERS[key][self.kind] for key in PHASE_INPUTS):
             offset = entry.options.get(BUFFER_REFERENCE_OFFSET, DEFAULT_BUFFER_REFERENCE_OFFSET)
             self.buffer_use = BufferUseEvaluator(buffer_volume, offset)
@@ -700,7 +698,20 @@ class GenesisDataUpdateCoordinator(DataUpdateCoordinator):
         return data
 
     @callback
-    def reset_buffer_day(self, now):
+    def schedule_buffer_rollover(self):
+        if self.buffer_use is not None:
+            self._cancel_buffer_rollover = async_track_time_change(
+                self.hass, self._reset_buffer_day, hour=0, minute=0, second=0,
+            )
+
+    async def async_shutdown(self):
+        if self._cancel_buffer_rollover is not None:
+            self._cancel_buffer_rollover()
+            self._cancel_buffer_rollover = None
+        await super().async_shutdown()
+
+    @callback
+    def _reset_buffer_day(self, now):
         if self.buffer_use.roll_day(now):
             self.async_update_listeners()
 

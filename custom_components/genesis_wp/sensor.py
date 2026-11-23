@@ -611,6 +611,7 @@ class CompressorRunSensor(CoordinatorEntity, SensorEntity):
 class BufferDeltaSensor(HeatSensor):
     """A temperature difference in kelvins."""
 
+    _attr_icon = "mdi:thermometer-lines"
     _attr_native_unit_of_measurement = "K"
     _attr_state_class = SensorStateClass.MEASUREMENT
 
