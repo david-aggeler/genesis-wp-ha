@@ -31,6 +31,7 @@ async def test_frontend_urls_use_manifest_version(
     assert set(hass.data[DATA_EXTRA_MODULE_URL].urls) == {
         prefix + "genesis-wp-device-card.js",
         prefix + "genesis-wp-heating-curve-card.js",
+        prefix + "genesis-wp-overview-card.js",
     }
 
     client = await hass_client()
