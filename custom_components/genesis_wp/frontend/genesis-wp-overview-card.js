@@ -1,5 +1,5 @@
 import {registerCard} from './register-card.js';
-import {patch} from './patch.js';
+import {morph, patch} from './patch.js';
 import {BAND_COLORS, MEAN_BANDS, RUN_BANDS, bandFor} from './overview-bands.js';
 
 const NAME = 'Compressor and buffer overview';
@@ -151,6 +151,7 @@ const STYLES = `
   .lanes h3 {margin:0;font-size:.9rem;font-weight:500;}
   .lane-status {margin-inline-start:.5em;color:var(--secondary-text-color);font-size:.8em;}
   svg {display:block;width:100%;background:var(--secondary-background-color);border-radius:4px;}
+  .gap {fill:none;stroke:var(--secondary-text-color);stroke-dasharray:3 2;vector-effect:non-scaling-stroke;}
   svg path {fill:none;stroke-width:2;vector-effect:non-scaling-stroke;}
   .axis,.legend {color:var(--secondary-text-color);font-size:.75rem;}
   .lanes {container-type:inline-size;}
@@ -360,23 +361,28 @@ class OverviewCard extends HTMLElement {
     return [
       tile('Starts today', metric('starts_today', 'Total') + metric('hot_water_starts_today', 'Hot water'),
         'derived_starts_today'),
-      tile('Short heating runs', metric('short_heating_runs_today', 'Today', '', {alert: true})),
+      tile('Short heating runs', metric('short_heating_runs_today', 'Today', '', {alert: true}),
+        'derived_short_heating_runs_today'),
       tile('Heating run length',
         metric('heating_run_minimum', 'Minimum', 'min', {bands: RUN_BANDS, factors: MINUTES}) +
         metric('heating_run_mean', 'Heating run mean', 'min', {bands: MEAN_BANDS, factors: MINUTES}) +
-        metric('heating_run_maximum', 'Maximum', 'min', {bands: RUN_BANDS, factors: MINUTES})),
-      tile('Running hours', metric('running_hours_today', 'Today', 'h', {factors: MINUTES})),
+        metric('heating_run_maximum', 'Maximum', 'min', {bands: RUN_BANDS, factors: MINUTES}),
+        'derived_heating_run_mean'),
+      tile('Running hours', metric('running_hours_today', 'Today', 'h', {factors: MINUTES}),
+        'derived_running_hours_today'),
       tile('Heat today',
         metric('heat_produced_today', 'Produced', 'kWh', {decimals: 1, factors: KWH}) +
         metric('heat_to_rooms_today', 'To the rooms', 'kWh', {decimals: 1, factors: KWH}) +
         this.valueRow('derived_heat_to_rooms_today', 'Coverage', coverage === null
-          ? this.stateWord(rooms?.state) : `${coverage} %`)),
+          ? this.stateWord(rooms?.state) : `${coverage} %`),
+        'derived_heat_produced_today'),
       tile('Buffer',
         metric('median_restart_margin_today', 'Median restart margin', 'K', {decimals: 1}) +
         this.valueRow('derived_buffer_judgement', 'Reference', reference === null
           ? this.stateWord(judgement?.state) : `${reference.toFixed(1)} K`) +
         this.valueRow('derived_buffer_judgement', 'Judgement', marker, color, undefined, !color) +
-        metric('curve_gap', 'Curve gap', 'K', {decimals: 1})),
+        metric('curve_gap', 'Curve gap', 'K', {decimals: 1}),
+        'derived_median_restart_margin_today'),
     ].join('');
   }
 
@@ -398,8 +404,8 @@ class OverviewCard extends HTMLElement {
       ? `<span class="lane-status">${escape(status)}</span>` : ''}</h3>
       <svg data-lane viewBox="0 0 ${WIDTH} ${height}" preserveAspectRatio="none"
         style="height:${height}px" aria-label="${title}">${contents}</svg>`;
-    const trace = (key, y, color, dash = '') =>
-      `<path${this.entityAttributes(key)} d="${linePath(series.get(key), x, y, end)}"
+    const trace = (key, label, y, color, dash = '') =>
+      `<path${this.entityAttributes(key)} aria-label="${escape(label)}" d="${linePath(series.get(key), x, y, end)}"
         stroke="${color}" stroke-dasharray="${dash}"/>`;
     const range = (values, height) => {
       const {low, high} = values.reduce((bounds, value) => value === null ? bounds : ({
@@ -416,6 +422,12 @@ class OverviewCard extends HTMLElement {
         fill="${run.color}" fill-opacity="${run.color === 'currentColor' ? 0.35 : 1}"
         y="3" height="18"${this.entityAttributes(COMPRESSOR, `run:${run.start}`)}>
         <title>${run.label} · ${((run.end - run.start) / 60).toFixed(1)} min</title></rect>`).join('');
+    const gaps = compressorStatus ? '' : compressorPoints.map(({state, time}, index) => {
+      const until = compressorPoints[index + 1]?.time ?? end;
+      if (binaryValue(state) !== null || until <= time) return '';
+      return `<rect class="gap" x="${x(time)}" width="${x(start + until - time)}" y="3" height="18"
+        aria-label="${escape(this.stateWord(state))}"><title>${escape(this.stateWord(state))}</title></rect>`;
+    }).join('');
     const bufferScale = range(BUFFER.flatMap(([key]) =>
       series.get(key).map(({state}) => state)), 72);
     const heatScale = range([0, ...series.get(ROOM_HEAT).map(({state}) => state)], 56);
@@ -425,16 +437,16 @@ class OverviewCard extends HTMLElement {
     const bandLegend = [...RUN_BANDS].reverse().map(([, label]) => swatch(BAND_COLORS[label], label.replaceAll('_', ' ')));
     return `<section class="lanes" aria-label="Last 24 hours">
       <h2>Last 24 hours</h2>
-      ${lane('Compressor', 24, compressor, compressorStatus)}
-      ${lane('FR2', 24, trace(FR2, value => value ? 4 : 20, '#50a0cb'))}
-      ${lane('Buffer [°C]', 72, BUFFER.map(([key, , color, dash]) =>
-        trace(key, bufferScale, color, dash)).join(''))}
-      ${lane('Heat to the rooms [kW]', 56, trace(ROOM_HEAT, heatScale, '#5fb88a'))}
+      ${lane('Compressor', 24, compressor + gaps, compressorStatus)}
+      ${lane('FR2', 24, trace(FR2, 'FR2', value => value ? 4 : 20, '#50a0cb'))}
+      ${lane('Buffer [°C]', 72, BUFFER.map(([key, label, color, dash]) =>
+        trace(key, label, bufferScale, color, dash)).join(''))}
+      ${lane('Heat to the rooms [kW]', 56, trace(ROOM_HEAT, 'Heat to the rooms', heatScale, '#5fb88a'))}
       <div class="axis">${ticks.join('')}</div>
       <div class="legend">${bandLegend.join('')} ${swatch('currentColor', 'Hot water / unscored')}</div>
       <div class="legend">${BUFFER.map(([key, label, color]) =>
         `<span${this.entityAttributes(key, `legend:${key}`)}>${swatch(color, label)}</span>`).join('')}</div>
-      <output></output>
+      <output>${this.hoverMarkup()}</output>
       ${this.historyFailed ? '<p>Recorder history refresh failed</p>' : ''}
       </section>`;
   }
@@ -449,18 +461,33 @@ class OverviewCard extends HTMLElement {
   }
 
   renderHover() {
-    if (!this.history || this.hoverFraction === undefined) return;
     const output = this.shadowRoot.querySelector('output');
+    const markup = this.hoverMarkup();
+    if (!output || output.innerHTML === markup) return;
+    if (typeof document === 'undefined') {
+      output.innerHTML = markup;
+      return;
+    }
+    const template = document.createElement('template');
+    template.innerHTML = markup;
+    morph(output, template.content);
+  }
+
+  hoverMarkup() {
+    if (!this.history || this.hoverFraction === undefined) return '';
     const {start, series} = this.history;
     const time = start + DAY * this.hoverFraction;
     const get = key => atTime(series.get(key), time);
     const reading = (value, unit) => value === null || value === undefined ? this.stateWord() : `${value.toFixed(1)} ${unit}`;
-    output.textContent = [
-      this.timeLabel(time),
-      `Compressor ${get(COMPRESSOR) ?? this.stateWord()}`,
-      `FR2 ${['off', 'on'][get(FR2)] ?? this.stateWord()}`,
-      ...BUFFER.map(([key, label]) => `${label} ${reading(get(key), '°C')}`),
-      `Heat to the rooms ${reading(get(ROOM_HEAT), 'kW')}`,
+    const link = (key, label, value) =>
+      `<span${this.entityAttributes(key, `hover:${key}`)}>${escape(label)} ${escape(value)}</span>`;
+    const compressor = get(COMPRESSOR);
+    return [
+      escape(this.timeLabel(time)),
+      link(COMPRESSOR, 'Compressor', binaryValue(compressor) === null ? this.stateWord(compressor) : compressor),
+      link(FR2, 'FR2', ['off', 'on'][get(FR2)] ?? this.stateWord()),
+      ...BUFFER.map(([key, label]) => link(key, label, reading(get(key), '°C'))),
+      link(ROOM_HEAT, 'Heat to the rooms', reading(get(ROOM_HEAT), 'kW')),
     ].join(' · ');
   }
 
@@ -471,14 +498,17 @@ class OverviewCard extends HTMLElement {
     const focused = root.activeElement;
     const link = focused?.getAttribute('data-link');
     const entityId = focused?.getAttribute('data-entity');
-    if (patch(root, markup) === 'unchanged') return;
+    if (patch(root, markup) === 'unchanged') {
+      // Pointer updates patch only the output, independently of the root markup.
+      if (this.history) this.renderHover();
+      return;
+    }
     if (link && (root.activeElement?.getAttribute('data-link') !== link
       || root.activeElement?.getAttribute('data-entity') !== entityId)) {
       const replacement = [...root.querySelectorAll('[data-link]')].find(node =>
         node.getAttribute('data-link') === link && node.getAttribute('data-entity') === entityId);
       replacement?.focus({preventScroll: true});
     }
-    this.renderHover();
   }
 }
 

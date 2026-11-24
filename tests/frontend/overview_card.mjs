@@ -15,7 +15,8 @@ globalThis.HTMLElement = class {
       set innerHTML(value) {
         markup = value;
         this.activeElement = null;
-        this.output = {textContent: ''};
+        this.output = {innerHTML: value.match(/<output>(.*?)<\/output>/s)?.[1] ?? '',
+          set textContent(text) { this.innerHTML = text; }};
       },
       get innerHTML() { return markup; },
       addEventListener: (name, fn) => { card[name] = fn; },
@@ -107,6 +108,9 @@ const hass = {
     ].filter(([id]) => message.entity_ids.includes(id)).flatMap(([id, samples]) => {
       if (id !== byRegister.dinput_199 || historyScenario === 'normal') return [[id, samples]];
       if (historyScenario === 'off') return [entity('dinput_199', [[0, 'off']])];
+      if (historyScenario === 'invalid') return [entity('dinput_199', [[0, 'unknown'], [10, 'unavailable']])];
+      if (historyScenario === 'mixed') return [entity('dinput_199', [[0, 'off'], [360, 'unavailable'],
+        [720, 'off'], [1080, 'unknown']])];
       return [];
     }));
   },
@@ -224,7 +228,8 @@ assert.deepEqual([...legend.matchAll(/aria-hidden="true">●<\/span> ([^<]+)/g)]
 const bounds = {left: 20, width: 1440};
 const lane = {getBoundingClientRect: () => bounds};
 card.pointermove({clientX: bounds.left + 15, target: {closest: selector => selector === '[data-lane]' ? lane : null}});
-const hover = () => card.shadowRoot.output.textContent;
+const hoverMarkup = () => card.shadowRoot.output.innerHTML;
+const hover = () => hoverMarkup().replace(/<[^>]+>/g, '');
 assert.equal(hover(), '12:15 · Compressor off · FR2 on · T31 buffer 29.0 °C · T33 supply 34.0 °C · Circuit 2 set point 31.0 °C · Charge set point 36.0 °C · Heat to the rooms 3.0 kW');
 
 // DHF-TEST: genesis-wp-ha/requirement-31 genesis-wp-ha/ac-152
@@ -248,6 +253,22 @@ const starts = links.find(node => node.tag === row('Starts today', 'Total').attr
 const fr2 = links.find(node => node.tag.startsWith('<path') && node.dataset.entity === byRegister.dinput_209);
 assert.ok(starts);
 assert.ok(fr2);
+for (const [key, name] of [
+  ['dinput_209', 'FR2'], ['input_41', 'T31 buffer'], ['input_12', 'T33 supply'],
+  ['input_147', 'Circuit 2 set point'], ['input_68', 'Charge set point'],
+  ['derived_heat_to_rooms', 'Heat to the rooms'],
+]) {
+  const trace = links.find(node => node.tag.startsWith('<path') && node.dataset.entity === byRegister[key]);
+  assert.equal(trace?.getAttribute('aria-label'), name);
+}
+const readoutKeys = ['dinput_199', 'dinput_209', 'input_41', 'input_12', 'input_147', 'input_68',
+  'derived_heat_to_rooms'];
+const hoverLinks = renderedLinks(hoverMarkup(), card.shadowRoot);
+assert.deepEqual(hoverLinks.map(node => node.dataset.entity), readoutKeys.map(key => byRegister[key]));
+const readoutStart = events.length;
+for (const target of hoverLinks) card.click({target});
+assert.deepEqual(events.splice(readoutStart).map(({type, detail}) => [type, detail.entityId]),
+  readoutKeys.map(key => ['hass-more-info', byRegister[key]]));
 for (const target of [starts, fr2]) card.click({target});
 assert.deepEqual(events.map(({type, detail}) => [type, detail.entityId]),
   [['hass-more-info', byRegister.derived_starts_today], ['hass-more-info', byRegister.dinput_209]]);
@@ -276,13 +297,21 @@ assert.equal(card.shadowRoot.activeElement?.dataset.entity, byRegister.dinput_20
 function compressorLane() {
   return html().match(/<h3>Compressor(?:<[^/][^>]*>[^<]*<\/span>)?<\/h3>\s*<svg\b[^>]*aria-label="Compressor">[\s\S]*?<\/svg>/)[0];
 }
-for (const scenario of ['omitted', 'empty', 'off']) {
+for (const scenario of ['omitted', 'empty', 'off', 'invalid']) {
   historyScenario = scenario;
   await refreshHistory();
   assert.doesNotMatch(compressorLane(), /class="run"/, scenario);
   assert.equal(compressorLane().includes('Unavailable locally'), scenario !== 'off', scenario);
-  if (scenario === 'omitted') assert.match(html(), /aria-label="FR2">\s*<path[^>]+ d="M/);
+  if (scenario !== 'empty') assert.match(html(), /aria-label="FR2">\s*<path[^>]+ d="M/);
 }
+
+historyScenario = 'mixed';
+await refreshHistory();
+assert.doesNotMatch(compressorLane(), /class="run"/);
+const gaps = [...compressorLane().matchAll(/<rect class="gap" x="([^"]+)" width="([^"]+)"[^>]*>\s*<title>([^<]+)<\/title>/g)];
+assert.deepEqual(gaps.map(([, x, w, label]) => [Number(x), Number(w), label]), [
+  [width / 4, width / 4, 'Unavailable locally'], [width * 3 / 4, width / 4, 'Unknown locally'],
+]);
 
 // DHF-TEST: genesis-wp-ha/requirement-31 genesis-wp-ha/ac-152
 const tileLinks = renderedLinks(html(), card.shadowRoot);
@@ -300,6 +329,17 @@ assert.deepEqual(events.slice(firstTileEvent).map(({type, detail}) => [type, det
   ['hass-more-info', byRegister.derived_starts_today],
   ['hass-more-info', byRegister.derived_hot_water_starts_today],
 ]);
+for (const key of ['short_heating_runs_today', 'heating_run_mean', 'running_hours_today',
+  'heat_produced_today', 'median_restart_margin_today']) {
+  const id = byRegister[`derived_${key}`];
+  const section = tileLinks.find(node => node.tag.startsWith('<section') && node.dataset.entity === id);
+  assert.ok(section, `${key} tile opens more-info from its padding`);
+  const before = events.length;
+  card.click({target: section});
+  card.click({target: {closest: selector => section.closest(selector)}});
+  assert.deepEqual(events.slice(before).map(({type, detail}) => [type, detail.entityId]),
+    [['hass-more-info', id], ['hass-more-info', id]]);
+}
 card.isConnected = false;
 card.disconnectedCallback();
 assert.equal(timers.size, 0);
