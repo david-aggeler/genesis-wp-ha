@@ -680,6 +680,10 @@ class BufferJudgementSensor(BufferUseSensor):
     def native_value(self):
         return self.coordinator.buffer_use.judgement
 
+    @property
+    def extra_state_attributes(self):
+        return {"reference_offset": self.coordinator.buffer_use.offset}
+
 
 # DHF-REQ: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-145
 class CurveGapSensor(BufferDeltaSensor):

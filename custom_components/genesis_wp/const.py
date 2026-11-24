@@ -95,7 +95,12 @@ HEATING_CURVES = {_SET_TEMPERATURE_1: _CURVE_Y_1, _SET_TEMPERATURE_2: _CURVE_Y_2
 OUTDOOR_TEMPERATURE = thermiaconst.ATTR_INPUT_OUTDOOR_TEMPERATURE
 FRONTEND_URL = "/genesis_wp"
 PANEL_MODULE = "genesis-wp-panel.js"
-CARD_MODULES = ("genesis-wp-heating-curve-card.js", "genesis-wp-device-card.js")
+OVERVIEW_CARD_MODULE = "genesis-wp-overview-card.js"
+CARD_MODULES = (
+    "genesis-wp-heating-curve-card.js",
+    "genesis-wp-device-card.js",
+    OVERVIEW_CARD_MODULE,
+)
 
 # Registers a setting entity subscribes besides its own: the library reads holding 116 only
 # while it knows coil 41 is True.
