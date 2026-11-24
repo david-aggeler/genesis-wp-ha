@@ -109,7 +109,8 @@ function segment(open, end, completeEnd) {
   let label = 'Unscored';
   let color = 'currentColor';
   if (mode === 'hot_water') label = 'Hot water';
-  if ((mode === 'heat' || mode === 'heating') && open.completeStart && completeEnd) {
+  // The daily tracker classifies known non-hot-water demand as heating.
+  if (mode && !['hot_water', 'unknown', 'unavailable'].includes(mode) && open.completeStart && completeEnd) {
     const band = bandFor(minutes, RUN_BANDS);
     label = band.replaceAll('_', ' ');
     color = BAND_COLORS[band];
@@ -261,7 +262,7 @@ class OverviewCard extends HTMLElement {
     const request = {};
     this.pending = request;
     const start = end - DAY;
-    const read = (keys, compact) => {
+    const read = async (keys, compact) => {
       const entityIds = keys.flatMap(key => {
         const id = this.entities.get(key)?.id;
         return id ? [id] : [];
@@ -277,24 +278,23 @@ class OverviewCard extends HTMLElement {
         significant_changes_only: false,
       });
     };
-    try {
-      // Full numeric rows retain the unit per sample and Recorder's attribute-only changes.
-      const [modes, measurements] = await Promise.all([
-        read(MODE_HISTORY_KEYS, true), read(NUMERIC_HISTORY_KEYS, false),
-      ]);
-      if (this.pending !== request) return;
-      const data = {...modes, ...measurements};
+    // Full numeric rows retain the unit per sample and Recorder's attribute-only changes.
+    const [modes, measurements] = await Promise.allSettled([
+      read(MODE_HISTORY_KEYS, true), read(NUMERIC_HISTORY_KEYS, false),
+    ]);
+    if (this.pending !== request) return;
+    const modesFailed = modes.status === 'rejected';
+    const measurementsFailed = measurements.status === 'rejected';
+    this.historyFailed = modesFailed || measurementsFailed;
+    if (!modesFailed || !measurementsFailed) {
+      const data = {...modes.value, ...measurements.value};
       const series = new Map(HISTORY_KEYS.map(key => {
         const convert = key === ROOM_HEAT ? (value, unit) => scaled(value, KW, unit, 'kW')
           : key === FR2 ? binaryValue
           : MODE_HISTORY_KEYS.includes(key) ? value => value : temperature;
         return [key, historyPoints(data[this.entities.get(key)?.id], start, end, convert)];
       }));
-      this.history = {start, end, series};
-      this.historyFailed = false;
-    } catch {
-      if (this.pending !== request) return;
-      this.historyFailed = true;
+      this.history = {start, end, series, modesFailed, measurementsFailed};
     }
     this.pending = undefined;
     this.render();
@@ -398,7 +398,7 @@ class OverviewCard extends HTMLElement {
       return `<p>${this.historyFailed ? 'Recorder history unavailable'
         : this.pending ? 'Loading recorder history…' : 'No history entities available'}</p>`;
     }
-    const {start, end, series} = this.history;
+    const {start, end, series, modesFailed, measurementsFailed} = this.history;
     const x = time => (WIDTH * (time - start) / DAY).toFixed(3);
     const lane = (title, height, contents, status) => `<h3>${title}${status
       ? `<span class="lane-status">${escape(status)}</span>` : ''}</h3>
@@ -422,8 +422,10 @@ class OverviewCard extends HTMLElement {
         fill="${run.color}" fill-opacity="${run.color === 'currentColor' ? 0.35 : 1}"
         y="3" height="18"${this.entityAttributes(COMPRESSOR, `run:${run.start}`)}>
         <title>${run.label} · ${((run.end - run.start) / 60).toFixed(1)} min</title></rect>`).join('');
-    const gaps = compressorStatus ? '' : compressorPoints.map(({state, time}, index) => {
-      const until = compressorPoints[index + 1]?.time ?? end;
+    const gapPoints = compressorPoints[0]?.time > start
+      ? [{state: 'unavailable', time: start}, ...compressorPoints] : compressorPoints;
+    const gaps = compressorStatus ? '' : gapPoints.map(({state, time}, index) => {
+      const until = gapPoints[index + 1]?.time ?? end;
       if (binaryValue(state) !== null || until <= time) return '';
       return `<rect class="gap" x="${x(time)}" width="${x(start + until - time)}" y="3" height="18"
         aria-label="${escape(this.stateWord(state))}"><title>${escape(this.stateWord(state))}</title></rect>`;
@@ -438,10 +440,10 @@ class OverviewCard extends HTMLElement {
     return `<section class="lanes" aria-label="Last 24 hours">
       <h2>Last 24 hours</h2>
       ${lane('Compressor', 24, compressor + gaps, compressorStatus)}
-      ${lane('FR2', 24, trace(FR2, 'FR2', value => value ? 4 : 20, '#50a0cb'))}
+      ${lane('FR2', 24, trace(FR2, 'FR2', value => value ? 4 : 20, '#50a0cb'), modesFailed ? this.stateWord() : undefined)}
       ${lane('Buffer [°C]', 72, BUFFER.map(([key, label, color, dash]) =>
-        trace(key, label, bufferScale, color, dash)).join(''))}
-      ${lane('Heat to the rooms [kW]', 56, trace(ROOM_HEAT, 'Heat to the rooms', heatScale, '#5fb88a'))}
+        trace(key, label, bufferScale, color, dash)).join(''), measurementsFailed ? this.stateWord() : undefined)}
+      ${lane('Heat to the rooms [kW]', 56, trace(ROOM_HEAT, 'Heat to the rooms', heatScale, '#5fb88a'), measurementsFailed ? this.stateWord() : undefined)}
       <div class="axis">${ticks.join('')}</div>
       <div class="legend">${bandLegend.join('')} ${swatch('currentColor', 'Hot water / unscored')}</div>
       <div class="legend">${BUFFER.map(([key, label, color]) =>

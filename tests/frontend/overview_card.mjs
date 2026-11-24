@@ -84,6 +84,10 @@ const hass = {
   async callWS(message) {
     requests.push(message);
     if (historyScenario === 'empty') return {};
+    if ((historyScenario === 'mode-error' && message.entity_ids.includes(byRegister.input_1))
+      || (historyScenario === 'numeric-error' && message.entity_ids.includes(byRegister.input_41))) {
+      throw new Error('Recorder request failed');
+    }
     const start = Date.parse(message.start_time) / 1000;
     const rows = pairs => pairs.map(([minute, s, unit]) => ({
       s: String(s), lu: start + minute * 60,
@@ -95,7 +99,7 @@ const hass = {
     return Object.fromEntries([
       entity('dinput_199', [[0, 'off'], [10, 'on'], [15, 'off'], [20, 'on'], [40, 'off'],
         [50, 'on'], [140, 'off'], [150, 'on'], [190, 'off'], ...openRun]),
-      entity('input_1', [[0, 'heating'], [150 + 0.2 / 60, 'Hot water']]),
+      entity('input_1', [[0, historyScenario === 'defrost' ? 'Defrost' : 'heating'], [150 + 0.2 / 60, 'Hot water']]),
       entity('dinput_209', [[0, 'off'], [5, 'on'], [80, 'off']]),
       entity('input_41', [[0, 30, '°C'], [15, 84.2, '°F']]),
       entity('input_12', [[0, 33], [15, 34]]),
@@ -106,7 +110,8 @@ const hass = {
         [1439.5, 3000, 'mW'],
       ]),
     ].filter(([id]) => message.entity_ids.includes(id)).flatMap(([id, samples]) => {
-      if (id !== byRegister.dinput_199 || historyScenario === 'normal') return [[id, samples]];
+      if (id !== byRegister.dinput_199 || ['normal', 'defrost', 'mode-error', 'numeric-error'].includes(historyScenario)) return [[id, samples]];
+      if (historyScenario === 'late-off') return [entity('dinput_199', [[360, 'off']])];
       if (historyScenario === 'off') return [entity('dinput_199', [[0, 'off']])];
       if (historyScenario === 'invalid') return [entity('dinput_199', [[0, 'unknown'], [10, 'unavailable']])];
       if (historyScenario === 'mixed') return [entity('dinput_199', [[0, 'off'], [360, 'unavailable'],
@@ -308,10 +313,45 @@ for (const scenario of ['omitted', 'empty', 'off', 'invalid']) {
 historyScenario = 'mixed';
 await refreshHistory();
 assert.doesNotMatch(compressorLane(), /class="run"/);
-const gaps = [...compressorLane().matchAll(/<rect class="gap" x="([^"]+)" width="([^"]+)"[^>]*>\s*<title>([^<]+)<\/title>/g)];
-assert.deepEqual(gaps.map(([, x, w, label]) => [Number(x), Number(w), label]), [
+function compressorGaps() {
+  return [...compressorLane().matchAll(/<rect class="gap" x="([^"]+)" width="([^"]+)"[^>]*>\s*<title>([^<]+)<\/title>/g)]
+    .map(([, x, w, label]) => [Number(x), Number(w), label]);
+}
+assert.deepEqual(compressorGaps(), [
   [width / 4, width / 4, 'Unavailable locally'], [width * 3 / 4, width / 4, 'Unknown locally'],
 ]);
+
+const historyRegressions = [
+  ['late-off', () => {
+    assert.deepEqual(compressorGaps(), [[0, width / 4, 'Unavailable locally']]);
+    assert.doesNotMatch(compressorLane(), /class="run"/);
+  }],
+  ['defrost', () => {
+    assert.match(compressorLane(), /fill="#d46161"[^>]*>\s*<title>Short cycle · 5\.0 min<\/title>/i);
+  }],
+  ['mode-error', () => {
+    assert.match(compressorLane(), /Unavailable locally/);
+    assert.match(html(), /aria-label="Buffer \[°C\]">\s*<path[^>]+ d="M/);
+    assert.match(html(), /aria-label="Heat to the rooms \[kW\]">\s*<path[^>]+ d="M/);
+  }],
+  ['numeric-error', () => {
+    assert.match(compressorLane(), /class="run"/);
+    assert.match(html(), /aria-label="FR2">\s*<path[^>]+ d="M/);
+    assert.match(html(), /<h3>Buffer \[°C\].*?Unavailable locally/);
+    assert.match(html(), /<h3>Heat to the rooms \[kW\].*?Unavailable locally/);
+  }],
+];
+const failures = [];
+for (const [scenario, verify] of historyRegressions) {
+  historyScenario = scenario;
+  await refreshHistory();
+  try {
+    verify();
+  } catch (error) {
+    failures.push(new Error(scenario, {cause: error}));
+  }
+}
+assert.deepEqual(failures.map(error => [error.message, error.cause.message.slice(0, 250)]), []);
 
 // DHF-TEST: genesis-wp-ha/requirement-31 genesis-wp-ha/ac-152
 const tileLinks = renderedLinks(html(), card.shadowRoot);
