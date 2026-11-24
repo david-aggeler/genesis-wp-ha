@@ -84,7 +84,8 @@ const hass = {
   async callWS(message) {
     requests.push(message);
     if (historyScenario === 'empty') return {};
-    if ((historyScenario === 'mode-error' && message.entity_ids.includes(byRegister.input_1))
+    if (historyScenario === 'total-error'
+      || (historyScenario === 'mode-error' && message.entity_ids.includes(byRegister.input_1))
       || (historyScenario === 'numeric-error' && message.entity_ids.includes(byRegister.input_41))) {
       throw new Error('Recorder request failed');
     }
@@ -110,7 +111,13 @@ const hass = {
         [1439.5, 3000, 'mW'],
       ]),
     ].filter(([id]) => message.entity_ids.includes(id)).flatMap(([id, samples]) => {
-      if (id !== byRegister.dinput_199 || ['normal', 'defrost', 'mode-error', 'numeric-error'].includes(historyScenario)) return [[id, samples]];
+      const measurements = ['dinput_209', 'input_41', 'input_12', 'input_147', 'input_68', 'derived_heat_to_rooms'];
+      if (measurements.some(key => byRegister[key] === id)) {
+        if (historyScenario === 'missing-lanes') return [];
+        if (historyScenario === 'invalid-lanes') return [[id, rows([[0, 'unavailable'], [10, 'unknown']])]];
+      }
+      if (id !== byRegister.dinput_199 || ['normal', 'defrost', 'mode-error', 'numeric-error',
+        'missing-lanes', 'invalid-lanes'].includes(historyScenario)) return [[id, samples]];
       if (historyScenario === 'late-off') return [entity('dinput_199', [[360, 'off']])];
       if (historyScenario === 'off') return [entity('dinput_199', [[0, 'off']])];
       if (historyScenario === 'invalid') return [entity('dinput_199', [[0, 'unknown'], [10, 'unavailable']])];
@@ -340,9 +347,24 @@ const historyRegressions = [
     assert.match(html(), /<h3>Buffer \[°C\].*?Unavailable locally/);
     assert.match(html(), /<h3>Heat to the rooms \[kW\].*?Unavailable locally/);
   }],
+  ...['missing-lanes', 'invalid-lanes'].map(scenario => [scenario, () => {
+    assert.deepEqual([...html().matchAll(/<h3>([^<]+)<span class="lane-status">Unavailable locally<\/span><\/h3>/g)]
+      .map(([, title]) => title), ['FR2', 'Buffer [°C]', 'Heat to the rooms [kW]']);
+    assert.match(compressorLane(), /class="run"/);
+  }]),
+  ['total-error', () => {
+    assert.match(html(), /Recorder history unavailable/);
+    assert.doesNotMatch(html(), /Last 24 hours|class="run"|data-lane/);
+  }],
 ];
 const failures = [];
 for (const [scenario, verify] of historyRegressions) {
+  if (scenario === 'total-error') {
+    historyScenario = 'normal';
+    await refreshHistory();
+    assert.match(compressorLane(), /class="run"/);
+    now += 3 * 60 * 60_000;
+  }
   historyScenario = scenario;
   await refreshHistory();
   try {
@@ -352,6 +374,8 @@ for (const [scenario, verify] of historyRegressions) {
   }
 }
 assert.deepEqual(failures.map(error => [error.message, error.cause.message.slice(0, 250)]), []);
+historyScenario = 'normal';
+await refreshHistory();
 
 // DHF-TEST: genesis-wp-ha/requirement-31 genesis-wp-ha/ac-152
 const tileLinks = renderedLinks(html(), card.shadowRoot);

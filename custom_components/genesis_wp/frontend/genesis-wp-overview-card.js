@@ -267,7 +267,7 @@ class OverviewCard extends HTMLElement {
         const id = this.entities.get(key)?.id;
         return id ? [id] : [];
       });
-      if (!entityIds.length) return {};
+      if (!entityIds.length) return null;
       return this._hass.callWS({
         type: 'history/history_during_period',
         start_time: new Date(start * 1000).toISOString(),
@@ -286,7 +286,7 @@ class OverviewCard extends HTMLElement {
     const modesFailed = modes.status === 'rejected';
     const measurementsFailed = measurements.status === 'rejected';
     this.historyFailed = modesFailed || measurementsFailed;
-    if (!modesFailed || !measurementsFailed) {
+    if (modes.value || measurements.value) {
       const data = {...modes.value, ...measurements.value};
       const series = new Map(HISTORY_KEYS.map(key => {
         const convert = key === ROOM_HEAT ? (value, unit) => scaled(value, KW, unit, 'kW')
@@ -294,7 +294,9 @@ class OverviewCard extends HTMLElement {
           : MODE_HISTORY_KEYS.includes(key) ? value => value : temperature;
         return [key, historyPoints(data[this.entities.get(key)?.id], start, end, convert)];
       }));
-      this.history = {start, end, series, modesFailed, measurementsFailed};
+      this.history = {start, end, series};
+    } else {
+      this.history = undefined;
     }
     this.pending = undefined;
     this.render();
@@ -398,7 +400,7 @@ class OverviewCard extends HTMLElement {
       return `<p>${this.historyFailed ? 'Recorder history unavailable'
         : this.pending ? 'Loading recorder history…' : 'No history entities available'}</p>`;
     }
-    const {start, end, series, modesFailed, measurementsFailed} = this.history;
+    const {start, end, series} = this.history;
     const x = time => (WIDTH * (time - start) / DAY).toFixed(3);
     const lane = (title, height, contents, status) => `<h3>${title}${status
       ? `<span class="lane-status">${escape(status)}</span>` : ''}</h3>
@@ -407,6 +409,8 @@ class OverviewCard extends HTMLElement {
     const trace = (key, label, y, color, dash = '') =>
       `<path${this.entityAttributes(key)} aria-label="${escape(label)}" d="${linePath(series.get(key), x, y, end)}"
         stroke="${color}" stroke-dasharray="${dash}"/>`;
+    const numericStatus = (...keys) => keys.some(key =>
+      series.get(key).some(({state}) => state !== null)) ? undefined : this.stateWord();
     const range = (values, height) => {
       const {low, high} = values.reduce((bounds, value) => value === null ? bounds : ({
         low: Math.min(bounds.low, value), high: Math.max(bounds.high, value),
@@ -440,10 +444,10 @@ class OverviewCard extends HTMLElement {
     return `<section class="lanes" aria-label="Last 24 hours">
       <h2>Last 24 hours</h2>
       ${lane('Compressor', 24, compressor + gaps, compressorStatus)}
-      ${lane('FR2', 24, trace(FR2, 'FR2', value => value ? 4 : 20, '#50a0cb'), modesFailed ? this.stateWord() : undefined)}
+      ${lane('FR2', 24, trace(FR2, 'FR2', value => value ? 4 : 20, '#50a0cb'), numericStatus(FR2))}
       ${lane('Buffer [°C]', 72, BUFFER.map(([key, label, color, dash]) =>
-        trace(key, label, bufferScale, color, dash)).join(''), measurementsFailed ? this.stateWord() : undefined)}
-      ${lane('Heat to the rooms [kW]', 56, trace(ROOM_HEAT, 'Heat to the rooms', heatScale, '#5fb88a'), measurementsFailed ? this.stateWord() : undefined)}
+        trace(key, label, bufferScale, color, dash)).join(''), numericStatus(...BUFFER.map(([key]) => key)))}
+      ${lane('Heat to the rooms [kW]', 56, trace(ROOM_HEAT, 'Heat to the rooms', heatScale, '#5fb88a'), numericStatus(ROOM_HEAT))}
       <div class="axis">${ticks.join('')}</div>
       <div class="legend">${bandLegend.join('')} ${swatch('currentColor', 'Hot water / unscored')}</div>
       <div class="legend">${BUFFER.map(([key, label, color]) =>
