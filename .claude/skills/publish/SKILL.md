@@ -33,7 +33,7 @@ The skill installs nothing anywhere. homelab owns rollout to DEV and PROD.
 
 **Outward-facing.** The tag push and the GitHub release need the owner's explicit "yes" in this chat, every time (Step 4). A peer session's relayed approval is not that "yes".
 
-**Library first.** A genesis-wp-ha release pins a released genesis-wp tag. If wpe-1 has not sent a library tag and its SHA for the pin, stop before Step 1.
+**Library first.** A genesis-wp-ha release pins the full commit SHA of a released genesis-wp tag, and Step 1.7 checks that the SHA equals the tag's commit (requirement-33). The pip ref stays the SHA, never the tag name: a tag ref is mutable, and Home Assistant installs from the manifest without a lockfile. If wpe-1 has not sent a library tag and its SHA for the pin, stop before Step 1.
 
 ## Step 0: Hard preconditions
 
@@ -84,8 +84,8 @@ A draft for the target tag must be deleted by hand, with the owner's OK, before 
    - otherwise: a patch bump.
 
    The owner may name any version above the latest tag. Ask: "Next version would be vX.Y.Z (N change_requests since <prev>). Use that?"
-5. **Library pin first, through a change_request.** If the manifest does not pin the library tag from wpe-1, file a pin-bump change_request:
-   - pin `genesis-wp @ git+https://github.com/david-aggeler/genesis-wp@<tag>` in `manifest.json` and `requirements_test.txt`;
+5. **Library pin first, through a change_request.** If the manifest does not pin the commit of the library tag from wpe-1, file a pin-bump change_request:
+   - pin `genesis-wp @ git+https://github.com/david-aggeler/genesis-wp@<full SHA of the tag's commit>` in `manifest.json` and `requirements_test.txt`;
    - force-reinstall the venv (CLAUDE.md, *Tests*).
 
    Drain it through run-queue, then restart at Step 0. The pin is code and goes through a change_request.
@@ -108,7 +108,7 @@ A draft for the target tag must be deleted by hand, with the owner's OK, before 
    ```
 
    Then restart at Step 0. Only VERSION and the manifest version may change in this commit.
-7. Check the pin. The library tag must resolve to the SHA wpe-1 sent:
+7. Check the pin. The library tag must resolve to the SHA wpe-1 sent, and that SHA must be the one pinned in `manifest.json` and `requirements_test.txt`:
 
    ```zsh
    git ls-remote https://github.com/david-aggeler/genesis-wp "refs/tags/<lib-tag>^{}"
@@ -259,7 +259,7 @@ For a failure, name the step that failed and what is already live.
 
 - Upload to PyPI or any package index, or create a release while an upload path exists. Only the owner can change that rule.
 - Release without the owner's explicit yes in this chat.
-- Release on a library commit pin instead of a released genesis-wp tag.
+- Release on a library commit that is not the commit of a released genesis-wp tag.
 - Skip or pipe the gate, or release from a dirty tree, a branch, a worktree, a shallow clone or an unstamped HEAD.
 - Change repo files outside a change_request, except the Step 1.6 bookkeeping commit (VERSION and the manifest version only). The library pin goes through one.
 - Force-push, push to upstream or cjne, or move or delete a tag, upstream tags included.
