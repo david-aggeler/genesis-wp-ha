@@ -84,6 +84,9 @@ const hass = {
   async callWS(message) {
     requests.push(message);
     if (historyScenario === 'empty') return {};
+    if (historyScenario === 'stalled-numeric' && message.entity_ids.includes(byRegister.input_41)) {
+      return new Promise(() => {});
+    }
     if (historyScenario === 'total-error'
       || (historyScenario === 'mode-error' && message.entity_ids.includes(byRegister.input_1))
       || (historyScenario === 'numeric-error' && message.entity_ids.includes(byRegister.input_41))) {
@@ -117,7 +120,7 @@ const hass = {
         if (historyScenario === 'invalid-lanes') return [[id, rows([[0, 'unavailable'], [10, 'unknown']])]];
       }
       if (id !== byRegister.dinput_199 || ['normal', 'defrost', 'mode-error', 'numeric-error',
-        'missing-lanes', 'invalid-lanes'].includes(historyScenario)) return [[id, samples]];
+        'missing-lanes', 'invalid-lanes', 'stalled-numeric'].includes(historyScenario)) return [[id, samples]];
       if (historyScenario === 'late-off') return [entity('dinput_199', [[360, 'off']])];
       if (historyScenario === 'off') return [entity('dinput_199', [[0, 'off']])];
       if (historyScenario === 'invalid') return [entity('dinput_199', [[0, 'unknown'], [10, 'unavailable']])];
@@ -376,6 +379,24 @@ for (const [scenario, verify] of historyRegressions) {
 assert.deepEqual(failures.map(error => [error.message, error.cause.message.slice(0, 250)]), []);
 historyScenario = 'normal';
 await refreshHistory();
+
+// DHF-TEST: genesis-wp-ha/requirement-31 genesis-wp-ha/ac-151
+// A Recorder request that never settles cannot hide the other group or block later refreshes.
+now += 3 * 60 * 60_000;
+historyScenario = 'stalled-numeric';
+const beforeStall = requests.length;
+await refreshHistory();
+assert.equal(requests.length, beforeStall + 2);
+await refreshHistory();
+assert.equal(requests.length, beforeStall + 4, 'a stalled request must not block the next refresh');
+assert.match(compressorLane(), /class="run"/);
+assert.match(html(), /<h3>Buffer \[°C\].*?Unavailable locally/);
+assert.match(html(), /<h3>Heat to the rooms \[kW\].*?Unavailable locally/);
+historyScenario = 'normal';
+await refreshHistory();
+assert.equal(requests.length, beforeStall + 6);
+assert.match(html(), /aria-label="Buffer \[°C\]">\s*<path[^>]+ d="M/);
+assert.doesNotMatch(html(), /<h3>Buffer \[°C\].*?Unavailable locally/);
 
 // DHF-TEST: genesis-wp-ha/requirement-31 genesis-wp-ha/ac-152
 const tileLinks = renderedLinks(html(), card.shadowRoot);

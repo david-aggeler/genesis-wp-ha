@@ -227,13 +227,24 @@ class OverviewCard extends HTMLElement {
     if (signature !== this.historySignature) {
       this.historySignature = signature;
       this.history = undefined;
+      this.pending?.expire();
       this.pending = undefined;
+      // Responses to requests for the previous entity set are never published.
+      this.publishedSequence = this.requestSequence ?? 0;
       this.requestedAt = undefined;
       this.historyFailed = false;
       this.hoverFraction = undefined;
     }
-    if (this.isConnected && ids.some(Boolean) && !this.pending && (this.requestedAt === undefined
-      || now - this.requestedAt >= HISTORY_REFRESH || now < this.requestedAt)) {
+    const due = this.requestedAt === undefined
+      || now - this.requestedAt >= HISTORY_REFRESH || now < this.requestedAt;
+    if (due && this.pending) {
+      // A request still unsettled after a full interval counts as failed; its settled group is
+      // published and the next request starts now (ac-151).
+      const stalled = this.pending;
+      this.pending = undefined;
+      stalled.expire();
+    }
+    if (this.isConnected && ids.some(Boolean) && !this.pending && due) {
       this.requestedAt = now;
       this.loadHistory(now);
     }
@@ -259,7 +270,12 @@ class OverviewCard extends HTMLElement {
   }
 
   async loadHistory(end) {
-    const request = {};
+    this.requestSequence = (this.requestSequence ?? 0) + 1;
+    const request = {sequence: this.requestSequence};
+    const deadline = new Promise((_, reject) => {
+      request.expire = () => reject(new Error('Recorder request did not settle'));
+    });
+    deadline.catch(() => {});
     this.pending = request;
     const start = end - DAY;
     const read = async (keys, compact) => {
@@ -279,10 +295,14 @@ class OverviewCard extends HTMLElement {
       });
     };
     // Full numeric rows retain the unit per sample and Recorder's attribute-only changes.
+    const bounded = keys => Promise.race([read(keys, keys === MODE_HISTORY_KEYS), deadline]);
     const [modes, measurements] = await Promise.allSettled([
-      read(MODE_HISTORY_KEYS, true), read(NUMERIC_HISTORY_KEYS, false),
+      bounded(MODE_HISTORY_KEYS), bounded(NUMERIC_HISTORY_KEYS),
     ]);
-    if (this.pending !== request) return;
+    if (this.pending === request) this.pending = undefined;
+    // A newer request's result already shown takes precedence over this one.
+    if (request.sequence <= (this.publishedSequence ?? 0)) return;
+    this.publishedSequence = request.sequence;
     const modesFailed = modes.status === 'rejected';
     const measurementsFailed = measurements.status === 'rejected';
     this.historyFailed = modesFailed || measurementsFailed;
@@ -298,7 +318,6 @@ class OverviewCard extends HTMLElement {
     } else {
       this.history = undefined;
     }
-    this.pending = undefined;
     this.render();
   }
 
