@@ -60,9 +60,9 @@ async def buffer(hass, start_emulator, monkeypatch, request):
             clock.setattr(dt_util, "utcnow", lambda: now.astimezone(UTC))
         entry = await setup_entry(hass, emu)
 
-    async def sample(on=True, temp=3800, target=3200, *, fr2=True, mode=4, cooling=False, spread=100):
+    async def sample(on=True, temp=3800, target=3200, *, fr2=True, mode=4, cooling=False, spread=100, charge=3400):
         bits.update({199: on, 209: fr2, 245: cooling})
-        inputs.update({1: mode, 12: int(temp - spread), 41: int(temp + spread), 147: target})
+        inputs.update({1: mode, 12: int(temp - spread), 41: int(temp + spread), 68: charge, 147: target})
         await hass.data[DOMAIN][entry.entry_id].async_refresh()
 
     async def phase(restart, stop=3800, target=3200, *, spread=100):
@@ -161,6 +161,17 @@ async def test_curve_gap_refresh(hass, buffer, address):
         await sample()
     assert coordinator.last_update_success
     assert read("curve_gap").state == "unavailable"
+
+
+# DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-145
+async def test_curve_gap_unavailable_when_charge_set_point_is_not_used(buffer):
+    # Raw 0 on input 68 is the WPE-I's "not used" value; the library reads it as None (issue-32).
+    sample, _, read, *_ = buffer
+    assert float(read("curve_gap").state) == 2.0
+    await sample(charge=0)
+    assert read("curve_gap").state == "unavailable"
+    await sample()
+    assert float(read("curve_gap").state) == 2.0
 
 
 # DHF-TEST: genesis-wp-ha/requirement-30 genesis-wp-ha/ac-146
