@@ -3,7 +3,9 @@ import {readFileSync} from 'node:fs';
 import {pathToFileURL} from 'node:url';
 const hass=JSON.parse(readFileSync(0,'utf8'));
 globalThis.window=globalThis;
-globalThis.HTMLElement=class {attachShadow(){let html='';this.shadowRoot={replaced:0,listeners:{},addEventListener(type,listener){this.listeners[type]=listener;},querySelector(){return null;},querySelectorAll(){return [];},
+// Upgrade emulation: properties Home Assistant assigned before define are own data properties
+// on the element when the class constructor runs (issue-30).
+globalThis.HTMLElement=class {constructor(){for(const [k,v] of Object.entries(globalThis.preUpgrade||{}))Object.defineProperty(this,k,{value:v,writable:true,enumerable:true,configurable:true});}attachShadow(){let html='';this.shadowRoot={replaced:0,listeners:{},addEventListener(type,listener){this.listeners[type]=listener;},querySelector(){return null;},querySelectorAll(){return [];},
  get innerHTML(){return html;},set innerHTML(v){html=v;this.replaced++;}};return this.shadowRoot;}};
 globalThis.customElements={items:new Map([['hui-view',class {}]]),get(k){return this.items.get(k);},define(k,v){assert.ok(!this.items.has(k),k);this.items.set(k,v);}};
 const source=process.argv[2];
@@ -297,6 +299,15 @@ p.route={path:'/genesis-wp'}; assert.match(html(),/data-tile=/);
  };
  p.route = {path: '/genesis-wp/internal_heat_pump'};
  assert.match(card.shadowRoot.innerHTML, /2 entities disabled \u2014 enable them in Settings \u2192 Entities/);
+}
+
+// DHF-TEST: genesis-wp-ha/requirement-35 genesis-wp-ha/ac-197
+{
+ globalThis.preUpgrade = {panel: {}, hass, narrow: false, route: {prefix: '/genesis-wp', path: '/genesis-wp'}};
+ const early = new Panel();
+ globalThis.preUpgrade = undefined;
+ for (const key of ['panel', 'hass', 'narrow', 'route']) assert.ok(!Object.hasOwn(early, key), key);
+ assert.match(early.shadowRoot.innerHTML, /data-section="internal_heat_pump"/);
 }
 
 console.log("HARNESS-COMPLETE");
