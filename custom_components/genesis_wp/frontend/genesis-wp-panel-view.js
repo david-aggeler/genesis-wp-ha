@@ -112,6 +112,10 @@ export class GenesisWpPanel extends HTMLElement {
   catch { this._flowSpeed = FLOW_SPEED.default; }
   this.shadowRoot.addEventListener('keydown',e=>{if(['Enter',' '].includes(e.key)&&e.target.closest?.('[data-entity],[data-section],[data-tab]')){e.preventDefault();this._activate(e);}});
   try{this._entry=new URLSearchParams(globalThis.location?.search||'').get('entry')||undefined;}catch{this._entry=undefined;}
+  // DHF-REQ: genesis-wp-ha/requirement-35 genesis-wp-ha/ac-197
+  // Home Assistant can assign these while the entry module still awaits this view; the own data
+  // properties would shadow the setters below, so re-assign them through the setters.
+  for(const key of ['panel','hass','narrow','route']){if(Object.hasOwn(this,key)){const value=this[key];delete this[key];this[key]=value;}}
  }
  // DHF-REQ: genesis-wp-ha/requirement-27 genesis-wp-ha/ac-122
  _setFlowSpeed(value) {
